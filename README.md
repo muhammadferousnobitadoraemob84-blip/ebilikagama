@@ -41,36 +41,25 @@ Copy the connection string (looks like `postgresql://username:password@host:5432
    - `JWT_SECRET` = a secure random string (generate at https://generate-secret.vercel.app/32)
 5. Click **Deploy**
 
-### Step 3: Initialize the Database
+The build process automatically:
+- Pushes the Prisma schema to your database
+- Seeds channels, settings, and owner account
+- Builds the Next.js application
 
-After the first deploy, you need to push the schema and seed data.
+**No manual database setup needed!** Just set the `DATABASE_URL` and deploy.
 
-Go to your Vercel project → **Settings** → **General** → Scroll to **"Build & Development Settings"** → Open the **Terminal** or use Vercel CLI:
+### Step 3 (Optional): Re-seed the Database
+
+If you need to re-seed the database after making changes:
 
 ```bash
-# Install Vercel CLI (one-time setup)
-npm i -g vercel
-
-# Link to your project
 vercel link
-
-# Pull env vars
 vercel env pull .env.local
-
-# Push schema to database
-npx prisma db push
-
-# Seed the database with channels, owner account, and settings
-npx tsx prisma/seed.ts
-```
-
-Or do it from the Vercel dashboard:
-1. Go to your project → **Deployments** → Click the latest → **Terminal** (3-dot menu)
-2. Run:
-```bash
 npx prisma db push
 npx tsx prisma/seed.ts
 ```
+
+**Note:** The seed script is idempotent — it won't duplicate existing data.
 
 ### Step 4: Access the Website
 

@@ -4,23 +4,27 @@ import * as bcrypt from "bcryptjs";
 const prisma = new PrismaClient();
 
 async function main() {
-  // Create owner account
-  const existingOwner = await prisma.user.findUnique({ where: { username: "muhammadferousmsa" } });
+  console.log("🌱 Starting database seed...\n");
+
+  // ── 1. OWNER ACCOUNT ──────────────────────────────────────────────
+  const existingOwner = await prisma.user.findFirst({ where: { role: "owner" } });
   if (!existingOwner) {
-    // Remove any old admin accounts first
-    await prisma.user.deleteMany({ where: { role: "admin" } });
     const passwordHash = await bcrypt.hash("MuhammadFerous40*****", 10);
     await prisma.user.create({
       data: {
         username: "muhammadferousmsa",
+        fullName: "Muhammad Ferous",
         passwordHash,
         role: "owner",
+        active: true,
       },
     });
     console.log("✓ Owner account created (muhammadferousmsa)");
+  } else {
+    console.log("✓ Owner account already exists");
   }
 
-  // Seed Saluran TV channels
+  // ── 2. SALURAN TV CHANNELS ────────────────────────────────────────
   const saluranTVChannels = [
     { name: "TV1", twitchUsername: "tv1official", displayOrder: 1, description: "Saluran televisyen utama Radio Televisyen Malaysia" },
     { name: "TV2", twitchUsername: "tv2official", displayOrder: 2, description: "Saluran kedua Radio Televisyen Malaysia" },
@@ -45,9 +49,9 @@ async function main() {
       });
     }
   }
-  console.log("✓ Saluran TV channels seeded");
+  console.log("✓ Saluran TV channels seeded (5 channels)");
 
-  // Seed Saluran Khas channels
+  // ── 3. SALURAN KHAS CHANNELS ──────────────────────────────────────
   const saluranKhasChannels = [
     { name: "Parlimen", twitchUsername: "parlimenrtm", displayOrder: 1, description: "Siaran langsung sidang Parlimen Malaysia" },
     { name: "RTM World", twitchUsername: "rtmworld", displayOrder: 2, description: "Saluran antarabangsa Radio Televisyen Malaysia" },
@@ -71,9 +75,9 @@ async function main() {
       });
     }
   }
-  console.log("✓ Saluran Khas channels seeded");
+  console.log("✓ Saluran Khas channels seeded (4 channels)");
 
-  // Seed default settings
+  // ── 4. DEFAULT SETTINGS ───────────────────────────────────────────
   const defaultSettings = [
     { key: "site_name", value: "eBilikAgamaTV" },
     { key: "site_logo", value: "" },
@@ -96,12 +100,69 @@ async function main() {
       await prisma.setting.create({ data: setting });
     }
   }
-  console.log("✓ Default settings seeded");
+  console.log("✓ Default settings seeded (13 settings)");
+
+  // ── 5. SAMPLE TV PROGRAMS ─────────────────────────────────────────
+  // Get today's date for sample programs
+  const today = new Date().toISOString().split("T")[0];
+  const tv1Channel = await prisma.channel.findFirst({ where: { name: "TV1" } });
+  const tv2Channel = await prisma.channel.findFirst({ where: { name: "TV2" } });
+
+  if (tv1Channel) {
+    const existingPrograms = await prisma.program.count({ where: { channelId: tv1Channel.id, date: today } });
+    if (existingPrograms === 0) {
+      const samplePrograms = [
+        { channelId: tv1Channel.id, title: "Berita Pagi", date: today, startTime: "06:00", endTime: "07:00", description: "Laporan berita pagi dan perkembangan terkini dalam dan luar negara.", status: "finished" },
+        { channelId: tv1Channel.id, title: "Selamat Pagi Malaysia", date: today, startTime: "07:00", endTime: "09:00", description: "Program pagi interaktif dengan segmen berita, hiburan, dan gaya hidup.", status: "finished" },
+        { channelId: tv1Channel.id, title: "Nasi Lemak Kopi O", date: today, startTime: "09:00", endTime: "10:00", description: "Program bual bicara santai bersama hos terkenal.", status: "finished" },
+        { channelId: tv1Channel.id, title: "Berita Tengah Hari", date: today, startTime: "12:00", endTime: "13:00", description: "Laporan berita tengah hari memaparkan perkembangan semasa.", status: "finished" },
+        { channelId: tv1Channel.id, title: "Memori: Sendai Kasihmu", date: today, startTime: "13:00", endTime: "14:30", description: "Siri drama televisyen tentang kehidupan dan pengorbanan.", status: "scheduled" },
+        { channelId: tv1Channel.id, title: "Berita Petang", date: today, startTime: "18:00", endTime: "19:00", description: "Laporan berita petang dan analisis mendalam.", status: "scheduled" },
+        { channelId: tv1Channel.id, title: "Buletin Utama", date: today, startTime: "20:00", endTime: "21:00", description: "Buletin berita utama Radio Televisyen Malaysia.", status: "scheduled" },
+        { channelId: tv1Channel.id, title: "Program Malam", date: today, startTime: "21:00", endTime: "23:00", description: "Program hiburan malam untuk keluarga.", status: "scheduled" },
+      ];
+      await prisma.program.createMany({ data: samplePrograms });
+      console.log("✓ Sample programs seeded for TV1 (" + samplePrograms.length + " programs)");
+    } else {
+      console.log("✓ Programs already exist for TV1 today");
+    }
+  }
+
+  if (tv2Channel) {
+    const existingPrograms = await prisma.program.count({ where: { channelId: tv2Channel.id, date: today } });
+    if (existingPrograms === 0) {
+      const samplePrograms = [
+        { channelId: tv2Channel.id, title: "Bisa Bahasa", date: today, startTime: "08:00", endTime: "09:00", description: "Program pembelajaran bahasa interaktif.", status: "finished" },
+        { channelId: tv2Channel.id, title: "Selamat Pagi Malaysia 2", date: today, startTime: "09:00", endTime: "11:00", description: "Versi kedua program pagi dengan segmen berbeza.", status: "finished" },
+        { channelId: tv2Channel.id, title: "Berita 2", date: today, startTime: "12:00", endTime: "13:00", description: "Laporan berita tengah hari saluran kedua.", status: "finished" },
+        { channelId: tv2Channel.id, title: "Muzik TV", date: today, startTime: "14:00", endTime: "16:00", description: "Program muzik dan video klip artis tempatan.", status: "scheduled" },
+        { channelId: tv2Channel.id, title: "Filem Malaysia", date: today, startTime: "20:00", endTime: "22:00", description: "Penayangan filem-filem Malaysia pilihan.", status: "scheduled" },
+      ];
+      await prisma.program.createMany({ data: samplePrograms });
+      console.log("✓ Sample programs seeded for TV2 (" + samplePrograms.length + " programs)");
+    } else {
+      console.log("✓ Programs already exist for TV2 today");
+    }
+  }
+
+  // ── SUMMARY ───────────────────────────────────────────────────────
+  const channelCount = await prisma.channel.count({ where: { active: true } });
+  const programCount = await prisma.program.count();
+  const userCount = await prisma.user.count();
+  const settingCount = await prisma.setting.count();
+  console.log("\n═══════════════════════════════════════");
+  console.log("🌱 SEED COMPLETE");
+  console.log("═══════════════════════════════════════");
+  console.log(`Channels:  ${channelCount}`);
+  console.log(`Programs:  ${programCount}`);
+  console.log(`Users:     ${userCount}`);
+  console.log(`Settings:  ${settingCount}`);
+  console.log("═══════════════════════════════════════\n");
 }
 
 main()
   .catch((e) => {
-    console.error(e);
+    console.error("❌ Seed failed:", e);
     process.exit(1);
   })
   .finally(async () => {
