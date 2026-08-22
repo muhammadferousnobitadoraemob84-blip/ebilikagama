@@ -15,7 +15,17 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "eBilikAgamaTV - Siaran Langsung Televisyen Malaysia",
-  description: "Tonton saluran televisyen Malaysia secara langsung. Semua saluran RTM di satu tempat.",
+  description: "Media Bilik Agama™ yang dibangunkan oleh Unit Hal Ehwal Islam SMJK Chung Hwa Tenom untuk memperluas dakwah Islam dikalangan murid dan ibu bapa.",
+  openGraph: {
+    title: "eBilikAgamaTV - Siaran Langsung Televisyen Malaysia",
+    description: "Media Bilik Agama™ yang dibangunkan oleh Unit Hal Ehwal Islam SMJK Chung Hwa Tenom untuk memperluas dakwah Islam dikalangan murid dan ibu bapa.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "eBilikAgamaTV - Siaran Langsung Televisyen Malaysia",
+    description: "Media Bilik Agama™ yang dibangunkan oleh Unit Hal Ehwal Islam SMJK Chung Hwa Tenom untuk memperluas dakwah Islam dikalangan murid dan ibu bapa.",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
