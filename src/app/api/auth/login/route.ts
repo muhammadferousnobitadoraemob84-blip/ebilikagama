@@ -20,8 +20,15 @@ export async function POST(request: NextRequest) {
     // Ensure database is ready (auto-init on first request)
     const dbReady = await ensureDatabase();
     if (!dbReady) {
+      // Check if DATABASE_URL is even set
+      if (!process.env.DATABASE_URL) {
+        return NextResponse.json(
+          { error: "DATABASE_URL belum disediakan. Sila tambah DATABASE_URL di Vercel → Settings → Environment Variables." },
+          { status: 500 }
+        );
+      }
       return NextResponse.json(
-        { error: "Pangkalan data tidak tersedia. Sila pastikan DATABASE_URL disediakan di Vercel." },
+        { error: "Pangkalan data tidak tersedia. Sila hubungi pentadbir." },
         { status: 500 }
       );
     }
