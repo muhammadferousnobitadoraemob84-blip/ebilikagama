@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -24,7 +24,7 @@ model Channel {
   category        String
   twitchUsername  String
   thumbnail       String?
-  description     String?  @db.Text
+  description     String?
   liveStatus      String   @default("automatic")
   displayOrder    Int      @default(0)
   active          Boolean  @default(true)
@@ -36,7 +36,7 @@ model Channel {
 model Setting {
   id    String @id @default(cuid())
   key   String @unique
-  value String @db.Text
+  value String
 }
 
 model Program {
@@ -47,8 +47,8 @@ model Program {
   date        String   // YYYY-MM-DD format
   startTime   String   // HH:mm format (24h)
   endTime     String   // HH:mm format (24h)
-  description String? @db.Text
-  thumbnail   String?  @db.Text
+  description String?
+  thumbnail   String?
   status      String   @default("scheduled") // scheduled, live, finished
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

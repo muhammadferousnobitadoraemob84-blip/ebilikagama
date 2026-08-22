@@ -16,7 +16,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const user = await prisma.user.findUnique({ where: { username } });
+    // Verify database connectivity
+    let user;
+    try {
+      user = await prisma.user.findUnique({ where: { username } });
+    } catch (dbError) {
+      console.error("[LOGIN] Database query failed:", dbError);
+      return NextResponse.json(
+        { error: "Gagal menyambung ke pangkalan data. Sila cuba lagi sebentar." },
+        { status: 500 }
+      );
+    }
+
     if (!user) {
       return NextResponse.json(
         { error: "Username atau kata laluan salah" },
@@ -32,7 +43,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const valid = await bcrypt.compare(password, user.passwordHash);
+    // Verify password
+    let valid: boolean;
+    try {
+      valid = await bcrypt.compare(password, user.passwordHash);
+    } catch (bcryptError) {
+      console.error("[LOGIN] Password verification failed:", bcryptError);
+      return NextResponse.json(
+        { error: "Ralat pengesahan kata laluan" },
+        { status: 500 }
+      );
+    }
+
     if (!valid) {
       return NextResponse.json(
         { error: "Username atau kata laluan salah" },
@@ -40,11 +62,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const token = await createToken({
-      userId: user.id,
-      username: user.username,
-      role: user.role,
-    });
+    // Create JWT token
+    let token: string;
+    try {
+      token = await createToken({
+        userId: user.id,
+        username: user.username,
+        role: user.role,
+      });
+    } catch (tokenError) {
+      console.error("[LOGIN] Token creation failed:", tokenError);
+      return NextResponse.json(
+        { error: "Gagal mencipta sesi" },
+        { status: 500 }
+      );
+    }
 
     const response = NextResponse.json({
       success: true,
@@ -52,6 +84,7 @@ export async function POST(request: NextRequest) {
       fullName: user.fullName,
       role: user.role,
     });
+
     response.cookies.set("admin-token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -61,9 +94,10 @@ export async function POST(request: NextRequest) {
     });
 
     return response;
-  } catch {
+  } catch (error) {
+    console.error("[LOGIN] Unexpected error:", error);
     return NextResponse.json(
-      { error: "Ralat pelayan dalaman" },
+      { error: "Ralat pelayan dalaman. Sila cuba lagi." },
       { status: 500 }
     );
   }
