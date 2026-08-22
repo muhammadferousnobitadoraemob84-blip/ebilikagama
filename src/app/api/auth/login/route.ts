@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createToken } from "@/lib/auth";
+import { ensureDatabase } from "@/lib/db-init";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify database connectivity
+    // Ensure database is ready (auto-init on first request)
+    const dbReady = await ensureDatabase();
+    if (!dbReady) {
+      return NextResponse.json(
+        { error: "Pangkalan data tidak tersedia. Sila pastikan DATABASE_URL disediakan di Vercel." },
+        { status: 500 }
+      );
+    }
+
+    // Look up user
     let user;
     try {
       user = await prisma.user.findUnique({ where: { username } });

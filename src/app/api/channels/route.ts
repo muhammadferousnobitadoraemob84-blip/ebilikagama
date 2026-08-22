@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { notifyChannelChange } from "@/lib/channel-events";
+import { ensureDatabase } from "@/lib/db-init";
 
 export const dynamic = "force-dynamic";
 
 // GET all channels (public — only active)
 export async function GET(request: NextRequest) {
   try {
+    await ensureDatabase();
     const { searchParams } = new URL(request.url);
     const category = searchParams.get("category");
     const all = searchParams.get("all");

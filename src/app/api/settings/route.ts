@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { ensureDatabase } from "@/lib/db-init";
 
 export const dynamic = "force-dynamic";
 
 // GET all settings (public)
 export async function GET() {
   try {
+    await ensureDatabase();
     const settings = await prisma.setting.findMany();
     const settingsMap: Record<string, string> = {};
     settings.forEach((s) => {

@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npx prisma generate && npx prisma db push --skip-generate && npx tsx prisma/seed.ts && next build",
+    "build": "prisma generate && next build",
     "db:push": "npx prisma db push",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:setup": "npx prisma db push --skip-generate && npx tsx prisma/seed.ts",
