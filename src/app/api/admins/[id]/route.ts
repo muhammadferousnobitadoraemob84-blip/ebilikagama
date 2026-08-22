@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 
+export const dynamic = "force-dynamic";
+
 // PUT update admin (owner only)
 export async function PUT(
   request: NextRequest,

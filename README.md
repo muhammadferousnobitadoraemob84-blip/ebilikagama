@@ -21,57 +21,68 @@ A modern Malaysian TV streaming website with live Twitch integration, TV program
 
 ## Deployment (Vercel)
 
-### Step 1: Create PostgreSQL Database
+### Step 1: Create a PostgreSQL Database (Free)
 
 Use one of these free PostgreSQL providers:
 
-- **Vercel Postgres:** Go to your Vercel project → Storage → Create Database → PostgreSQL
-- **Neon:** https://neon.tech (free tier, 0.5GB storage)
-- **Supabase:** https://supabase.com (free tier, 500MB storage)
+- **Neon** (recommended): https://neon.tech — Free tier: 0.5 GB storage
+- **Supabase**: https://supabase.com — Free tier: 500 MB storage
+- **Vercel Postgres**: Available in Vercel project settings → Storage
 
-Copy the connection string (it looks like `postgresql://...`).
+Copy the connection string (looks like `postgresql://username:password@host:5432/dbname?sslmode=require`).
 
-### Step 2: Push to GitHub
-
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin https://github.com/YOUR_USERNAME/ebilikagama-repo.git
-git push -u origin main
-```
-
-### Step 3: Deploy to Vercel
+### Step 2: Deploy to Vercel
 
 1. Go to https://vercel.com
-2. Click "New Project"
-3. Import your GitHub repository
-4. Set environment variables:
+2. Click **"New Project"**
+3. Import your GitHub repository: `ebilikagama`
+4. Set **Environment Variables**:
    - `DATABASE_URL` = your PostgreSQL connection string
-   - `JWT_SECRET` = a secure random string (e.g., from https://generate-secret.vercel.app/32)
-5. Click "Deploy"
-6. After deployment, Vercel will show your live URL
+   - `JWT_SECRET` = a secure random string (generate at https://generate-secret.vercel.app/32)
+5. Click **Deploy**
 
-### Step 4: Initialize the Database
+### Step 3: Initialize the Database
 
-After first deploy, run the seed command:
+After the first deploy, you need to push the schema and seed data.
+
+Go to your Vercel project → **Settings** → **General** → Scroll to **"Build & Development Settings"** → Open the **Terminal** or use Vercel CLI:
 
 ```bash
-# Via Vercel CLI
-vercel env pull .env.local
-npx prisma db push
-npx tsx prisma/seed.ts
+# Install Vercel CLI (one-time setup)
+npm i -g vercel
 
-# Or set up a build step to auto-seed
+# Link to your project
+vercel link
+
+# Pull env vars
+vercel env pull .env.local
+
+# Push schema to database
+npx prisma db push
+
+# Seed the database with channels, owner account, and settings
+npx tsx prisma/seed.ts
 ```
 
-### Step 5: Access Admin Panel
+Or do it from the Vercel dashboard:
+1. Go to your project → **Deployments** → Click the latest → **Terminal** (3-dot menu)
+2. Run:
+```bash
+npx prisma db push
+npx tsx prisma/seed.ts
+```
 
-1. Visit your deployed URL
-2. Click "⚙ Admin" in the footer
-3. Login with:
-   - **Username:** muhammadferousmsa
-   - **Password:** MuhammadFerous40*****
+### Step 4: Access the Website
+
+- **Public site:** `https://your-project.vercel.app`
+- **Admin panel:** `https://your-project.vercel.app/admin/login`
+
+### Admin Credentials
+
+| Role | Username | Access |
+|------|----------|--------|
+| OWNER | muhammadferousmsa | Full access (channels, schedule, admin management, settings) |
+| ADMIN | (created by owner) | Limited access (channels, schedule) |
 
 ## Local Development
 
@@ -110,14 +121,13 @@ src/
 │   │   ├── channels/    # Channel CRUD + SSE events
 │   │   ├── programs/    # Program CRUD + SSE events
 │   │   ├── admins/      # Admin management (owner only)
-│   │   └── upload/      # File upload
+│   │   └── upload/      # File upload (base64)
 │   ├── channels/        # Public channel viewing page
 │   └── page.tsx         # Public homepage
 ├── components/          # React components
 │   ├── ProgramSchedule.tsx  # EPG schedule component
 │   ├── TwitchPlayer.tsx     # Twitch embed player
 │   ├── TwitchVerifyPreview.tsx  # Channel verification
-│   ├── ChannelCard.tsx      # Channel card
 │   └── ...
 └── lib/
     ├── auth.ts          # JWT authentication
@@ -128,11 +138,11 @@ src/
 
 ## Admin Credentials
 
-| Role   | Username           | Access Level |
-|--------|--------------------|--------------|
-| OWNER  | muhammadferousmsa  | Full access  |
-| ADMIN  | (created by owner) | Limited      |
+| Role | Username | Access Level |
+|------|----------|--------------|
+| OWNER | muhammadferousmsa | Full access |
+| ADMIN | (created by owner) | Limited |
 
 ## License
 
-Private - eBilikAgama
+Private — eBilikAgama

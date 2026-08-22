@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { notifyChannelChange } from "@/lib/channel-events";
 
+export const dynamic = "force-dynamic";
+
 // GET all channels (public — only active)
 export async function GET(request: NextRequest) {
   try {

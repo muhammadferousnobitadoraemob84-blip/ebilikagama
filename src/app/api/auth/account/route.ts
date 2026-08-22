@@ -3,6 +3,8 @@ import { getSession, createToken } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 
+export const dynamic = "force-dynamic";
+
 // PUT update account (username/password)
 export async function PUT(request: NextRequest) {
   try {

@@ -28,7 +28,11 @@ export default function AdminLayout({
     }
 
     try {
-      const res = await fetch("/api/auth/me");
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      const res = await fetch("/api/auth/me", { signal: controller.signal });
+      clearTimeout(timeout);
+
       if (!res.ok) {
         router.push("/admin/login");
         return;

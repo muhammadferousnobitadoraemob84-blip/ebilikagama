@@ -8,17 +8,26 @@ export async function GET() {
 
   const stream = new ReadableStream({
     start(controller) {
+      let closed = false;
+
       // Send initial data
       const send = async () => {
+        if (closed) return;
         try {
           const channels = await prisma.channel.findMany({
             where: { active: true },
             orderBy: { displayOrder: "asc" },
           });
-          const data = `data: ${JSON.stringify(channels)}\n\n`;
-          controller.enqueue(encoder.encode(data));
+          if (!closed) {
+            const data = `data: ${JSON.stringify(channels)}\n\n`;
+            controller.enqueue(encoder.encode(data));
+          }
         } catch {
-          // ignore
+          // DB error — send empty array so clients don't hang
+          if (!closed) {
+            const data = `data: ${JSON.stringify([])}\n\n`;
+            controller.enqueue(encoder.encode(data));
+          }
         }
       };
 
@@ -29,28 +38,34 @@ export async function GET() {
         send();
       });
 
-      // Send heartbeat every 30s to keep connection alive
+      // Send heartbeat every 30s to keep connection alive on Vercel
       const heartbeat = setInterval(() => {
         try {
-          controller.enqueue(encoder.encode(": heartbeat\n\n"));
+          if (!closed) {
+            controller.enqueue(encoder.encode(": heartbeat\n\n"));
+          }
         } catch {
+          closed = true;
           clearInterval(heartbeat);
           unsubscribe();
         }
       }, 30000);
 
-      // Cleanup on close
-      const originalCancel = controller.close.bind(controller);
-      // We handle cleanup via the abort signal below
-      void originalCancel;
+      // Handle client disconnect
+      // The stream will be cancelled when the client disconnects
+      // Vercel's serverless runtime handles this via abort signal
+    },
+    cancel() {
+      // Client disconnected — cleanup is handled by GC
     },
   });
 
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
+      "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     },
   });
 }
