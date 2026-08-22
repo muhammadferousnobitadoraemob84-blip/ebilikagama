@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  username      String   @unique
+  fullName      String?
+  passwordHash  String
+  role          String   @default("admin")
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Channel {
+  id              String   @id @default(cuid())
+  name            String
+  category        String
+  twitchUsername  String
+  thumbnail       String?
+  description     String?
+  liveStatus      String   @default("automatic")
+  displayOrder    Int      @default(0)
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  programs        Program[]
+}
+
+model Setting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+}
+
+model Program {
+  id          String   @id @default(cuid())
+  channelId   String
+  channel     Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  title       String
+  date        String   // YYYY-MM-DD format
+  startTime   String   // HH:mm format (24h)
+  endTime     String   // HH:mm format (24h)
+  description String?
+  thumbnail   String?
+  status      String   @default("scheduled") // scheduled, live, finished
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([channelId, date])
+}
