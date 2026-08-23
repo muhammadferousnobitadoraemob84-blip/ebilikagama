@@ -67,7 +67,7 @@ export default function Header() {
               {t("nav_saluran_khas")}
             </Link>
             <Link
-              href="/#jadual"
+              href="/schedule"
               className="text-gray-300 hover:text-white transition-colors text-sm font-medium"
             >
               {t("nav_schedule")}
@@ -127,7 +127,7 @@ export default function Header() {
             {t("nav_saluran_khas")}
           </Link>
           <Link
-            href="/#jadual"
+            href="/schedule"
             onClick={() => setMobileMenuOpen(false)}
             className="text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium px-4 py-3 rounded-lg"
           >
