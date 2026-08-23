@@ -44,6 +44,8 @@ const translations = {
     watch_now: "Watch Now →",
     live: "LIVE",
     offline: "OFFLINE",
+    status_online: "ONLINE",
+    status_offline: "OFFLINE",
 
     // Channel Page
     loading_channel: "Loading channel...",
@@ -94,6 +96,8 @@ const translations = {
     watch_now: "Tonton Sekarang →",
     live: "LIVE",
     offline: "OFFLINE",
+    status_online: "DALAM TALIAN",
+    status_offline: "LUAR TALIAN",
 
     // Channel Page
     loading_channel: "Memuatkan saluran...",
@@ -144,6 +148,8 @@ const translations = {
     watch_now: "立即观看 →",
     live: "直播中",
     offline: "离线",
+    status_online: "在线",
+    status_offline: "离线",
 
     // Channel Page
     loading_channel: "加载频道中...",

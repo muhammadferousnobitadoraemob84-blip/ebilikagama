@@ -37,20 +37,18 @@ export default function ChannelCard({ channel }: { channel: Channel }) {
           </div>
         )}
 
-        {/* LIVE Badge */}
-        {isLive && (
-          <div className="absolute top-2 left-2 sm:top-3 sm:left-3 bg-red-600 text-white text-[9px] sm:text-xs font-bold px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-md flex items-center gap-1 sm:gap-1.5 shadow-lg">
-            <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white rounded-full animate-pulse" />
-            {t("live")}
-          </div>
-        )}
-
-        {/* Offline Badge */}
-        {!isLive && (
-          <div className="absolute top-2 left-2 sm:top-3 sm:left-3 bg-gray-600/80 text-gray-200 text-[9px] sm:text-xs font-medium px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-md">
-            {t("offline")}
-          </div>
-        )}
+        {/* Status Badge — ONLINE / OFFLINE */}
+        <div
+          className={`absolute top-2 left-2 sm:top-3 sm:left-3 text-white text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 sm:py-[3px] rounded shadow-md ${
+            isLive
+              ? "bg-green-600"
+              : "bg-red-600"
+          }`}
+          role="status"
+          aria-label={isLive ? "Channel is online" : "Channel is offline"}
+        >
+          {isLive ? t("status_online") : t("status_offline")}
+        </div>
 
         {/* Hover Overlay — desktop only */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 sm:group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 sm:p-4">
