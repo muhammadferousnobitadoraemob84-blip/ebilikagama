@@ -6,9 +6,22 @@ interface Settings {
 
 interface HeroProps {
   settings?: Settings;
+  translations?: {
+    hero_badge: string;
+    hero_cta: string;
+    hero_title_fallback: string;
+    hero_desc_fallback: string;
+  };
 }
 
-export default function Hero({ settings = {} }: HeroProps) {
+export default function Hero({ settings = {}, translations }: HeroProps) {
+  const tr = translations || {
+    hero_badge: "Live Broadcast",
+    hero_cta: "Start Watching",
+    hero_title_fallback: "eBilikAgamaTV",
+    hero_desc_fallback: "Islamic media platform developed by the Islamic Affairs Unit of SMJK Chung Hwa Tenom to expand Islamic dakwah among students and parents.",
+  };
+
   return (
     <section className="relative h-[40vh] sm:h-[50vh] md:h-[60vh] min-h-[280px] sm:min-h-[350px] md:min-h-[400px] flex items-center justify-center overflow-hidden">
       {/* Background */}
@@ -37,16 +50,15 @@ export default function Hero({ settings = {} }: HeroProps) {
       <div className="relative z-10 text-center max-w-4xl mx-auto px-4 sm:px-6">
         <div className="inline-flex items-center gap-1.5 sm:gap-2 bg-red-600/20 border border-red-500/30 text-red-400 text-xs sm:text-sm font-medium px-3 sm:px-4 py-1.5 sm:py-2 rounded-full mb-4 sm:mb-6 backdrop-blur-sm">
           <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-red-500 rounded-full animate-pulse" />
-          Siaran Langsung
+          {tr.hero_badge}
         </div>
 
         <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold text-white mb-3 sm:mb-6 tracking-tight leading-tight">
-          {settings.hero_title || "eBilikAgamaTV"}
+          {settings.hero_title || tr.hero_title_fallback}
         </h1>
 
         <p className="text-sm sm:text-lg md:text-xl text-gray-300 max-w-2xl mx-auto mb-5 sm:mb-8 leading-relaxed">
-          {settings.hero_description ||
-            "Media Bilik Agama™ yang dibangunkan oleh Unit Hal Ehwal Islam SMJK Chung Hwa Tenom untuk memperluas dakwah Islam dikalangan murid dan ibu bapa."}
+          {settings.hero_description || tr.hero_desc_fallback}
         </p>
 
         <a
@@ -56,7 +68,7 @@ export default function Hero({ settings = {} }: HeroProps) {
           <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 24 24">
             <path d="M8 5v14l11-7z" />
           </svg>
-          Mula Menonton
+          {tr.hero_cta}
         </a>
       </div>
     </section>

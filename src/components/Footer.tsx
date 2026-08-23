@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLanguage } from "@/components/LanguageProvider";
 
 interface Settings {
   footer_text?: string;
@@ -13,6 +14,7 @@ interface Settings {
 
 export default function Footer() {
   const [settings, setSettings] = useState<Settings>({});
+  const { t } = useLanguage();
 
   useEffect(() => {
     fetch("/api/settings")
@@ -41,13 +43,13 @@ export default function Footer() {
               <span className="text-white font-bold text-base sm:text-lg">eBilikAgamaTV</span>
             </div>
             <p className="text-gray-400 text-xs sm:text-sm">
-              {settings.footer_text || "© 2026 eBilikAgamaTV. Hak cipta terpelihara."}
+              {settings.footer_text || t("copyright")}
             </p>
           </div>
 
           {/* Contact */}
           <div>
-            <h3 className="text-white font-semibold mb-3 sm:mb-4 text-sm sm:text-base">Hubungi Kami</h3>
+            <h3 className="text-white font-semibold mb-3 sm:mb-4 text-sm sm:text-base">{t("contact_us")}</h3>
             {settings.contact_email ? (
               <a
                 href={`mailto:${settings.contact_email}`}
@@ -56,13 +58,13 @@ export default function Footer() {
                 {settings.contact_email}
               </a>
             ) : (
-              <p className="text-gray-500 text-xs sm:text-sm">Tiada maklumat hubungan</p>
+              <p className="text-gray-500 text-xs sm:text-sm">{t("no_contact")}</p>
             )}
           </div>
 
           {/* Social Links */}
           <div>
-            <h3 className="text-white font-semibold mb-3 sm:mb-4 text-sm sm:text-base">Ikuti Kami</h3>
+            <h3 className="text-white font-semibold mb-3 sm:mb-4 text-sm sm:text-base">{t("follow_us")}</h3>
             <div className="flex gap-2.5 sm:gap-3">
               {socialLinks.map((social) => {
                 const url = settings[social.key as keyof Settings];
@@ -83,7 +85,7 @@ export default function Footer() {
                 );
               })}
               {!Object.values(settings).some((v) => v && typeof v === "string" && v.startsWith("http")) && (
-                <p className="text-gray-500 text-xs sm:text-sm">Tiada pautan media sosial</p>
+                <p className="text-gray-500 text-xs sm:text-sm">{t("no_social")}</p>
               )}
             </div>
           </div>
@@ -92,7 +94,7 @@ export default function Footer() {
         {/* Bottom Bar */}
         <div className="mt-8 sm:mt-10 pt-5 sm:pt-6 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-3">
           <p className="text-gray-600 text-[11px] sm:text-xs">
-            {settings.footer_text || "© 2026 eBilikAgamaTV. Hak cipta terpelihara."}
+            {settings.footer_text || t("copyright")}
           </p>
           <a
             href="/admin/login"

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useLanguage } from "@/components/LanguageProvider";
 
 interface Channel {
   id: string;
@@ -12,6 +13,7 @@ interface Channel {
 }
 
 export default function ChannelCard({ channel }: { channel: Channel }) {
+  const { t } = useLanguage();
   const isLive = channel.liveStatus === "live";
 
   return (
@@ -39,21 +41,21 @@ export default function ChannelCard({ channel }: { channel: Channel }) {
         {isLive && (
           <div className="absolute top-2 left-2 sm:top-3 sm:left-3 bg-red-600 text-white text-[9px] sm:text-xs font-bold px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-md flex items-center gap-1 sm:gap-1.5 shadow-lg">
             <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white rounded-full animate-pulse" />
-            LIVE
+            {t("live")}
           </div>
         )}
 
         {/* Offline Badge */}
         {!isLive && (
           <div className="absolute top-2 left-2 sm:top-3 sm:left-3 bg-gray-600/80 text-gray-200 text-[9px] sm:text-xs font-medium px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-md">
-            OFFLINE
+            {t("offline")}
           </div>
         )}
 
         {/* Hover Overlay — desktop only */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 sm:group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3 sm:p-4">
           <span className="text-white text-xs sm:text-sm font-medium bg-red-600 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg transform translate-y-2 sm:group-hover:translate-y-0 transition-transform duration-300">
-            Tonton Sekarang →
+            {t("watch_now")}
           </span>
         </div>
       </div>

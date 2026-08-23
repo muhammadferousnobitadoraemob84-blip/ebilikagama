@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useLanguage } from "@/components/LanguageProvider";
+import LanguageSelector from "@/components/LanguageSelector";
 
 interface Settings {
   site_name?: string;
@@ -11,6 +13,7 @@ interface Settings {
 export default function Header() {
   const [settings, setSettings] = useState<Settings>({});
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { t } = useLanguage();
 
   useEffect(() => {
     fetch("/api/settings")
@@ -43,49 +46,62 @@ export default function Header() {
             </span>
           </Link>
 
-          {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-6">
+          {/* Desktop Nav + Language */}
+          <nav className="hidden md:flex items-center gap-5 lg:gap-6">
             <Link
               href="/"
               className="text-gray-300 hover:text-white transition-colors text-sm font-medium"
             >
-              Utama
+              {t("nav_home")}
             </Link>
             <Link
               href="/#saluran-tv"
               className="text-gray-300 hover:text-white transition-colors text-sm font-medium"
             >
-              Saluran TV
+              {t("nav_saluran_tv")}
             </Link>
             <Link
               href="/#saluran-khas"
               className="text-gray-300 hover:text-white transition-colors text-sm font-medium"
             >
-              Saluran Khas
+              {t("nav_saluran_khas")}
             </Link>
+            <Link
+              href="/#jadual"
+              className="text-gray-300 hover:text-white transition-colors text-sm font-medium"
+            >
+              {t("nav_schedule")}
+            </Link>
+
+            <div className="w-px h-5 bg-white/10" />
+
+            <LanguageSelector />
           </nav>
 
-          {/* Mobile menu button */}
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden text-gray-300 hover:text-white p-2 -mr-2"
-            aria-label="Menu"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              {mobileMenuOpen ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              )}
-            </svg>
-          </button>
+          {/* Mobile right buttons */}
+          <div className="flex items-center gap-2 md:hidden">
+            <LanguageSelector mobile />
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="text-gray-300 hover:text-white p-2 -mr-2"
+              aria-label="Menu"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {mobileMenuOpen ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                )}
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Mobile Nav Drawer */}
       <div
         className={`md:hidden overflow-hidden transition-all duration-300 ease-in-out ${
-          mobileMenuOpen ? "max-h-80 opacity-100" : "max-h-0 opacity-0"
+          mobileMenuOpen ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
         }`}
       >
         <nav className="px-4 pb-4 pt-2 border-t border-white/10 flex flex-col gap-1">
@@ -94,21 +110,28 @@ export default function Header() {
             onClick={() => setMobileMenuOpen(false)}
             className="text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium px-4 py-3 rounded-lg"
           >
-            Utama
+            {t("nav_home")}
           </Link>
           <Link
             href="/#saluran-tv"
             onClick={() => setMobileMenuOpen(false)}
             className="text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium px-4 py-3 rounded-lg"
           >
-            Saluran TV
+            {t("nav_saluran_tv")}
           </Link>
           <Link
             href="/#saluran-khas"
             onClick={() => setMobileMenuOpen(false)}
             className="text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium px-4 py-3 rounded-lg"
           >
-            Saluran Khas
+            {t("nav_saluran_khas")}
+          </Link>
+          <Link
+            href="/#jadual"
+            onClick={() => setMobileMenuOpen(false)}
+            className="text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium px-4 py-3 rounded-lg"
+          >
+            {t("nav_schedule")}
           </Link>
           <div className="h-px bg-white/10 my-1" />
           <Link
@@ -116,7 +139,7 @@ export default function Header() {
             onClick={() => setMobileMenuOpen(false)}
             className="text-gray-500 hover:text-gray-300 transition-all text-xs font-medium px-4 py-2 rounded-lg"
           >
-            Admin
+            {t("nav_admin")}
           </Link>
         </nav>
       </div>

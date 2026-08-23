@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useLanguage } from "@/components/LanguageProvider";
+import { getLocaleCode } from "@/lib/i18n";
 
 interface Channel {
   id: string;
@@ -22,55 +24,12 @@ interface Program {
   channel: { id: string; name: string };
 }
 
-function formatDateShort(dateStr: string): string {
-  try {
-    const d = new Date(dateStr + "T00:00:00");
-    const day = d.getDate();
-    const month = d.toLocaleDateString("ms-MY", { month: "short" });
-    return `${day} ${month}`;
-  } catch {
-    return dateStr;
-  }
-}
-
-function formatFullDate(dateStr: string): string {
-  try {
-    const d = new Date(dateStr + "T00:00:00");
-    return d.toLocaleDateString("ms-MY", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-  } catch {
-    return dateStr;
-  }
-}
-
-function calcDuration(start: string, end: string): string {
-  const [sh, sm] = start.split(":").map(Number);
-  const [eh, em] = end.split(":").map(Number);
-  let diff = (eh * 60 + em) - (sh * 60 + sm);
-  if (diff < 0) diff += 24 * 60;
-  const h = Math.floor(diff / 60);
-  const m = diff % 60;
-  if (h > 0 && m > 0) return `${h}j ${m}min`;
-  if (h > 0) return `${h} jam`;
-  return `${m} min`;
-}
-
-function formatTime12h(time: string): string {
-  const [h, m] = time.split(":").map(Number);
-  const period = h >= 12 ? "PM" : "AM";
-  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
-}
-
-function getCurrentTimeStr(): string {
-  const now = new Date();
-  return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-}
-
 interface ProgramScheduleProps {
   currentChannelId?: string;
 }
 
 export default function ProgramSchedule({ currentChannelId }: ProgramScheduleProps) {
+  const { t, locale, language } = useLanguage();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [selectedChannelId, setSelectedChannelId] = useState(currentChannelId || "");
@@ -79,7 +38,6 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
   const scheduleRef = useRef<HTMLDivElement>(null);
   const currentProgramRef = useRef<HTMLDivElement>(null);
 
-  // Generate 7 days starting from today
   const [dates] = useState(() => {
     const arr: string[] = [];
     for (let i = 0; i < 7; i++) {
@@ -109,7 +67,6 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
     }
   }, [currentChannelId]);
 
-  // Fetch programs
   const fetchPrograms = useCallback(async () => {
     if (!selectedChannelId || !selectedDate) return;
     setLoading(true);
@@ -156,6 +113,26 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
   const now = getCurrentTimeStr();
   const today = new Date().toISOString().split("T")[0];
 
+  const formatDateShort = (dateStr: string): string => {
+    try {
+      const d = new Date(dateStr + "T00:00:00");
+      const day = d.getDate();
+      const month = d.toLocaleDateString(locale, { month: "short" });
+      return `${day} ${month}`;
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const formatFullDate = (dateStr: string): string => {
+    try {
+      const d = new Date(dateStr + "T00:00:00");
+      return d.toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    } catch {
+      return dateStr;
+    }
+  };
+
   return (
     <div className="bg-gray-900/50 border border-white/10 rounded-xl sm:rounded-2xl overflow-hidden">
       {/* Channel Tabs */}
@@ -197,7 +174,7 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
               >
                 {formatDateShort(date)}
                 {isToday && !isSelected && (
-                  <span className="ml-1 sm:ml-1.5 text-[10px] sm:text-xs text-red-400">Hari Ini</span>
+                  <span className="ml-1 sm:ml-1.5 text-[10px] sm:text-xs text-red-400">{t("today")}</span>
                 )}
               </button>
             );
@@ -210,19 +187,18 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
         {loading ? (
           <div className="p-8 sm:p-12 text-center">
             <div className="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-gray-400 text-sm">Memuatkan jadual...</p>
+            <p className="text-gray-400 text-sm">{t("loading_schedule")}</p>
           </div>
         ) : programs.length === 0 ? (
           <div className="p-8 sm:p-12 text-center">
             <svg className="w-10 h-10 sm:w-12 sm:h-12 text-gray-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            <p className="text-gray-400 text-sm">Tiada program untuk tarikh ini.</p>
+            <p className="text-gray-400 text-sm">{t("no_programs")}</p>
             <p className="text-gray-500 text-xs sm:text-sm mt-1">{formatFullDate(selectedDate)}</p>
           </div>
         ) : (
           <div className="p-3 sm:p-4 space-y-1">
-            {/* Date header */}
             <div className="px-1 sm:px-2 py-2 sm:py-3 mb-1 sm:mb-2">
               <h3 className="text-white font-semibold text-sm sm:text-base">{formatFullDate(selectedDate)}</h3>
             </div>
@@ -251,9 +227,8 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
                       : "bg-gray-800/60 hover:bg-gray-800"
                   } ${index < programs.length - 1 ? "border-b border-white/5" : ""}`}
                 >
-                  {/* Desktop layout: side by side */}
+                  {/* Desktop layout */}
                   <div className="hidden sm:flex items-start gap-4">
-                    {/* Time */}
                     <div className="flex-shrink-0 w-24">
                       <div className={`text-lg font-bold ${
                         isCurrent ? "text-green-400" : isPast ? "text-gray-500" : "text-white"
@@ -265,13 +240,12 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
                       </div>
                     </div>
 
-                    {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         {isCurrent && (
                           <span className="inline-flex items-center gap-1 bg-green-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider">
                             <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                            Sedang Bersiaran
+                            {t("now_playing")}
                           </span>
                         )}
                         {program.status === "live" && !isCurrent && (
@@ -302,7 +276,6 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
                       )}
                     </div>
 
-                    {/* Thumbnail if available */}
                     {program.thumbnail && (
                       <div className="flex-shrink-0 w-20 h-14 rounded-lg overflow-hidden">
                         <img
@@ -314,14 +287,14 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
                     )}
                   </div>
 
-                  {/* Mobile layout: stacked */}
+                  {/* Mobile layout */}
                   <div className="sm:hidden">
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-2">
                         {isCurrent && (
                           <span className="inline-flex items-center gap-1 bg-green-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">
                             <span className="w-1 h-1 bg-white rounded-full animate-pulse" />
-                            LIVE
+                            {t("live")}
                           </span>
                         )}
                         {program.status === "live" && !isCurrent && (
@@ -368,4 +341,28 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
       </div>
     </div>
   );
+}
+
+function calcDuration(start: string, end: string): string {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  let diff = (eh * 60 + em) - (sh * 60 + sm);
+  if (diff < 0) diff += 24 * 60;
+  const h = Math.floor(diff / 60);
+  const m = diff % 60;
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
+}
+
+function formatTime12h(time: string): string {
+  const [h, m] = time.split(":").map(Number);
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
+}
+
+function getCurrentTimeStr(): string {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 }

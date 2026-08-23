@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useLanguage } from "@/components/LanguageProvider";
 import Hero from "@/components/Hero";
 import ChannelSection from "@/components/ChannelSection";
 
@@ -32,13 +33,12 @@ export default function HomePageClient({
   initialChannels,
   initialSettings,
 }: HomePageClientProps) {
-  // Start with server-provided data — no flash
+  const { t, language } = useLanguage();
   const [channels, setChannels] = useState<Channel[]>(initialChannels);
   const [settings] = useState<Settings>(initialSettings);
   const [error, setError] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
 
-  // SSE for real-time channel updates
   const connectSSE = useCallback(() => {
     try {
       const es = new EventSource("/api/channels/events");
@@ -66,7 +66,7 @@ export default function HomePageClient({
 
       eventSourceRef.current = es;
     } catch {
-      // SSE not supported — data is already loaded from server
+      // SSE not supported
     }
   }, []);
 
@@ -79,6 +79,13 @@ export default function HomePageClient({
 
   const saluranTV = channels.filter((c) => c.category === "saluran-tv");
   const saluranKhas = channels.filter((c) => c.category === "saluran-khas");
+
+  const heroTranslations = {
+    hero_badge: t("hero_badge"),
+    hero_cta: t("hero_cta"),
+    hero_title_fallback: t("hero_title_fallback"),
+    hero_desc_fallback: t("hero_desc_fallback"),
+  };
 
   if (error && channels.length === 0) {
     return (
@@ -98,10 +105,10 @@ export default function HomePageClient({
             />
           </svg>
           <h2 className="text-white text-xl font-bold mb-2">
-            Gagal memuatkan saluran
+            {t("load_channels_error")}
           </h2>
           <p className="text-gray-400 mb-6">
-            Sila semak sambungan internet anda dan cuba lagi.
+            {t("load_channels_error_desc")}
           </p>
           <button
             onClick={() => {
@@ -110,7 +117,7 @@ export default function HomePageClient({
             }}
             className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-xl transition-colors font-medium"
           >
-            Cuba Semula
+            {t("try_again")}
           </button>
         </div>
       </div>
@@ -119,19 +126,19 @@ export default function HomePageClient({
 
   return (
     <div>
-      <Hero settings={settings} />
+      <Hero settings={settings} translations={heroTranslations} />
 
       {/* Saluran TV */}
       <ChannelSection
         id="saluran-tv"
-        title={settings.saluran_tv_title || "Saluran TV"}
+        title={settings.saluran_tv_title || t("saluran_tv_title")}
         channels={saluranTV}
       />
 
       {/* Saluran Khas */}
       <ChannelSection
         id="saluran-khas"
-        title={settings.saluran_khas_title || "Saluran Khas"}
+        title={settings.saluran_khas_title || t("saluran_khas_title")}
         channels={saluranKhas}
       />
 
@@ -139,7 +146,7 @@ export default function HomePageClient({
       {channels.length === 0 && (
         <div className="text-center py-20">
           <p className="text-gray-500 text-lg">
-            Tiada saluran tersedia buat masa ini.
+            {t("no_channels")}
           </p>
         </div>
       )}
