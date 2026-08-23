@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { ensureDatabase } from "@/lib/db-init";
 import HomePageClient from "@/components/HomePageClient";
-
 // Force dynamic — never cache this page statically
 export const dynamic = "force-dynamic";
 
