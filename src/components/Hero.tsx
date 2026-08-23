@@ -1,23 +1,14 @@
-"use client";
-
-import { useEffect, useState } from "react";
-
 interface Settings {
   hero_title?: string;
   hero_description?: string;
   hero_image?: string;
 }
 
-export default function Hero() {
-  const [settings, setSettings] = useState<Settings>({});
+interface HeroProps {
+  settings?: Settings;
+}
 
-  useEffect(() => {
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((data) => setSettings(data))
-      .catch(() => {});
-  }, []);
-
+export default function Hero({ settings = {} }: HeroProps) {
   return (
     <section className="relative h-[60vh] min-h-[400px] flex items-center justify-center overflow-hidden">
       {/* Background */}
@@ -50,12 +41,12 @@ export default function Hero() {
         </div>
 
         <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold text-white mb-6 tracking-tight leading-tight">
-          {settings.hero_title || "Siaran Langsung Televisyen Malaysia"}
+          {settings.hero_title || "eBilikAgamaTV"}
         </h1>
 
         <p className="text-lg sm:text-xl text-gray-300 max-w-2xl mx-auto mb-8 leading-relaxed">
           {settings.hero_description ||
-            "Tonton saluran televisyen Malaysia secara langsung. Semua saluran RTM di satu tempat."}
+            "Media Bilik Agama™ yang dibangunkan oleh Unit Hal Ehwal Islam SMJK Chung Hwa Tenom untuk memperluas dakwah Islam dikalangan murid dan ibu bapa."}
         </p>
 
         <a
