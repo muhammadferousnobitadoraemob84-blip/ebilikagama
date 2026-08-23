@@ -157,15 +157,15 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
   const today = new Date().toISOString().split("T")[0];
 
   return (
-    <div className="bg-gray-900/50 border border-white/10 rounded-2xl overflow-hidden">
+    <div className="bg-gray-900/50 border border-white/10 rounded-xl sm:rounded-2xl overflow-hidden">
       {/* Channel Tabs */}
-      <div className="border-b border-white/10 px-4 pt-4">
-        <div className="flex gap-2 overflow-x-auto pb-3 scrollbar-hide">
+      <div className="border-b border-white/10 px-3 sm:px-4 pt-3 sm:pt-4">
+        <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-2.5 sm:pb-3 scrollbar-hide">
           {channels.map((ch) => (
             <button
               key={ch.id}
               onClick={() => setSelectedChannelId(ch.id)}
-              className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+              className={`flex-shrink-0 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
                 selectedChannelId === ch.id
                   ? "bg-red-600 text-white"
                   : "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"
@@ -178,8 +178,8 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
       </div>
 
       {/* Date Selector */}
-      <div className="border-b border-white/10 px-4 pt-3 pb-3">
-        <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+      <div className="border-b border-white/10 px-3 sm:px-4 pt-2.5 sm:pt-3 pb-2.5 sm:pb-3">
+        <div className="flex gap-1.5 sm:gap-2 overflow-x-auto scrollbar-hide">
           {dates.map((date) => {
             const isSelected = date === selectedDate;
             const isToday = date === today;
@@ -187,7 +187,7 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
               <button
                 key={date}
                 onClick={() => setSelectedDate(date)}
-                className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                className={`flex-shrink-0 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
                   isSelected
                     ? "bg-white text-gray-900"
                     : isToday
@@ -197,7 +197,7 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
               >
                 {formatDateShort(date)}
                 {isToday && !isSelected && (
-                  <span className="ml-1.5 text-xs text-red-400">Hari Ini</span>
+                  <span className="ml-1 sm:ml-1.5 text-[10px] sm:text-xs text-red-400">Hari Ini</span>
                 )}
               </button>
             );
@@ -206,25 +206,25 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
       </div>
 
       {/* Programs */}
-      <div ref={scheduleRef} className="max-h-[600px] overflow-y-auto">
+      <div ref={scheduleRef} className="max-h-[500px] sm:max-h-[600px] overflow-y-auto">
         {loading ? (
-          <div className="p-12 text-center">
+          <div className="p-8 sm:p-12 text-center">
             <div className="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
             <p className="text-gray-400 text-sm">Memuatkan jadual...</p>
           </div>
         ) : programs.length === 0 ? (
-          <div className="p-12 text-center">
-            <svg className="w-12 h-12 text-gray-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="p-8 sm:p-12 text-center">
+            <svg className="w-10 h-10 sm:w-12 sm:h-12 text-gray-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            <p className="text-gray-400">Tiada program untuk tarikh ini.</p>
-            <p className="text-gray-500 text-sm mt-1">{formatFullDate(selectedDate)}</p>
+            <p className="text-gray-400 text-sm">Tiada program untuk tarikh ini.</p>
+            <p className="text-gray-500 text-xs sm:text-sm mt-1">{formatFullDate(selectedDate)}</p>
           </div>
         ) : (
-          <div className="p-4 space-y-1">
+          <div className="p-3 sm:p-4 space-y-1">
             {/* Date header */}
-            <div className="px-2 py-3 mb-2">
-              <h3 className="text-white font-semibold">{formatFullDate(selectedDate)}</h3>
+            <div className="px-1 sm:px-2 py-2 sm:py-3 mb-1 sm:mb-2">
+              <h3 className="text-white font-semibold text-sm sm:text-base">{formatFullDate(selectedDate)}</h3>
             </div>
 
             {programs.map((program, index) => {
@@ -238,13 +238,12 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
                 (program.date === today && program.endTime <= now);
 
               const isPast = isFinished;
-              const isUpcoming = !isPast && !isCurrent;
 
               return (
                 <div
                   key={program.id}
                   ref={isCurrent ? currentProgramRef : undefined}
-                  className={`rounded-xl p-4 transition-all ${
+                  className={`rounded-lg sm:rounded-xl p-3 sm:p-4 transition-all ${
                     isCurrent
                       ? "bg-green-600/15 border border-green-500/30 shadow-lg shadow-green-900/20"
                       : isPast
@@ -252,7 +251,8 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
                       : "bg-gray-800/60 hover:bg-gray-800"
                   } ${index < programs.length - 1 ? "border-b border-white/5" : ""}`}
                 >
-                  <div className="flex items-start gap-4">
+                  {/* Desktop layout: side by side */}
+                  <div className="hidden sm:flex items-start gap-4">
                     {/* Time */}
                     <div className="flex-shrink-0 w-24">
                       <div className={`text-lg font-bold ${
@@ -311,6 +311,53 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
                           className="w-full h-full object-cover"
                         />
                       </div>
+                    )}
+                  </div>
+
+                  {/* Mobile layout: stacked */}
+                  <div className="sm:hidden">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        {isCurrent && (
+                          <span className="inline-flex items-center gap-1 bg-green-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">
+                            <span className="w-1 h-1 bg-white rounded-full animate-pulse" />
+                            LIVE
+                          </span>
+                        )}
+                        {program.status === "live" && !isCurrent && (
+                          <span className="inline-flex items-center gap-1 bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">
+                            LIVE
+                          </span>
+                        )}
+                      </div>
+                      <span className={`text-xs font-medium ${
+                        isCurrent ? "text-green-400" : isPast ? "text-gray-600" : "text-gray-400"
+                      }`}>
+                        {formatTime12h(program.startTime)}
+                      </span>
+                    </div>
+                    <h4 className={`font-semibold text-sm ${
+                      isCurrent ? "text-green-300" : isPast ? "text-gray-400" : "text-white"
+                    }`}>
+                      {program.title}
+                    </h4>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className={`text-[11px] ${isPast ? "text-gray-600" : "text-gray-500"}`}>
+                        {calcDuration(program.startTime, program.endTime)}
+                      </span>
+                      {program.channel && (
+                        <>
+                          <span className="text-gray-700">·</span>
+                          <span className={`text-[11px] ${isPast ? "text-gray-600" : "text-gray-500"}`}>
+                            {program.channel.name}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    {program.description && (
+                      <p className={`text-xs mt-1.5 leading-relaxed line-clamp-2 ${isPast ? "text-gray-600" : "text-gray-400"}`}>
+                        {program.description}
+                      </p>
                     )}
                   </div>
                 </div>

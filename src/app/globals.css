@@ -163,3 +163,71 @@ html {
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+/* ===== MOBILE-SPECIFIC STYLES ===== */
+
+/* Touch-friendly tap targets on mobile */
+@media (max-width: 640px) {
+  /* Ensure minimum tap target size */
+  button, a, [role="button"] {
+    min-height: 44px;
+  }
+
+  /* Reduce hover effects on touch devices (they don't hover) */
+  .channel-card:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .img-zoom:hover {
+    transform: none;
+  }
+
+  /* Admin cards stack vertically on mobile */
+  .admin-card {
+    padding: 1rem;
+    border-radius: 0.5rem;
+  }
+
+  /* Admin inputs slightly larger on mobile for easier typing */
+  .admin-input {
+    padding: 0.875rem 0.875rem;
+    font-size: 16px; /* Prevents iOS zoom on focus */
+  }
+
+  /* Full-width admin buttons on mobile */
+  .admin-btn {
+    width: 100%;
+    text-align: center;
+    padding: 0.875rem 1.5rem;
+  }
+}
+
+/* Safe area for notch devices */
+@supports (padding: env(safe-area-inset-top)) {
+  header {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  footer {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Prevent iOS rubber-banding overscroll on body */
+@media (max-width: 640px) {
+  html, body {
+    overscroll-behavior-y: none;
+  }
+}
+
+/* Horizontal scroll snap for date/channel tabs on mobile */
+@media (max-width: 640px) {
+  .scroll-snap-x {
+    scroll-snap-type: x mandatory;
+  }
+
+  .scroll-snap-x > * {
+    scroll-snap-align: start;
+  }
+}

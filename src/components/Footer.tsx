@@ -29,41 +29,41 @@ export default function Footer() {
   ];
 
   return (
-    <footer className="bg-black/80 border-t border-white/10 mt-20">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+    <footer className="bg-black/80 border-t border-white/10 mt-12 sm:mt-20">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 sm:gap-8">
           {/* Brand */}
           <div>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 bg-gradient-to-br from-red-600 to-red-800 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+            <div className="flex items-center gap-2.5 mb-3 sm:mb-4">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 bg-gradient-to-br from-red-600 to-red-800 rounded-lg flex items-center justify-center text-white font-bold text-xs sm:text-sm">
                 MS
               </div>
-              <span className="text-white font-bold text-lg">eBilikAgamaTV</span>
+              <span className="text-white font-bold text-base sm:text-lg">eBilikAgamaTV</span>
             </div>
-            <p className="text-gray-400 text-sm">
+            <p className="text-gray-400 text-xs sm:text-sm">
               {settings.footer_text || "© 2026 eBilikAgamaTV. Hak cipta terpelihara."}
             </p>
           </div>
 
           {/* Contact */}
           <div>
-            <h3 className="text-white font-semibold mb-4">Hubungi Kami</h3>
+            <h3 className="text-white font-semibold mb-3 sm:mb-4 text-sm sm:text-base">Hubungi Kami</h3>
             {settings.contact_email ? (
               <a
                 href={`mailto:${settings.contact_email}`}
-                className="text-gray-400 hover:text-white transition-colors text-sm"
+                className="text-gray-400 hover:text-white transition-colors text-xs sm:text-sm"
               >
                 {settings.contact_email}
               </a>
             ) : (
-              <p className="text-gray-500 text-sm">Tiada maklumat hubungan</p>
+              <p className="text-gray-500 text-xs sm:text-sm">Tiada maklumat hubungan</p>
             )}
           </div>
 
           {/* Social Links */}
           <div>
-            <h3 className="text-white font-semibold mb-4">Ikuti Kami</h3>
-            <div className="flex gap-3">
+            <h3 className="text-white font-semibold mb-3 sm:mb-4 text-sm sm:text-base">Ikuti Kami</h3>
+            <div className="flex gap-2.5 sm:gap-3">
               {socialLinks.map((social) => {
                 const url = settings[social.key as keyof Settings];
                 if (!url) return null;
@@ -73,33 +73,33 @@ export default function Footer() {
                     href={url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-10 h-10 bg-white/10 hover:bg-white/20 rounded-lg flex items-center justify-center transition-colors"
+                    className="w-9 h-9 sm:w-10 sm:h-10 bg-white/10 hover:bg-white/20 rounded-lg flex items-center justify-center transition-colors"
                     aria-label={social.label}
                   >
-                    <svg className="w-5 h-5 text-gray-300" fill="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-300" fill="currentColor" viewBox="0 0 24 24">
                       <path d={social.icon} />
                     </svg>
                   </a>
                 );
               })}
               {!Object.values(settings).some((v) => v && typeof v === "string" && v.startsWith("http")) && (
-                <p className="text-gray-500 text-sm">Tiada pautan media sosial</p>
+                <p className="text-gray-500 text-xs sm:text-sm">Tiada pautan media sosial</p>
               )}
             </div>
           </div>
         </div>
 
-        {/* Bottom Bar with discreet Admin link */}
-        <div className="mt-10 pt-6 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className="text-gray-600 text-xs">
+        {/* Bottom Bar */}
+        <div className="mt-8 sm:mt-10 pt-5 sm:pt-6 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-3">
+          <p className="text-gray-600 text-[11px] sm:text-xs">
             {settings.footer_text || "© 2026 eBilikAgamaTV. Hak cipta terpelihara."}
           </p>
           <a
             href="/admin/login"
-            className="inline-flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-400 hover:text-gray-200 text-xs font-medium px-3 py-1.5 rounded-lg transition-all"
+            className="inline-flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-400 hover:text-gray-200 text-[11px] sm:text-xs font-medium px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg transition-all"
             title="Admin"
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
