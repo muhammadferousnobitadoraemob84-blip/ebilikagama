@@ -19,7 +19,15 @@ export async function GET() {
             orderBy: { displayOrder: "asc" },
           });
           if (!closed) {
-            const data = `data: ${JSON.stringify(channels)}\n\n`;
+            // Strip base64 thumbnails to keep SSE payload small
+            const optimized = channels.map((ch) => ({
+              ...ch,
+              thumbnail:
+                ch.thumbnail && ch.thumbnail.startsWith("data:")
+                  ? `/api/images/channel/${ch.id}`
+                  : ch.thumbnail,
+            }));
+            const data = `data: ${JSON.stringify(optimized)}\n\n`;
             controller.enqueue(encoder.encode(data));
           }
         } catch {

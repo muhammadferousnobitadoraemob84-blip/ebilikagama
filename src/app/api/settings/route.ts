@@ -5,14 +5,24 @@ import { ensureDatabase } from "@/lib/db-init";
 
 export const dynamic = "force-dynamic";
 
+// Keys that may contain base64 image data
+const IMAGE_KEYS = new Set(["site_logo", "hero_image"]);
+
 // GET all settings (public)
 export async function GET() {
   try {
     await ensureDatabase();
-    const settings = await prisma.setting.findMany();
+    const settings = await prisma.setting.findMany({
+      select: { key: true, value: true },
+    });
     const settingsMap: Record<string, string> = {};
     settings.forEach((s) => {
-      settingsMap[s.key] = s.value;
+      // Replace base64 image data with API URLs to avoid huge responses
+      if (IMAGE_KEYS.has(s.key) && s.value.startsWith("data:")) {
+        settingsMap[s.key] = `/api/images/setting/${s.key}`;
+      } else {
+        settingsMap[s.key] = s.value;
+      }
     });
     return NextResponse.json(settingsMap);
   } catch {

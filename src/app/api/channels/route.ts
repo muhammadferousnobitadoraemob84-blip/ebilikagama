@@ -6,6 +6,12 @@ import { ensureDatabase } from "@/lib/db-init";
 
 export const dynamic = "force-dynamic";
 
+// Helper: convert base64 data URI to an API image URL
+function toImageUrl(base64Data: string | null, type: string, id: string): string | null {
+  if (!base64Data || !base64Data.startsWith("data:")) return null;
+  return `/api/images/${type}/${id}`;
+}
+
 // GET all channels (public — only active)
 export async function GET(request: NextRequest) {
   try {
@@ -13,6 +19,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const category = searchParams.get("category");
     const all = searchParams.get("all");
+    const raw = searchParams.get("raw"); // admin can request full base64
 
     const where: Record<string, unknown> = {};
     if (all !== "true") {
@@ -25,8 +32,31 @@ export async function GET(request: NextRequest) {
     const channels = await prisma.channel.findMany({
       where,
       orderBy: { displayOrder: "asc" },
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        twitchUsername: true,
+        thumbnail: true,
+        description: true,
+        liveStatus: true,
+        displayOrder: true,
+        active: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
+    // For public API: replace base64 thumbnails with lightweight URLs
+    if (raw !== "true") {
+      const optimized = channels.map((ch) => ({
+        ...ch,
+        thumbnail: toImageUrl(ch.thumbnail, "channel", ch.id),
+      }));
+      return NextResponse.json(optimized);
+    }
+
+    // Admin API: return full data including base64
     return NextResponse.json(channels);
   } catch {
     return NextResponse.json(

@@ -21,7 +21,15 @@ export async function GET(request: NextRequest) {
         include: { channel: { select: { id: true, name: true } } },
         orderBy: { startTime: "asc" },
       });
-      return NextResponse.json(programs);
+      // Strip base64 thumbnails from public response
+      const optimized = programs.map((p) => ({
+        ...p,
+        thumbnail:
+          p.thumbnail && p.thumbnail.startsWith("data:")
+            ? `/api/images/program/${p.id}`
+            : p.thumbnail,
+      }));
+      return NextResponse.json(optimized);
     } catch {
       return NextResponse.json([], { status: 500 });
     }

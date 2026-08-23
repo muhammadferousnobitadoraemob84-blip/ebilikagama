@@ -8,10 +8,20 @@ export const dynamic = "force-dynamic";
 async function getSettings() {
   try {
     await ensureDatabase();
-    const settings = await prisma.setting.findMany();
+    const settings = await prisma.setting.findMany({
+      select: { key: true, value: true },
+    });
     const map: Record<string, string> = {};
     settings.forEach((s) => {
-      map[s.key] = s.value;
+      // Replace base64 images with API URLs to keep HTML small
+      if (
+        (s.key === "site_logo" || s.key === "hero_image") &&
+        s.value.startsWith("data:")
+      ) {
+        map[s.key] = `/api/images/setting/${s.key}`;
+      } else {
+        map[s.key] = s.value;
+      }
     });
     return {
       hero_title: map.hero_title || "",
@@ -31,13 +41,27 @@ async function getChannels() {
     const channels = await prisma.channel.findMany({
       where: { active: true },
       orderBy: { displayOrder: "asc" },
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        twitchUsername: true,
+        thumbnail: true,
+        description: true,
+        liveStatus: true,
+        displayOrder: true,
+      },
     });
+    // Replace base64 thumbnails with lightweight image URLs
     return channels.map((c) => ({
       id: c.id,
       name: c.name,
       category: c.category,
       twitchUsername: c.twitchUsername,
-      thumbnail: c.thumbnail,
+      thumbnail:
+        c.thumbnail && c.thumbnail.startsWith("data:")
+          ? `/api/images/channel/${c.id}`
+          : c.thumbnail,
       description: c.description,
       liveStatus: c.liveStatus,
       displayOrder: c.displayOrder,
@@ -48,9 +72,12 @@ async function getChannels() {
 }
 
 export default async function HomePage() {
-  // Fetch BOTH settings and channels on the server before rendering
-  const [settings, channels] = await Promise.all([getSettings(), getChannels()]);
+  const [settings, channels] = await Promise.all([
+    getSettings(),
+    getChannels(),
+  ]);
 
-  // Pass data as props — no client-side fetch needed for initial render
-  return <HomePageClient initialChannels={channels} initialSettings={settings} />;
+  return (
+    <HomePageClient initialChannels={channels} initialSettings={settings} />
+  );
 }

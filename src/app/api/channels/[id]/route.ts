@@ -21,7 +21,15 @@ export async function GET(
       );
     }
 
-    return NextResponse.json(channel);
+    // Replace base64 thumbnail with image URL to keep response small
+    const optimized = {
+      ...channel,
+      thumbnail:
+        channel.thumbnail && channel.thumbnail.startsWith("data:")
+          ? `/api/images/channel/${channel.id}`
+          : channel.thumbnail,
+    };
+    return NextResponse.json(optimized);
   } catch {
     return NextResponse.json(
       { error: "Gagal memuatkan saluran" },
