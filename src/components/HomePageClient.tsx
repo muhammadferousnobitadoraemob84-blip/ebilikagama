@@ -33,12 +33,18 @@ export default function HomePageClient({
   initialChannels,
   initialSettings,
 }: HomePageClientProps) {
-  const { t, language } = useLanguage();
+  const { t } = useLanguage();
   const [channels, setChannels] = useState<Channel[]>(initialChannels);
   const [settings] = useState<Settings>(initialSettings);
   const [error, setError] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const statusIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const channelsRef = useRef<Channel[]>(initialChannels);
 
+  // Keep ref in sync
+  channelsRef.current = channels;
+
+  // ── SSE for real-time channel add/edit/delete ──
   const connectSSE = useCallback(() => {
     try {
       const es = new EventSource("/api/channels/events");
@@ -48,10 +54,11 @@ export default function HomePageClient({
           const data = JSON.parse(event.data);
           if (Array.isArray(data)) {
             setChannels(data);
+            channelsRef.current = data;
             setError(false);
           }
         } catch {
-          // ignore parse errors
+          // ignore
         }
       };
 
@@ -76,6 +83,76 @@ export default function HomePageClient({
       eventSourceRef.current?.close();
     };
   }, [connectSSE]);
+
+  // ── Twitch live status polling (every 1 second) ──
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/channels/status", {
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+
+      const data = await res.json();
+      if (!data.channels || !Array.isArray(data.channels)) return;
+
+      // Build a map: channelId → status
+      const statusMap = new Map<string, string>();
+      for (const ch of data.channels) {
+        statusMap.set(ch.id, ch.status);
+      }
+
+      // Update channels with real-time status
+      setChannels((prev) =>
+        prev.map((ch) => {
+          const liveStatus = statusMap.get(ch.id);
+          if (!liveStatus || liveStatus === "unknown") return ch;
+          const newLiveStatus = liveStatus === "online" ? "live" : "offline";
+          if (ch.liveStatus === newLiveStatus) return ch;
+          return { ...ch, liveStatus: newLiveStatus };
+        })
+      );
+    } catch {
+      // Status check failed — keep previous status
+    }
+  }, []);
+
+  // Start/stop polling based on page visibility
+  useEffect(() => {
+    // Fetch immediately on mount
+    fetchStatus();
+
+    const startPolling = () => {
+      if (statusIntervalRef.current) return;
+      statusIntervalRef.current = setInterval(fetchStatus, 2000);
+    };
+
+    const stopPolling = () => {
+      if (statusIntervalRef.current) {
+        clearInterval(statusIntervalRef.current);
+        statusIntervalRef.current = null;
+      }
+    };
+
+    // Start polling
+    startPolling();
+
+    // Pause when tab is hidden, resume when visible
+    const handleVisibility = () => {
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        fetchStatus(); // immediate check on return
+        startPolling();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      stopPolling();
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [fetchStatus]);
 
   const saluranTV = channels.filter((c) => c.category === "saluran-tv");
   const saluranKhas = channels.filter((c) => c.category === "saluran-khas");
