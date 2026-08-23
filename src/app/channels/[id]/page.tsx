@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import TwitchPlayer from "@/components/TwitchPlayer";
@@ -21,9 +21,13 @@ export default function ChannelPage() {
   const params = useParams();
   const { t } = useLanguage();
   const [channel, setChannel] = useState<Channel | null>(null);
+  const [liveStatus, setLiveStatus] = useState<"checking" | "live" | "offline">("checking");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const channelRef = useRef<Channel | null>(null);
 
+  // Fetch channel data
   useEffect(() => {
     if (!params.id) return;
 
@@ -34,6 +38,7 @@ export default function ChannelPage() {
       })
       .then((data) => {
         setChannel(data);
+        channelRef.current = data;
         setLoading(false);
       })
       .catch(() => {
@@ -41,6 +46,61 @@ export default function ChannelPage() {
         setLoading(false);
       });
   }, [params.id]);
+
+  // Fetch real-time Twitch status for THIS channel
+  const fetchStatus = useCallback(async () => {
+    const ch = channelRef.current;
+    if (!ch) return;
+
+    try {
+      const res = await fetch("/api/channels/status", { cache: "no-store" });
+      if (!res.ok) return;
+
+      const data = await res.json();
+      if (!data.channels || !Array.isArray(data.channels)) return;
+
+      const match = data.channels.find((c: { id: string; status: string }) => c.id === ch.id);
+      if (!match) return;
+
+      if (match.status === "online") {
+        setLiveStatus("live");
+      } else if (match.status === "offline") {
+        setLiveStatus("offline");
+      }
+      // "unknown" → keep current status
+    } catch {
+      // keep previous status
+    }
+  }, []);
+
+  // Start polling once channel is loaded
+  useEffect(() => {
+    if (!channel) return;
+
+    // Set initial status from DB
+    if (channel.liveStatus === "live") {
+      setLiveStatus("live");
+    } else {
+      // Start with "checking" then fetch real status
+      fetchStatus();
+    }
+
+    // Poll every 2 seconds
+    intervalRef.current = setInterval(fetchStatus, 2000);
+
+    // Also check on visibility change
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        fetchStatus();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [channel, fetchStatus]);
 
   if (loading) {
     return (
@@ -57,7 +117,7 @@ export default function ChannelPage() {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="text-center">
-          <h2 className="text-white text-xl sm:text-2xl font-bold mb-4">
+          <h2 className="text-white text-lg sm:text-2xl font-bold mb-4">
             {t("channel_not_found")}
           </h2>
           <p className="text-gray-400 text-sm sm:text-base mb-6">
@@ -73,6 +133,9 @@ export default function ChannelPage() {
       </div>
     );
   }
+
+  const isLive = liveStatus === "live";
+  const isChecking = liveStatus === "checking";
 
   return (
     <div className="min-h-screen bg-black">
@@ -114,14 +177,19 @@ export default function ChannelPage() {
               <h1 className="text-white text-lg sm:text-2xl md:text-3xl font-bold">
                 {channel.name}
               </h1>
-              {channel.liveStatus === "live" ? (
-                <span className="bg-red-600 text-white text-[10px] sm:text-xs font-bold px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md flex items-center gap-1 sm:gap-1.5">
+              {isChecking ? (
+                <span className="bg-gray-700 text-gray-300 text-[10px] sm:text-xs font-medium px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md flex items-center gap-1 sm:gap-1.5">
+                  <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-gray-400 rounded-full animate-pulse" />
+                  {t("checking_status")}
+                </span>
+              ) : isLive ? (
+                <span className="bg-green-600 text-white text-[10px] sm:text-xs font-bold px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md flex items-center gap-1 sm:gap-1.5">
                   <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white rounded-full animate-pulse" />
-                  {t("live")}
+                  {t("status_online")}
                 </span>
               ) : (
-                <span className="bg-gray-600/80 text-gray-200 text-[10px] sm:text-xs font-medium px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md">
-                  {t("offline")}
+                <span className="bg-red-600 text-white text-[10px] sm:text-xs font-bold px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md">
+                  {t("status_offline")}
                 </span>
               )}
             </div>

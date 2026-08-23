@@ -46,6 +46,7 @@ const translations = {
     offline: "OFFLINE",
     status_online: "ONLINE",
     status_offline: "OFFLINE",
+    checking_status: "Checking...",
 
     // Channel Page
     loading_channel: "Loading channel...",
@@ -98,6 +99,7 @@ const translations = {
     offline: "OFFLINE",
     status_online: "DALAM TALIAN",
     status_offline: "LUAR TALIAN",
+    checking_status: "Menyemak...",
 
     // Channel Page
     loading_channel: "Memuatkan saluran...",
@@ -150,6 +152,7 @@ const translations = {
     offline: "离线",
     status_online: "在线",
     status_offline: "离线",
+    checking_status: "检查中...",
 
     // Channel Page
     loading_channel: "加载频道中...",
