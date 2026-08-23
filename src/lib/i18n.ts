@@ -49,12 +49,16 @@ const translations = {
     checking_status: "Checking...",
 
     // Channel Page
+    loading: "Loading...",
     loading_channel: "Loading channel...",
     channel_not_found: "Channel not found",
     channel_not_found_desc: "The channel you're looking for doesn't exist or has been deleted.",
     back_to_channels: "← Back to Channel List",
     back: "Back",
     schedule_title: "TV Schedule",
+    view_full_schedule: "View Full Schedule",
+    no_program_available: "No program available.",
+    next: "NEXT",
 
     // Schedule / EPG
     today: "Today",
@@ -109,12 +113,16 @@ const translations = {
     checking_status: "Menyemak...",
 
     // Channel Page
+    loading: "Memuatkan...",
     loading_channel: "Memuatkan saluran...",
     channel_not_found: "Saluran tidak dijumpai",
     channel_not_found_desc: "Saluran yang anda cari tidak wujud atau telah dipadam.",
     back_to_channels: "← Kembali ke Senarai Saluran",
     back: "Kembali",
     schedule_title: "Jadual Siaran",
+    view_full_schedule: "Lihat Jadual Penuh",
+    no_program_available: "Tiada program tersedia.",
+    next: "SETERUSNYA",
 
     // Schedule / EPG
     today: "Hari Ini",
@@ -169,12 +177,16 @@ const translations = {
     checking_status: "检查中...",
 
     // Channel Page
+    loading: "加载中...",
     loading_channel: "加载频道中...",
     channel_not_found: "频道未找到",
     channel_not_found_desc: "您查找的频道不存在或已被删除。",
     back_to_channels: "← 返回频道列表",
     back: "返回",
     schedule_title: "节目时间表",
+    view_full_schedule: "查看完整节目表",
+    no_program_available: "暂无节目。",
+    next: "接下来",
 
     // Schedule / EPG
     today: "今天",

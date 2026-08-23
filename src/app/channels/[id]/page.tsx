@@ -4,7 +4,6 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import TwitchPlayer from "@/components/TwitchPlayer";
-import ProgramSchedule from "@/components/ProgramSchedule";
 import { useLanguage } from "@/components/LanguageProvider";
 
 interface Channel {
@@ -17,6 +16,16 @@ interface Channel {
   liveStatus: string;
 }
 
+interface Program {
+  id: string;
+  title: string;
+  description?: string;
+  startTime: string;
+  endTime: string;
+  channelId: string;
+  thumbnail?: string;
+}
+
 export default function ChannelPage() {
   const params = useParams();
   const { t } = useLanguage();
@@ -24,6 +33,9 @@ export default function ChannelPage() {
   const [liveStatus, setLiveStatus] = useState<"checking" | "live" | "offline">("checking");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [currentProgram, setCurrentProgram] = useState<Program | null>(null);
+  const [nextProgram, setNextProgram] = useState<Program | null>(null);
+  const [loadingSchedule, setLoadingSchedule] = useState(true);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const channelRef = useRef<Channel | null>(null);
 
@@ -67,11 +79,62 @@ export default function ChannelPage() {
       } else if (match.status === "offline") {
         setLiveStatus("offline");
       }
-      // "unknown" → keep current status
     } catch {
       // keep previous status
     }
   }, []);
+
+  // Fetch current/next program for this channel
+  useEffect(() => {
+    if (!params.id) return;
+
+    const fetchCurrentProgram = async () => {
+      try {
+        // Get today's date in Malaysia timezone
+        const now = new Date();
+        const malaysiaTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" }));
+        const dateStr = malaysiaTime.toISOString().split("T")[0];
+
+        const res = await fetch(`/api/programs?channelId=${params.id}&date=${dateStr}`, { cache: "no-store" });
+        if (!res.ok) return;
+
+        const programs: Program[] = await res.json();
+        
+        // Get current time in Malaysia
+        const currentTime = malaysiaTime.getHours() * 60 + malaysiaTime.getMinutes();
+        
+        let foundCurrent: Program | null = null;
+        let foundNext: Program | null = null;
+
+        for (const program of programs) {
+          const start = new Date(program.startTime);
+          const end = new Date(program.endTime);
+          
+          // Convert to Malaysia time
+          const startMalaysia = new Date(start.toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" }));
+          const endMalaysia = new Date(end.toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" }));
+          
+          const startMinutes = startMalaysia.getHours() * 60 + startMalaysia.getMinutes();
+          const endMinutes = endMalaysia.getHours() * 60 + endMalaysia.getMinutes();
+
+          if (currentTime >= startMinutes && currentTime < endMinutes) {
+            foundCurrent = program;
+          } else if (startMinutes > currentTime && !foundNext) {
+            foundNext = program;
+          }
+        }
+
+        setCurrentProgram(foundCurrent);
+        setNextProgram(foundNext);
+      } catch {
+        // ignore
+      } finally {
+        setLoadingSchedule(false);
+      }
+    };
+
+    fetchCurrentProgram();
+  }, [params.id]);
 
   // Start polling once channel is loaded
   useEffect(() => {
@@ -81,7 +144,6 @@ export default function ChannelPage() {
     if (channel.liveStatus === "live") {
       setLiveStatus("live");
     } else {
-      // Start with "checking" then fetch real status
       fetchStatus();
     }
 
@@ -212,17 +274,67 @@ export default function ChannelPage() {
         </div>
       </div>
 
-      {/* TV Program Schedule */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pb-8 sm:pb-12">
-        <div className="mb-4 sm:mb-6">
-          <h2 className="text-white text-base sm:text-xl font-bold flex items-center gap-2">
-            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            {t("schedule_title")}
-          </h2>
-        </div>
-        <ProgramSchedule currentChannelId={channel.id} />
+      {/* Compact Current/Next Program */}
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pb-4 sm:pb-6">
+        {loadingSchedule ? (
+          <div className="bg-zinc-900/50 rounded-xl p-4 sm:p-5 border border-zinc-800">
+            <div className="flex items-center gap-2 text-gray-400 text-sm">
+              <div className="w-4 h-4 border-2 border-gray-500 border-t-transparent rounded-full animate-spin" />
+              {t("loading")}
+            </div>
+          </div>
+        ) : (
+          <div className="bg-zinc-900/50 rounded-xl p-4 sm:p-5 border border-zinc-800">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-white text-sm sm:text-base font-semibold">{t("schedule_title")}</h3>
+              <Link
+                href="/schedule"
+                className="text-red-400 hover:text-red-300 text-xs sm:text-sm font-medium flex items-center gap-1 transition-colors"
+              >
+                {t("view_full_schedule")}
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
+            </div>
+
+            {!currentProgram && !nextProgram ? (
+              <p className="text-gray-500 text-xs sm:text-sm">{t("no_program_available")}</p>
+            ) : (
+              <div className="space-y-3">
+                {/* Current Program */}
+                {currentProgram && (
+                  <div className="bg-green-900/20 border border-green-800/30 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="bg-green-600 text-white text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">
+                        {t("now_playing")}
+                      </span>
+                    </div>
+                    <p className="text-white text-sm sm:text-base font-medium">{currentProgram.title}</p>
+                    <p className="text-gray-400 text-xs sm:text-sm">
+                      {new Date(currentProgram.startTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kuala_Lumpur" })} – {new Date(currentProgram.endTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kuala_Lumpur" })}
+                    </p>
+                  </div>
+                )}
+
+                {/* Next Program */}
+                {nextProgram && (
+                  <div className="bg-zinc-800/50 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="bg-zinc-700 text-gray-300 text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">
+                        {t("next")}
+                      </span>
+                    </div>
+                    <p className="text-white text-sm sm:text-base font-medium">{nextProgram.title}</p>
+                    <p className="text-gray-400 text-xs sm:text-sm">
+                      {new Date(nextProgram.startTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kuala_Lumpur" })} – {new Date(nextProgram.endTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kuala_Lumpur" })}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
