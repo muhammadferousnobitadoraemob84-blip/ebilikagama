@@ -13,6 +13,8 @@ export async function ensureDatabase(): Promise<boolean> {
   // Step 1: Check if tables already exist
   try {
     await prisma.user.findFirst();
+    // Tables exist — run migrations then mark initialized
+    await runMigrations();
     _initialized = true;
     return true;
   } catch {
@@ -98,6 +100,16 @@ export async function ensureDatabase(): Promise<boolean> {
       // Index might already exist
     }
 
+    // Add profilePhoto column to User table if it doesn't exist
+    try {
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "profilePhoto" TEXT;
+      `);
+      console.log("[DB-INIT] profilePhoto column ensured.");
+    } catch {
+      // Column might already exist or different DB engine
+    }
+
     console.log("[DB-INIT] Tables created successfully.");
 
     // Step 4: Seed data
@@ -108,6 +120,17 @@ export async function ensureDatabase(): Promise<boolean> {
   } catch (err) {
     console.error("[DB-INIT] Table creation failed:", err);
     return false;
+  }
+}
+
+async function runMigrations() {
+  // Add profilePhoto column to User table if it doesn't exist
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "profilePhoto" TEXT;
+    `);
+  } catch {
+    // Column might already exist or different DB engine
   }
 }
 
