@@ -59,6 +59,9 @@ const translations = {
     view_full_schedule: "View Full Schedule",
     no_program_available: "No program available.",
     next: "NEXT",
+    program_guide: "Program Guide",
+    on_air: "ON AIR",
+    upcoming: "UPCOMING",
 
     // Schedule / EPG
     today: "Today",
@@ -123,6 +126,9 @@ const translations = {
     view_full_schedule: "Lihat Jadual Penuh",
     no_program_available: "Tiada program tersedia.",
     next: "SETERUSNYA",
+    program_guide: "Panduan Program",
+    on_air: "SEDANG DISIAR",
+    upcoming: "Akan Datang",
 
     // Schedule / EPG
     today: "Hari Ini",
@@ -187,6 +193,9 @@ const translations = {
     view_full_schedule: "查看完整节目表",
     no_program_available: "暂无节目。",
     next: "接下来",
+    program_guide: "节目指南",
+    on_air: "正在播出",
+    upcoming: "即将播出",
 
     // Schedule / EPG
     today: "今天",
