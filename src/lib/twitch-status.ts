@@ -1,6 +1,10 @@
 // Server-side Twitch live status detection
-// Uses the Twitch channel page metadata — no API keys required.
-// Results are cached for 10 seconds per channel to avoid hammering Twitch.
+// Uses the Twitch GQL API (the same internal API the Twitch website uses).
+// No OAuth credentials needed — uses the public Twitch web Client-ID.
+// Results are cached for 10 seconds per channel to avoid rate limiting.
+
+const TWITCH_GQL_URL = "https://gql.twitch.tv/gql";
+const TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko";
 
 interface StatusCache {
   status: "online" | "offline" | "unknown";
@@ -9,6 +13,15 @@ interface StatusCache {
 
 const cache = new Map<string, StatusCache>();
 const CACHE_TTL = 10_000; // 10 seconds
+
+interface GQLResponse {
+  data: {
+    user: {
+      stream: { type: string; createdAt: string } | null;
+      displayName: string;
+    } | null;
+  };
+}
 
 export async function getChannelStatus(
   username: string
@@ -23,21 +36,20 @@ export async function getChannelStatus(
 
   try {
     const clean = key.replace(/[^a-zA-Z0-9_]/g, "");
-    if (!clean) {
+    if (!clean || clean.length < 4) {
       setCache(key, "unknown");
       return "unknown";
     }
 
-    const response = await fetch(`https://www.twitch.tv/${clean}`, {
-      method: "GET",
+    const response = await fetch(TWITCH_GQL_URL, {
+      method: "POST",
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
+        "Client-ID": TWITCH_CLIENT_ID,
+        "Content-Type": "application/json",
       },
-      redirect: "follow",
+      body: JSON.stringify({
+        query: `query { user(login: "${clean}") { stream { type createdAt } displayName } }`,
+      }),
       signal: AbortSignal.timeout(8000),
     });
 
@@ -46,68 +58,29 @@ export async function getChannelStatus(
       return "unknown";
     }
 
-    const html = await response.text();
+    const data: GQLResponse = await response.json();
 
-    // Method 1: Check for isLive in page data
-    if (
-      html.includes('"isLive":true') ||
-      html.includes('"isLive": true') ||
-      html.includes('"isLive":true,')
-    ) {
-      setCache(key, "online");
-      return "online";
+    // User doesn't exist
+    if (!data.data?.user) {
+      setCache(key, "unknown");
+      return "unknown";
     }
 
-    // Method 2: Check for stream type indicator
-    if (
-      html.includes('"type":"live"') ||
-      html.includes('"type": "live"') ||
-      html.includes('"type":"live",')
-    ) {
-      setCache(key, "online");
-      return "online";
-    }
-
-    // Method 3: Check for live broadcast indicator
-    if (
-      html.includes('"isLiveBroadcast":true') ||
-      html.includes('"isLiveBroadcast": true')
-    ) {
-      setCache(key, "online");
-      return "online";
-    }
-
-    // Method 4: Check for stream data presence (non-null stream object)
-    // If the page contains a stream object with actual data, it's live
-    const streamMatch = html.match(/"stream"\s*:\s*\{/);
-    if (streamMatch) {
-      // Verify it's not an empty/null stream
-      const idx = streamMatch.index!;
-      const snippet = html.substring(idx, idx + 200);
-      if (
-        !snippet.includes('"stream":null') &&
-        !snippet.includes('"stream": null') &&
-        !snippet.includes('"stream":{}') &&
-        !snippet.includes('"stream": {}')
-      ) {
-        setCache(key, "online");
-        return "online";
-      }
-    }
-
-    // If we found login data but no live indicators, it's offline
-    if (
-      html.includes('"login":"') ||
-      html.includes('"login": "') ||
-      html.includes("login_name")
-    ) {
+    // User exists but no stream → OFFLINE
+    if (!data.data.user.stream) {
       setCache(key, "offline");
       return "offline";
     }
 
-    // Channel might not exist or page structure changed
-    setCache(key, "unknown");
-    return "unknown";
+    // Stream exists and type is "live" → ONLINE
+    if (data.data.user.stream.type === "live") {
+      setCache(key, "online");
+      return "online";
+    }
+
+    // Stream exists but not "live" type (e.g. "rerun") → treat as offline
+    setCache(key, "offline");
+    return "offline";
   } catch {
     // Network error — return last cached status or unknown
     const cached = cache.get(key);
@@ -123,13 +96,12 @@ function setCache(
   cache.set(key, { status, timestamp: Date.now() });
 }
 
-// Batch check multiple channels
+// Batch check multiple channels concurrently
 export async function getMultipleChannelStatuses(
   usernames: string[]
 ): Promise<Record<string, "online" | "offline" | "unknown">> {
   const results: Record<string, "online" | "offline" | "unknown"> = {};
 
-  // Check all channels concurrently
   const checks = usernames.map(async (username) => {
     const status = await getChannelStatus(username);
     results[username.toLowerCase().trim()] = status;
