@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface UserInfo {
   username: string;
   fullName: string | null;
   role: string;
+  profilePhoto?: string | null;
 }
 
 export default function AccountSettings() {
@@ -20,6 +21,10 @@ export default function AccountSettings() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState("");
+  const [photoSuccess, setPhotoSuccess] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -32,18 +37,75 @@ export default function AccountSettings() {
       .catch(() => setLoading(false));
   }, []);
 
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setPhotoError("");
+    setPhotoSuccess("");
+    setUploadingPhoto(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("photo", file);
+
+      const res = await fetch("/api/auth/profile-photo", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setPhotoError(data.error || "Failed to upload photo");
+        setUploadingPhoto(false);
+        return;
+      }
+
+      setPhotoSuccess("Photo updated successfully!");
+      setUser((prev) =>
+        prev ? { ...prev, profilePhoto: data.profilePhoto } : prev
+      );
+    } catch {
+      setPhotoError("Network error. Please try again.");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleDeletePhoto = async () => {
+    setPhotoError("");
+    setPhotoSuccess("");
+
+    try {
+      const res = await fetch("/api/auth/profile-photo", {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        setPhotoError("Failed to delete photo");
+        return;
+      }
+
+      setPhotoSuccess("Photo removed.");
+      setUser((prev) => (prev ? { ...prev, profilePhoto: null } : prev));
+    } catch {
+      setPhotoError("Network error. Please try again.");
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSuccess("");
 
     if (newPassword && newPassword !== confirmPassword) {
-      setError("Kata laluan baru tidak sepadan");
+      setError("New passwords do not match");
       return;
     }
 
     if (!currentPassword) {
-      setError("Kata laluan semasa diperlukan untuk mengesahkan");
+      setError("Current password is required for verification");
       return;
     }
 
@@ -55,7 +117,7 @@ export default function AccountSettings() {
       if (newPassword) body.newPassword = newPassword;
 
       if (!body.newUsername && !body.newPassword) {
-        setError("Tiada perubahan dilakukan");
+        setError("No changes made");
         setSaving(false);
         return;
       }
@@ -69,12 +131,12 @@ export default function AccountSettings() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "Gagal mengemas kini akaun");
+        setError(data.error || "Failed to update account");
         setSaving(false);
         return;
       }
 
-      setSuccess("Akaun berjaya dikemas kini");
+      setSuccess("Account updated successfully");
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -82,7 +144,7 @@ export default function AccountSettings() {
         setUser((prev) => (prev ? { ...prev, username: data.username } : prev));
       }
     } catch {
-      setError("Ralat rangkaian. Sila cuba lagi.");
+      setError("Network error. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -125,18 +187,96 @@ export default function AccountSettings() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-white text-2xl font-bold">Tetapan Akaun</h1>
-        <p className="text-gray-400 mt-1">Urus profil dan keselamatan akaun anda</p>
+        <h1 className="text-white text-2xl font-bold">Account Settings</h1>
+        <p className="text-gray-400 mt-1">Manage your profile and account security</p>
       </div>
 
       <div className="max-w-2xl space-y-6">
+        {/* Profile Photo Card */}
+        <div className="admin-card">
+          <h2 className="text-white font-semibold text-lg mb-4">Profile Photo</h2>
+
+          {photoError && (
+            <div className="bg-red-600/10 border border-red-600/30 text-red-400 px-4 py-3 rounded-xl text-sm mb-4">
+              {photoError}
+            </div>
+          )}
+
+          {photoSuccess && (
+            <div className="bg-green-600/10 border border-green-600/30 text-green-400 px-4 py-3 rounded-xl text-sm mb-4">
+              {photoSuccess}
+            </div>
+          )}
+
+          <div className="flex items-center gap-6">
+            {/* Current Photo */}
+            <div className="relative">
+              {user?.profilePhoto ? (
+                <img
+                  src={user.profilePhoto}
+                  alt="Profile"
+                  className="w-20 h-20 rounded-2xl object-cover border-2 border-white/10"
+                />
+              ) : (
+                <div className="w-20 h-20 bg-gradient-to-br from-red-600 to-red-800 rounded-2xl flex items-center justify-center text-white font-bold text-2xl">
+                  {(user?.fullName || user?.username || "O").charAt(0).toUpperCase()}
+                </div>
+              )}
+              {uploadingPhoto && (
+                <div className="absolute inset-0 bg-black/60 rounded-2xl flex items-center justify-center">
+                  <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+            </div>
+
+            {/* Upload Controls */}
+            <div className="flex-1">
+              <p className="text-gray-400 text-sm mb-3">
+                JPG, PNG, or WEBP. Max 2MB.
+              </p>
+              <div className="flex gap-3">
+                <label className="admin-btn admin-btn-primary cursor-pointer inline-flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  {user?.profilePhoto ? "Change Photo" : "Upload Photo"}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/webp"
+                    onChange={handlePhotoUpload}
+                    className="hidden"
+                  />
+                </label>
+                {user?.profilePhoto && (
+                  <button
+                    type="button"
+                    onClick={handleDeletePhoto}
+                    className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Account Info Card */}
         <div className="admin-card">
-          <h2 className="text-white font-semibold text-lg mb-4">Maklumat Akaun</h2>
-          <div className="flex items-center gap-4 mb-6">
-            <div className="w-16 h-16 bg-gradient-to-br from-red-600 to-red-800 rounded-2xl flex items-center justify-center text-white font-bold text-xl">
-              {(user?.fullName || user?.username || "O").charAt(0).toUpperCase()}
-            </div>
+          <h2 className="text-white font-semibold text-lg mb-4">Account Information</h2>
+          <div className="flex items-center gap-4">
+            {user?.profilePhoto ? (
+              <img
+                src={user.profilePhoto}
+                alt="Profile"
+                className="w-16 h-16 rounded-2xl object-cover border-2 border-white/10"
+              />
+            ) : (
+              <div className="w-16 h-16 bg-gradient-to-br from-red-600 to-red-800 rounded-2xl flex items-center justify-center text-white font-bold text-xl">
+                {(user?.fullName || user?.username || "O").charAt(0).toUpperCase()}
+              </div>
+            )}
             <div>
               <p className="text-white font-semibold text-lg">{user?.fullName || user?.username}</p>
               <p className="text-gray-400 text-sm">@{user?.username}</p>
@@ -145,7 +285,7 @@ export default function AccountSettings() {
                   <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                   </svg>
-                  Role: OWNER
+                  Role: {user?.role?.toUpperCase()}
                 </span>
               </div>
             </div>
@@ -154,9 +294,9 @@ export default function AccountSettings() {
 
         {/* Change Credentials */}
         <div className="admin-card">
-          <h2 className="text-white font-semibold text-lg mb-4">Tukar Kelayakan</h2>
+          <h2 className="text-white font-semibold text-lg mb-4">Change Credentials</h2>
           <p className="text-gray-400 text-sm mb-6">
-            Untuk mengubah tetapan akaun, anda mesti mengesahkan kata laluan semasa.
+            To change account settings, you must verify your current password.
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -178,10 +318,10 @@ export default function AccountSettings() {
               </div>
             )}
 
-            {/* Current Password (required for any change) */}
+            {/* Current Password */}
             <div>
               <label className="block text-gray-300 text-sm font-medium mb-2">
-                Kata Laluan Semasa *
+                Current Password *
               </label>
               <div className="relative">
                 <input
@@ -189,7 +329,7 @@ export default function AccountSettings() {
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   className="admin-input pr-10"
-                  placeholder="Masukkan kata laluan semasa"
+                  placeholder="Enter current password"
                   required
                   autoComplete="current-password"
                 />
@@ -205,14 +345,14 @@ export default function AccountSettings() {
             {/* New Username */}
             <div>
               <label className="block text-gray-300 text-sm font-medium mb-2">
-                Username Baru
+                New Username
               </label>
               <input
                 type="text"
                 value={newUsername}
                 onChange={(e) => setNewUsername(e.target.value)}
                 className="admin-input"
-                placeholder="Masukkan username baru"
+                placeholder="Enter new username"
                 autoComplete="username"
               />
             </div>
@@ -220,7 +360,7 @@ export default function AccountSettings() {
             {/* New Password */}
             <div>
               <label className="block text-gray-300 text-sm font-medium mb-2">
-                Kata Laluan Baru
+                New Password
               </label>
               <div className="relative">
                 <input
@@ -228,7 +368,7 @@ export default function AccountSettings() {
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   className="admin-input pr-10"
-                  placeholder="Masukkan kata laluan baru (min 6 aksara)"
+                  placeholder="Enter new password (min 6 characters)"
                   autoComplete="new-password"
                 />
                 <PasswordToggle
@@ -242,14 +382,14 @@ export default function AccountSettings() {
             {newPassword && (
               <div>
                 <label className="block text-gray-300 text-sm font-medium mb-2">
-                  Sahkan Kata Laluan Baru
+                  Confirm New Password
                 </label>
                 <input
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="admin-input"
-                  placeholder="Ulang kata laluan baru"
+                  placeholder="Confirm new password"
                   autoComplete="new-password"
                 />
               </div>
@@ -265,10 +405,10 @@ export default function AccountSettings() {
                 {saving ? (
                   <>
                     <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Menyimpan...
+                    Saving...
                   </>
                 ) : (
-                  "Simpan Perubahan"
+                  "Save Changes"
                 )}
               </button>
             </div>

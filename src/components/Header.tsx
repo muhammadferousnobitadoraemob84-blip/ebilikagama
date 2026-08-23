@@ -10,15 +10,30 @@ interface Settings {
   site_logo?: string;
 }
 
+interface AdminProfile {
+  loggedIn: boolean;
+  username?: string;
+  fullName?: string;
+  profilePhoto?: string | null;
+  role?: string;
+}
+
 export default function Header() {
   const [settings, setSettings] = useState<Settings>({});
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
   const { t } = useLanguage();
 
   useEffect(() => {
     fetch("/api/settings")
       .then((r) => r.json())
       .then((data) => setSettings(data))
+      .catch(() => {});
+
+    // Check if admin is logged in
+    fetch("/api/auth/admin-profile")
+      .then((r) => r.json())
+      .then((data) => setAdminProfile(data))
       .catch(() => {});
   }, []);
 
@@ -46,7 +61,7 @@ export default function Header() {
             </span>
           </Link>
 
-          {/* Desktop Nav + Language */}
+          {/* Desktop Nav + Language + Admin Profile */}
           <nav className="hidden md:flex items-center gap-5 lg:gap-6">
             <Link
               href="/"
@@ -76,10 +91,47 @@ export default function Header() {
             <div className="w-px h-5 bg-white/10" />
 
             <LanguageSelector />
+
+            {/* Admin Profile Indicator */}
+            {adminProfile?.loggedIn && (
+              <Link
+                href="/admin"
+                className="flex items-center gap-2 ml-2 group"
+                title={`${adminProfile.fullName || adminProfile.username} - Admin`}
+              >
+                {adminProfile.profilePhoto ? (
+                  <img
+                    src={adminProfile.profilePhoto}
+                    alt="Admin"
+                    className="w-8 h-8 rounded-full object-cover border-2 border-red-500/50 group-hover:border-red-500 transition-colors"
+                  />
+                ) : (
+                  <div className="w-8 h-8 bg-gradient-to-br from-red-600 to-red-800 rounded-full flex items-center justify-center text-white font-bold text-xs border-2 border-red-500/50 group-hover:border-red-500 transition-colors">
+                    {(adminProfile.fullName || adminProfile.username || "A").charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </Link>
+            )}
           </nav>
 
           {/* Mobile right buttons */}
           <div className="flex items-center gap-2 md:hidden">
+            {/* Mobile Admin Profile Indicator */}
+            {adminProfile?.loggedIn && (
+              <Link href="/admin" className="mr-1">
+                {adminProfile.profilePhoto ? (
+                  <img
+                    src={adminProfile.profilePhoto}
+                    alt="Admin"
+                    className="w-7 h-7 rounded-full object-cover border-2 border-red-500/50"
+                  />
+                ) : (
+                  <div className="w-7 h-7 bg-gradient-to-br from-red-600 to-red-800 rounded-full flex items-center justify-center text-white font-bold text-xs border-2 border-red-500/50">
+                    {(adminProfile.fullName || adminProfile.username || "A").charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </Link>
+            )}
             <LanguageSelector mobile />
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

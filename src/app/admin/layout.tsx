@@ -169,7 +169,6 @@ export default function AdminLayout({
               )}
               <Link
                 href="/"
-                target="_blank"
                 className="text-gray-400 hover:text-white text-xs sm:text-sm transition-colors hidden sm:inline"
               >
                 Lihat Laman →

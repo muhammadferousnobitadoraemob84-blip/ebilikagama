@@ -12,6 +12,7 @@ model User {
   username      String   @unique
   fullName      String?
   passwordHash  String
+  profilePhoto  String?  @db.Text
   role          String   @default("admin")
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())

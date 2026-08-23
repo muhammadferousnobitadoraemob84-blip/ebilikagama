@@ -17,6 +17,7 @@ export async function GET() {
       id: true,
       username: true,
       fullName: true,
+      profilePhoto: true,
       role: true,
       active: true,
     },
@@ -31,6 +32,7 @@ export async function GET() {
     userId: user.id,
     username: user.username,
     fullName: user.fullName,
+    profilePhoto: user.profilePhoto,
     role: user.role,
     active: user.active,
   });
