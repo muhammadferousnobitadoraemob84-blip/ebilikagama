@@ -54,13 +54,20 @@ const translations = {
     channel_not_found_desc: "The channel you're looking for doesn't exist or has been deleted.",
     back_to_channels: "← Back to Channel List",
     back: "Back",
-    schedule_title: "Program Schedule",
+    schedule_title: "TV Schedule",
 
-    // Schedule
+    // Schedule / EPG
     today: "Today",
     loading_schedule: "Loading schedule...",
     no_programs: "No programs for this date.",
-    now_playing: "Now Playing",
+    now_playing: "NOW PLAYING",
+    epg_date: "Date",
+    epg_channel: "Channel",
+    epg_start: "Start",
+    epg_end: "End",
+    epg_duration: "Duration",
+    epg_description: "Description",
+    epg_close: "Close",
 
     // Footer
     copyright: "© 2026 eBilikAgamaTV. All rights reserved.",
@@ -109,11 +116,18 @@ const translations = {
     back: "Kembali",
     schedule_title: "Jadual Siaran",
 
-    // Schedule
+    // Schedule / EPG
     today: "Hari Ini",
     loading_schedule: "Memuatkan jadual...",
     no_programs: "Tiada program untuk tarikh ini.",
-    now_playing: "Sedang Bersiaran",
+    now_playing: "SEDANG BERSIARAN",
+    epg_date: "Tarikh",
+    epg_channel: "Saluran",
+    epg_start: "Mula",
+    epg_end: "Tamat",
+    epg_duration: "Tempoh",
+    epg_description: "Penerangan",
+    epg_close: "Tutup",
 
     // Footer
     copyright: "© 2026 eBilikAgamaTV. Hak cipta terpelihara.",
@@ -162,11 +176,18 @@ const translations = {
     back: "返回",
     schedule_title: "节目时间表",
 
-    // Schedule
+    // Schedule / EPG
     today: "今天",
     loading_schedule: "加载时间表中...",
     no_programs: "该日期暂无节目。",
     now_playing: "正在播出",
+    epg_date: "日期",
+    epg_channel: "频道",
+    epg_start: "开始",
+    epg_end: "结束",
+    epg_duration: "时长",
+    epg_description: "描述",
+    epg_close: "关闭",
 
     // Footer
     copyright: "© 2026 eBilikAgamaTV. 版权所有。",
