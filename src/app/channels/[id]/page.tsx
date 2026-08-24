@@ -26,6 +26,7 @@ export default function ChannelPage() {
   const [error, setError] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const channelRef = useRef<Channel | null>(null);
+  const mountedRef = useRef(true);
 
   // Fetch channel data
   useEffect(() => {
@@ -37,18 +38,23 @@ export default function ChannelPage() {
         return r.json();
       })
       .then((data) => {
-        setChannel(data);
-        channelRef.current = data;
-        setLoading(false);
+        if (mountedRef.current) {
+          setChannel(data);
+          channelRef.current = data;
+          setLoading(false);
+        }
       })
       .catch(() => {
-        setError(true);
-        setLoading(false);
+        if (mountedRef.current) {
+          setError(true);
+          setLoading(false);
+        }
       });
   }, [params.id]);
 
   // Fetch real-time Twitch status for THIS channel
   const fetchStatus = useCallback(async () => {
+    if (!mountedRef.current) return;
     const ch = channelRef.current;
     if (!ch) return;
 
@@ -62,10 +68,12 @@ export default function ChannelPage() {
       const match = data.channels.find((c: { id: string; status: string }) => c.id === ch.id);
       if (!match) return;
 
-      if (match.status === "online") {
-        setLiveStatus("live");
-      } else if (match.status === "offline") {
-        setLiveStatus("offline");
+      if (mountedRef.current) {
+        if (match.status === "online") {
+          setLiveStatus("live");
+        } else if (match.status === "offline") {
+          setLiveStatus("offline");
+        }
       }
     } catch {
       // keep previous status
@@ -74,6 +82,8 @@ export default function ChannelPage() {
 
   // Start polling once channel is loaded
   useEffect(() => {
+    mountedRef.current = true;
+    
     if (!channel) return;
 
     // Set initial status from DB
@@ -88,15 +98,24 @@ export default function ChannelPage() {
 
     // Also check on visibility change
     const handleVisibility = () => {
-      if (!document.hidden) {
+      if (!document.hidden && mountedRef.current) {
         fetchStatus();
       }
     };
     document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      document.removeEventListener("visibilitychange", handleVisibility);
+      // Mark as unmounted immediately - don't wait for cleanup
+      mountedRef.current = false;
+      
+      // Clear interval asynchronously - don't block navigation
+      requestAnimationFrame(() => {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+        document.removeEventListener("visibilitychange", handleVisibility);
+      });
     };
   }, [channel, fetchStatus]);
 
@@ -124,6 +143,7 @@ export default function ChannelPage() {
           <Link
             href="/"
             className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-5 py-3 rounded-xl transition-colors text-sm"
+            prefetch={true}
           >
             {t("back_to_channels")}
           </Link>
@@ -142,6 +162,7 @@ export default function ChannelPage() {
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 sm:gap-2 text-gray-400 hover:text-white transition-colors text-xs sm:text-sm font-medium"
+          prefetch={true}
         >
           <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />

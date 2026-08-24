@@ -18,23 +18,56 @@ interface AdminProfile {
   role?: string;
 }
 
+// Cache settings to avoid refetching on every render
+let cachedSettings: Settings | null = null;
+let settingsFetchPromise: Promise<Settings> | null = null;
+
+function getSettings(): Promise<Settings> {
+  if (cachedSettings) return Promise.resolve(cachedSettings);
+  if (settingsFetchPromise) return settingsFetchPromise;
+  
+  settingsFetchPromise = fetch("/api/settings")
+    .then((r) => r.json())
+    .then((data) => {
+      cachedSettings = data;
+      return data;
+    })
+    .catch(() => ({} as Settings));
+  
+  return settingsFetchPromise;
+}
+
+// Cache admin profile
+let cachedAdminProfile: AdminProfile | null = null;
+let adminProfileFetchPromise: Promise<AdminProfile> | null = null;
+
+function getAdminProfile(): Promise<AdminProfile> {
+  if (cachedAdminProfile) return Promise.resolve(cachedAdminProfile);
+  if (adminProfileFetchPromise) return adminProfileFetchPromise;
+  
+  adminProfileFetchPromise = fetch("/api/auth/admin-profile")
+    .then((r) => r.json())
+    .then((data) => {
+      cachedAdminProfile = data;
+      return data;
+    })
+    .catch(() => ({ loggedIn: false } as AdminProfile));
+  
+  return adminProfileFetchPromise;
+}
+
 export default function Header() {
-  const [settings, setSettings] = useState<Settings>({});
+  const [settings, setSettings] = useState<Settings>(cachedSettings || {});
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
+  const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(cachedAdminProfile);
   const { t } = useLanguage();
 
   useEffect(() => {
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((data) => setSettings(data))
-      .catch(() => {});
-
-    // Check if admin is logged in
-    fetch("/api/auth/admin-profile")
-      .then((r) => r.json())
-      .then((data) => setAdminProfile(data))
-      .catch(() => {});
+    // Load settings (cached)
+    getSettings().then(setSettings);
+    
+    // Load admin profile (cached)
+    getAdminProfile().then(setAdminProfile);
   }, []);
 
   const siteName = settings.site_name || "eBilikAgamaTV";
@@ -44,7 +77,7 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14 sm:h-16">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2.5 group">
+          <Link href="/" className="flex items-center gap-2.5 group" prefetch={true}>
             {settings.site_logo ? (
               <img
                 src={settings.site_logo}
@@ -66,24 +99,28 @@ export default function Header() {
             <Link
               href="/"
               className="text-gray-300 hover:text-white transition-colors text-sm font-medium"
+              prefetch={true}
             >
               {t("nav_home")}
             </Link>
             <Link
               href="/#saluran-tv"
               className="text-gray-300 hover:text-white transition-colors text-sm font-medium"
+              prefetch={true}
             >
               {t("nav_saluran_tv")}
             </Link>
             <Link
               href="/#saluran-khas"
               className="text-gray-300 hover:text-white transition-colors text-sm font-medium"
+              prefetch={true}
             >
               {t("nav_saluran_khas")}
             </Link>
             <Link
               href="/schedule"
               className="text-gray-300 hover:text-white transition-colors text-sm font-medium"
+              prefetch={true}
             >
               {t("nav_schedule")}
             </Link>
@@ -98,6 +135,7 @@ export default function Header() {
                 href="/admin"
                 className="flex items-center gap-2 ml-2 group"
                 title={`${adminProfile.fullName || adminProfile.username} - Admin`}
+                prefetch={true}
               >
                 {adminProfile.profilePhoto ? (
                   <img
@@ -118,7 +156,7 @@ export default function Header() {
           <div className="flex items-center gap-2 md:hidden">
             {/* Mobile Admin Profile Indicator */}
             {adminProfile?.loggedIn && (
-              <Link href="/admin" className="mr-1">
+              <Link href="/admin" className="mr-1" prefetch={true}>
                 {adminProfile.profilePhoto ? (
                   <img
                     src={adminProfile.profilePhoto}
@@ -161,6 +199,7 @@ export default function Header() {
             href="/"
             onClick={() => setMobileMenuOpen(false)}
             className="text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium px-4 py-3 rounded-lg"
+            prefetch={true}
           >
             {t("nav_home")}
           </Link>
@@ -168,6 +207,7 @@ export default function Header() {
             href="/#saluran-tv"
             onClick={() => setMobileMenuOpen(false)}
             className="text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium px-4 py-3 rounded-lg"
+            prefetch={true}
           >
             {t("nav_saluran_tv")}
           </Link>
@@ -175,6 +215,7 @@ export default function Header() {
             href="/#saluran-khas"
             onClick={() => setMobileMenuOpen(false)}
             className="text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium px-4 py-3 rounded-lg"
+            prefetch={true}
           >
             {t("nav_saluran_khas")}
           </Link>
@@ -182,6 +223,7 @@ export default function Header() {
             href="/schedule"
             onClick={() => setMobileMenuOpen(false)}
             className="text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium px-4 py-3 rounded-lg"
+            prefetch={true}
           >
             {t("nav_schedule")}
           </Link>
@@ -190,6 +232,7 @@ export default function Header() {
             href="/admin/login"
             onClick={() => setMobileMenuOpen(false)}
             className="text-gray-500 hover:text-gray-300 transition-all text-xs font-medium px-4 py-2 rounded-lg"
+            prefetch={true}
           >
             {t("nav_admin")}
           </Link>

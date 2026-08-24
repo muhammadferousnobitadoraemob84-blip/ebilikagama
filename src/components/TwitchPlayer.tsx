@@ -57,6 +57,22 @@ export default function TwitchPlayer({
     } catch {
       setHasError(true);
     }
+
+    // Cleanup function - remove iframe immediately without blocking
+    return () => {
+      // Mark as unmounted first
+      currentChannelRef.current = null;
+      
+      // Remove iframe synchronously - don't await anything
+      if (iframeRef.current && containerRef.current) {
+        try {
+          containerRef.current.removeChild(iframeRef.current);
+        } catch {
+          // Ignore if already removed
+        }
+        iframeRef.current = null;
+      }
+    };
   }, [channel, width, height]);
 
   if (hasError) {
