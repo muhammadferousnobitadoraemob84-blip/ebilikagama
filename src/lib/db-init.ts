@@ -136,7 +136,9 @@ export async function ensureDatabase(): Promise<boolean> {
         "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
         "title" TEXT NOT NULL,
         "description" TEXT,
-        "videoUrl" TEXT NOT NULL,
+        "videoUrl" TEXT,
+        "googleDriveId" TEXT,
+        "googleDriveUrl" TEXT,
         "thumbnail" TEXT,
         "duration" INTEGER,
         "fileSize" BIGINT,
@@ -211,7 +213,9 @@ async function runMigrations(client: PrismaClient) {
         "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
         "title" TEXT NOT NULL,
         "description" TEXT,
-        "videoUrl" TEXT NOT NULL,
+        "videoUrl" TEXT,
+        "googleDriveId" TEXT,
+        "googleDriveUrl" TEXT,
         "thumbnail" TEXT,
         "duration" INTEGER,
         "fileSize" BIGINT,
@@ -223,6 +227,18 @@ async function runMigrations(client: PrismaClient) {
     `);
   } catch {
     // Table might already exist
+  }
+
+  // Add Google Drive columns to Replay table if they don't exist
+  try {
+    await client.$executeRawUnsafe(`ALTER TABLE "Replay" ADD COLUMN IF NOT EXISTS "googleDriveId" TEXT;`);
+  } catch {
+    // Column might already exist
+  }
+  try {
+    await client.$executeRawUnsafe(`ALTER TABLE "Replay" ADD COLUMN IF NOT EXISTS "googleDriveUrl" TEXT;`);
+  } catch {
+    // Column might already exist
   }
 }
 

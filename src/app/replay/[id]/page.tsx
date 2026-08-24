@@ -9,7 +9,9 @@ interface Replay {
   id: string;
   title: string;
   description: string | null;
-  videoUrl: string;
+  videoUrl: string | null;
+  googleDriveId: string | null;
+  googleDriveUrl: string | null;
   thumbnail: string | null;
   duration: number | null;
   fileSize: bigint | null;
@@ -77,6 +79,22 @@ export default function ReplayPage() {
       });
   }, [params.id]);
 
+  // Get video source URL - prefer Google Drive if available
+  const getVideoSrc = () => {
+    if (!replay) return "";
+    
+    // If Google Drive ID exists, use Google Drive preview URL
+    if (replay.googleDriveId) {
+      // Use Google Drive's video preview (works for public files)
+      return `https://drive.google.com/file/d/${replay.googleDriveId}/preview`;
+    }
+    
+    // Fallback to direct video URL
+    return replay.videoUrl || "";
+  };
+
+  const useIframe = replay?.googleDriveId;
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-black">
@@ -124,16 +142,29 @@ export default function ReplayPage() {
       {/* Video Player */}
       <div className="max-w-7xl mx-auto px-0 sm:px-6 lg:px-8 pt-2 sm:pt-4">
         <div className="sm:px-0">
-          <video
-            ref={videoRef}
-            className="w-full rounded-none sm:rounded-xl"
-            controls
-            playsInline
-            poster={replay.thumbnail || undefined}
-          >
-            <source src={replay.videoUrl} />
-            Your browser does not support the video tag.
-          </video>
+          {useIframe ? (
+            // Google Drive iframe player
+            <div className="relative w-full aspect-video">
+              <iframe
+                src={getVideoSrc()}
+                className="absolute inset-0 w-full h-full rounded-none sm:rounded-xl"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          ) : (
+            // Direct video player
+            <video
+              ref={videoRef}
+              className="w-full rounded-none sm:rounded-xl"
+              controls
+              playsInline
+              poster={replay.thumbnail || undefined}
+            >
+              <source src={replay.videoUrl || ""} />
+              Your browser does not support the video tag.
+            </video>
+          )}
         </div>
       </div>
 

@@ -65,15 +65,17 @@ model Subscriber {
 }
 
 model Replay {
-  id          String   @id @default(cuid())
-  title       String
-  description String?  @db.Text
-  videoUrl    String   @db.Text // URL to video in object storage
-  thumbnail   String?  @db.Text // URL to thumbnail
-  duration    Int?     // Duration in seconds
-  fileSize    BigInt?  // File size in bytes
-  date        String   // Broadcast date YYYY-MM-DD
-  published   Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  title           String
+  description     String?  @db.Text
+  videoUrl        String?  @db.Text // Legacy: URL to video
+  googleDriveId   String?  @db.Text // Google Drive file ID
+  googleDriveUrl  String?  @db.Text // Google Drive preview URL
+  thumbnail       String?  @db.Text // URL to thumbnail
+  duration        Int?     // Duration in seconds
+  fileSize        BigInt?  // File size in bytes
+  date            String   // Broadcast date YYYY-MM-DD
+  published       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }

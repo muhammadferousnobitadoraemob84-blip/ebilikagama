@@ -7,13 +7,20 @@ interface Replay {
   id: string;
   title: string;
   description: string | null;
-  videoUrl: string;
+  videoUrl: string | null;
+  googleDriveId: string | null;
+  googleDriveUrl: string | null;
   thumbnail: string | null;
   duration: number | null;
   fileSize: bigint | null;
   date: string;
   published: boolean;
   createdAt: string;
+}
+
+interface GoogleDriveStatus {
+  connected: boolean;
+  email?: string;
 }
 
 export default function AdminReplaysPage() {
@@ -23,6 +30,7 @@ export default function AdminReplaysPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState("");
+  const [driveStatus, setDriveStatus] = useState<GoogleDriveStatus>({ connected: false });
 
   // Form state
   const [title, setTitle] = useState("");
@@ -34,6 +42,7 @@ export default function AdminReplaysPage() {
 
   useEffect(() => {
     fetchReplays();
+    checkDriveStatus();
   }, []);
 
   const fetchReplays = async () => {
@@ -47,6 +56,32 @@ export default function AdminReplaysPage() {
       // Ignore error
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkDriveStatus = async () => {
+    try {
+      const res = await fetch("/api/google-drive/status");
+      if (res.ok) {
+        const data = await res.json();
+        setDriveStatus(data);
+      }
+    } catch {
+      // Ignore error
+    }
+  };
+
+  const handleConnectDrive = async () => {
+    try {
+      const res = await fetch("/api/google-drive/auth");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.authUrl) {
+          window.location.href = data.authUrl;
+        }
+      }
+    } catch {
+      setUploadError("Gagal mendapatkan URL pengesahan Google Drive");
     }
   };
 
@@ -99,6 +134,11 @@ export default function AdminReplaysPage() {
       return;
     }
 
+    if (!driveStatus.connected) {
+      setUploadError("Google Drive tidak disambungkan. Sila sambungkan terlebih dahulu.");
+      return;
+    }
+
     setUploading(true);
     setUploadProgress(0);
     setUploadError("");
@@ -121,96 +161,39 @@ export default function AdminReplaysPage() {
         }
       }
 
-      // Chunked video upload
-      const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks (smaller for reliability)
-      const totalChunks = Math.ceil(videoFile.size / CHUNK_SIZE);
+      // Upload video to Google Drive
+      const formData = new FormData();
+      formData.append("video", videoFile);
+
+      const xhr = new XMLHttpRequest();
       
-      setUploadProgress(0);
-
-      // Step 1: Initialize upload
-      console.log("[UPLOAD] Initializing...");
-      const initRes = await fetch("/api/upload/video", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "init",
-          filename: videoFile.name,
-          fileSize: videoFile.size,
-        }),
-      });
-
-      if (!initRes.ok) {
-        const errData = await initRes.json();
-        throw new Error(errData.error || "Failed to initialize upload");
-      }
-
-      const { uploadId } = await initRes.json();
-      console.log("[UPLOAD] Upload ID:", uploadId, "Total chunks:", totalChunks);
-
-      // Step 2: Upload chunks
-      for (let i = 0; i < totalChunks; i++) {
-        const start = i * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, videoFile.size);
-        const chunk = videoFile.slice(start, end);
-        
-        // Convert chunk to base64 using FileReader for better memory handling
-        const chunkBase64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const result = reader.result as string;
-            // Remove data:...;base64, prefix
-            const base64 = result.split(",")[1];
-            resolve(base64);
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(chunk);
-        });
-
-        console.log(`[UPLOAD] Uploading chunk ${i + 1}/${totalChunks}...`);
-        
-        const chunkRes = await fetch("/api/upload/video", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "chunk",
-            uploadId,
-            chunkIndex: i,
-            chunkData: chunkBase64,
-          }),
-        });
-
-        if (!chunkRes.ok) {
-          const errText = await chunkRes.text();
-          console.error("[UPLOAD] Chunk error:", errText);
-          throw new Error(`Failed to upload chunk ${i + 1}/${totalChunks}: ${errText}`);
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          setUploadProgress(percent);
         }
+      };
 
-        // Update progress
-        const progress = Math.round(((i + 1) / totalChunks) * 100);
-        setUploadProgress(progress);
-        console.log(`[UPLOAD] Progress: ${progress}%`);
-      }
-
-      // Step 3: Complete upload
-      console.log("[UPLOAD] Completing upload...");
-      const completeRes = await fetch("/api/upload/video", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "complete",
-          uploadId,
-          filename: videoFile.name,
-          totalChunks,
-        }),
+      const videoPromise = new Promise<{ success: boolean; fileId: string; fileName: string; fileSize: number }>((resolve, reject) => {
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            resolve(JSON.parse(xhr.responseText));
+          } else {
+            try {
+              const errData = JSON.parse(xhr.responseText);
+              reject(new Error(errData.error || "Upload failed"));
+            } catch {
+              reject(new Error("Upload failed"));
+            }
+          }
+        };
+        xhr.onerror = () => reject(new Error("Upload failed"));
       });
 
-      if (!completeRes.ok) {
-        const errData = await completeRes.json();
-        throw new Error(errData.error || "Failed to complete upload");
-      }
+      xhr.open("POST", "/api/google-drive/upload");
+      xhr.send(formData);
 
-      const videoResult = await completeRes.json();
-      console.log("[UPLOAD] Upload complete:", videoResult);
+      const videoResult = await videoPromise;
 
       // Create replay record
       const replayRes = await fetch("/api/replays", {
@@ -219,7 +202,7 @@ export default function AdminReplaysPage() {
         body: JSON.stringify({
           title,
           description: description || null,
-          videoUrl: videoResult.videoUrl,
+          googleDriveId: videoResult.fileId,
           thumbnail: thumbnailUrl,
           fileSize: videoResult.fileSize,
           date,
@@ -252,12 +235,22 @@ export default function AdminReplaysPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, googleDriveId?: string | null) => {
     if (!confirm("Padam video ini? Tindakan ini tidak boleh dibatalkan.")) {
       return;
     }
 
     try {
+      // Delete from Google Drive if exists
+      if (googleDriveId) {
+        await fetch("/api/google-drive/upload", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileId: googleDriveId }),
+        });
+      }
+
+      // Delete from database
       const res = await fetch(`/api/replays/${id}`, {
         method: "DELETE",
       });
@@ -307,13 +300,45 @@ export default function AdminReplaysPage() {
           </div>
           <button
             onClick={() => setShowUpload(true)}
-            className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2"
+            disabled={!driveStatus.connected}
+            className="bg-red-600 hover:bg-red-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
             Upload Live Replay
           </button>
+        </div>
+
+        {/* Google Drive Status */}
+        <div className="bg-gray-900 rounded-xl p-4 mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${driveStatus.connected ? "bg-green-600/20" : "bg-yellow-600/20"}`}>
+              <svg className={`w-5 h-5 ${driveStatus.connected ? "text-green-400" : "text-yellow-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+              </svg>
+            </div>
+            <div>
+              <p className="font-medium">
+                Google Drive Storage
+              </p>
+              <p className="text-sm text-gray-400">
+                {driveStatus.connected ? (
+                  <span className="text-green-400">✓ Disambungkan{driveStatus.email ? ` (${driveStatus.email})` : ""}</span>
+                ) : (
+                  <span className="text-yellow-400">⚠ Tidak Disambungkan</span>
+                )}
+              </p>
+            </div>
+          </div>
+          {!driveStatus.connected && (
+            <button
+              onClick={handleConnectDrive}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm"
+            >
+              Sambung Google Drive
+            </button>
+          )}
         </div>
 
         {/* Upload Modal */}
@@ -438,7 +463,7 @@ export default function AdminReplaysPage() {
                 {uploading && (
                   <div className="bg-gray-800 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-gray-400">Memuat naik video...</span>
+                      <span className="text-sm text-gray-400">Memuat naik ke Google Drive...</span>
                       <span className="text-sm font-medium">{uploadProgress}%</span>
                     </div>
                     <div className="w-full bg-gray-700 rounded-full h-2">
@@ -457,7 +482,7 @@ export default function AdminReplaysPage() {
                     disabled={uploading || !videoFile || !title}
                     className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white py-3 rounded-lg font-medium transition-colors"
                   >
-                    {uploading ? "Memuat naik..." : "Muat Naik"}
+                    {uploading ? "Memuat naik..." : "Muat Naik ke Google Drive"}
                   </button>
                   <button
                     onClick={() => {
@@ -546,7 +571,7 @@ export default function AdminReplaysPage() {
                           Lihat
                         </Link>
                         <button
-                          onClick={() => handleDelete(replay.id)}
+                          onClick={() => handleDelete(replay.id, replay.googleDriveId)}
                           className="px-3 py-1 text-sm text-red-400 rounded hover:bg-red-500/20 transition-colors"
                         >
                           Padam
