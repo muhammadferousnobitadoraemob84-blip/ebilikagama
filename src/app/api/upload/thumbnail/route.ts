@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/auth";
-import fs from "fs/promises";
-import path from "path";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
 
-// POST - Upload thumbnail
+// POST - Upload thumbnail (stores as base64 in response, saved to DB by caller)
 export async function POST(request: NextRequest) {
   try {
     // Verify admin authentication
@@ -50,68 +48,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate unique filename
-    const ext = file.name.split(".").pop() || "jpg";
-    const filename = `${Date.now()}-${crypto.randomBytes(8).toString("hex")}.${ext}`;
-
-    // Save to uploads directory
-    const uploadsDir = path.join(process.cwd(), "uploads", "thumbnails");
-    await fs.mkdir(uploadsDir, { recursive: true });
-
-    const filePath = path.join(uploadsDir, filename);
+    // Convert to base64 data URL
     const buffer = Buffer.from(await file.arrayBuffer());
-    await fs.writeFile(filePath, buffer);
+    const base64 = buffer.toString("base64");
+    const dataUrl = `data:${file.type};base64,${base64}`;
 
-    // Return URL
-    const thumbnailUrl = `/api/upload/thumbnail?name=${encodeURIComponent(filename)}`;
-
+    // Return data URL (will be stored in database)
     return NextResponse.json({
       success: true,
-      thumbnailUrl,
+      thumbnailUrl: dataUrl,
     });
   } catch (error) {
     console.error("[THUMBNAIL] POST error:", error);
-    return NextResponse.json(
-      { error: "Failed to upload thumbnail" },
-      { status: 500 }
-    );
-  }
-}
-
-// GET - Serve thumbnail
-export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const name = searchParams.get("name");
-
-    if (!name) {
-      return NextResponse.json({ error: "Name is required" }, { status: 400 });
-    }
-
-    // Sanitize filename
-    const safeName = path.basename(name);
-    const filePath = path.join(process.cwd(), "uploads", "thumbnails", safeName);
-
-    try {
-      const buffer = await fs.readFile(filePath);
-      const ext = safeName.split(".").pop()?.toLowerCase();
-      const contentType = ext === "png" ? "image/png" : 
-                         ext === "webp" ? "image/webp" : "image/jpeg";
-
-      return new NextResponse(buffer, {
-        headers: {
-          "Content-Type": contentType,
-          "Cache-Control": "public, max-age=31536000, immutable",
-        },
-      });
-    } catch {
-      return NextResponse.json({ error: "Thumbnail not found" }, { status: 404 });
-    }
-  } catch (error) {
-    console.error("[THUMBNAIL] GET error:", error);
-    return NextResponse.json(
-      { error: "Failed to serve thumbnail" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to upload thumbnail" }, { status: 500 });
   }
 }
