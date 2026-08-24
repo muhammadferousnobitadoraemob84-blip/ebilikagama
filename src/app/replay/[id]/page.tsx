@@ -50,11 +50,6 @@ export default function ReplayPage() {
     return `https://drive.google.com/file/d/${fileId}/preview`;
   };
 
-  // Generate Google Drive direct view URL
-  const getGoogleDriveViewUrl = (fileId: string): string => {
-    return `https://drive.google.com/file/d/${fileId}/view`;
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -131,25 +126,10 @@ export default function ReplayPage() {
         <p className="text-gray-400 text-sm sm:text-base mb-4">{replay.date}</p>
         
         {replay.description && (
-          <div className="bg-gray-900 rounded-xl p-3 sm:p-4 mb-4">
+          <div className="bg-gray-900 rounded-xl p-3 sm:p-4">
             <h3 className="font-medium mb-2 text-sm sm:text-base">Penerangan</h3>
             <p className="text-gray-400 text-sm sm:text-base">{replay.description}</p>
           </div>
-        )}
-
-        {/* Open in Google Drive button */}
-        {replay.googleDriveId && (
-          <a
-            href={getGoogleDriveViewUrl(replay.googleDriveId)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors"
-          >
-            <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-            Buka di Google Drive
-          </a>
         )}
       </div>
     </div>
