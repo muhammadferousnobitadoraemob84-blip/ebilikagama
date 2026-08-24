@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useLanguage } from "@/components/LanguageProvider";
 import Hero from "@/components/Hero";
 import ChannelSection from "@/components/ChannelSection";
+import SubscribeSection from "@/components/SubscribeSection";
 
 interface Channel {
   id: string;
@@ -218,6 +219,9 @@ export default function HomePageClient({
         title={settings.saluran_khas_title || t("saluran_khas_title")}
         channels={saluranKhas}
       />
+
+      {/* Subscribe Section */}
+      <SubscribeSection />
 
       {/* Empty State */}
       {channels.length === 0 && (

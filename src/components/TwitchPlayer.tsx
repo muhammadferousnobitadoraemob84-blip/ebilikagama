@@ -14,14 +14,27 @@ export default function TwitchPlayer({
   height = "100%",
 }: TwitchPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [hasError, setHasError] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+  const currentChannelRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!channel || !containerRef.current) return;
 
+    // Don't recreate iframe if channel hasn't changed
+    if (currentChannelRef.current === channel && iframeRef.current) {
+      return;
+    }
+
+    // Store current channel
+    currentChannelRef.current = channel;
+
     // Clear previous embed
-    containerRef.current.innerHTML = "";
+    if (containerRef.current) {
+      containerRef.current.innerHTML = "";
+    }
+    iframeRef.current = null;
     setHasError(false);
     setIsLoaded(false);
 
@@ -40,6 +53,7 @@ export default function TwitchPlayer({
       iframe.onerror = () => setHasError(true);
 
       containerRef.current.appendChild(iframe);
+      iframeRef.current = iframe;
     } catch {
       setHasError(true);
     }

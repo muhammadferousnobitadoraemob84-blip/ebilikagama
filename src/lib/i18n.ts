@@ -76,6 +76,18 @@ const translations = {
     epg_description: "Description",
     epg_close: "Close",
 
+    // Subscribe
+    subscribe_badge: "FREE SUBSCRIPTION",
+    subscribe_title: "Don't Miss What's Happening on Bilik Agama! 📺",
+    subscribe_description: "Subscribe for free to stay updated with our live broadcasts, programs and latest eBilikAgamaTV content.",
+    subscribe_button: "SUBSCRIBE FOR FREE",
+    subscribe_count_label: "subscribers",
+    subscribe_email_placeholder: "Enter your email",
+    subscribe_success: "Successfully subscribed!",
+    subscribe_error: "Subscription failed. Please try again.",
+    subscribe_already: "Already Subscribed",
+    subscribe_cancel: "Cancel",
+
     // Footer
     copyright: "© 2026 eBilikAgamaTV. All rights reserved.",
     contact_us: "Contact Us",
@@ -143,6 +155,18 @@ const translations = {
     epg_description: "Penerangan",
     epg_close: "Tutup",
 
+    // Subscribe
+    subscribe_badge: "LANGGANAN PERCUMA",
+    subscribe_title: "Jangan Terlepas Apa-Apa Dari Bilik Agama! 📺",
+    subscribe_description: "Langgan secara percuma untuk terus mengikuti siaran langsung, program dan kandungan terbaru eBilikAgamaTV.",
+    subscribe_button: "LANGGAN PERCUMA",
+    subscribe_count_label: "pelanggan",
+    subscribe_email_placeholder: "Masukkan email anda",
+    subscribe_success: "Berjaya melanggan!",
+    subscribe_error: "Langganan gagal. Sila cuba lagi.",
+    subscribe_already: "Sudah Dilanggan",
+    subscribe_cancel: "Batal",
+
     // Footer
     copyright: "© 2026 eBilikAgamaTV. Hak cipta terpelihara.",
     contact_us: "Hubungi Kami",
@@ -209,6 +233,18 @@ const translations = {
     epg_duration: "时长",
     epg_description: "描述",
     epg_close: "关闭",
+
+    // Subscribe
+    subscribe_badge: "免费订阅",
+    subscribe_title: "不要错过 Bilik Agama 的精彩内容！📺",
+    subscribe_description: "免费订阅，及时获取直播、节目和最新 eBilikAgamaTV 内容。",
+    subscribe_button: "免费订阅",
+    subscribe_count_label: "订阅者",
+    subscribe_email_placeholder: "请输入您的邮箱",
+    subscribe_success: "订阅成功！",
+    subscribe_error: "订阅失败，请重试。",
+    subscribe_already: "已订阅",
+    subscribe_cancel: "取消",
 
     // Footer
     copyright: "© 2026 eBilikAgamaTV. 版权所有。",

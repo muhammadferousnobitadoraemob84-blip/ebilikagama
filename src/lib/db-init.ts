@@ -1,6 +1,17 @@
-import { prisma } from "./prisma";
+import { PrismaClient } from "@prisma/client";
 
 let _initialized = false;
+let _prisma: PrismaClient | null = null;
+
+function getPrisma(): PrismaClient {
+  if (!_prisma) {
+    _prisma = new PrismaClient({
+      log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
+      errorFormat: "minimal",
+    });
+  }
+  return _prisma;
+}
 
 /**
  * Ensures the database tables exist.
@@ -10,34 +21,41 @@ let _initialized = false;
 export async function ensureDatabase(): Promise<boolean> {
   if (_initialized) return true;
 
-  // Step 1: Check if tables already exist
-  try {
-    await prisma.user.findFirst();
-    // Tables exist — run migrations then mark initialized
-    await runMigrations();
-    _initialized = true;
-    return true;
-  } catch {
-    // Tables don't exist — create them
-  }
-
-  // Step 2: Check if DATABASE_URL is set
+  // Check if DATABASE_URL is set
   if (!process.env.DATABASE_URL) {
     console.error("[DB-INIT] DATABASE_URL is not set.");
     return false;
   }
 
-  // Step 3: Create tables using raw SQL (PostgreSQL)
+  const client = getPrisma();
+
+  // Step 1: Check if tables already exist
+  try {
+    console.log("[DB-INIT] Checking database connection...");
+    await client.user.findFirst();
+    console.log("[DB-INIT] Tables exist, running migrations...");
+    // Tables exist — run migrations then mark initialized
+    await runMigrations(client);
+    _initialized = true;
+    console.log("[DB-INIT] Database ready.");
+    return true;
+  } catch (err) {
+    console.error("[DB-INIT] Tables check failed:", err);
+    // Tables don't exist or connection failed — try to create
+  }
+
+  // Step 2: Create tables using raw SQL (PostgreSQL)
   try {
     console.log("[DB-INIT] Creating tables...");
 
     // User table
-    await prisma.$executeRawUnsafe(`
+    await client.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "User" (
         "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
         "username" TEXT NOT NULL,
         "fullName" TEXT,
         "passwordHash" TEXT NOT NULL,
+        "profilePhoto" TEXT,
         "role" TEXT NOT NULL DEFAULT 'admin',
         "active" BOOLEAN NOT NULL DEFAULT true,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -47,7 +65,7 @@ export async function ensureDatabase(): Promise<boolean> {
     `);
 
     // Channel table
-    await prisma.$executeRawUnsafe(`
+    await client.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Channel" (
         "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
         "name" TEXT NOT NULL,
@@ -64,7 +82,7 @@ export async function ensureDatabase(): Promise<boolean> {
     `);
 
     // Setting table
-    await prisma.$executeRawUnsafe(`
+    await client.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Setting" (
         "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
         "key" TEXT NOT NULL,
@@ -74,7 +92,7 @@ export async function ensureDatabase(): Promise<boolean> {
     `);
 
     // Program table
-    await prisma.$executeRawUnsafe(`
+    await client.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Program" (
         "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
         "channelId" TEXT NOT NULL,
@@ -93,27 +111,38 @@ export async function ensureDatabase(): Promise<boolean> {
 
     // Create index
     try {
-      await prisma.$executeRawUnsafe(`
+      await client.$executeRawUnsafe(`
         CREATE INDEX IF NOT EXISTS "Program_channelId_date_idx" ON "Program"("channelId", "date");
       `);
     } catch {
       // Index might already exist
     }
 
+    // Subscriber table
+    await client.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Subscriber" (
+        "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+        "email" TEXT NOT NULL,
+        "name" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "active" BOOLEAN NOT NULL DEFAULT true,
+        CONSTRAINT "Subscriber_email_key" UNIQUE ("email")
+      );
+    `);
+
     // Add profilePhoto column to User table if it doesn't exist
     try {
-      await prisma.$executeRawUnsafe(`
+      await client.$executeRawUnsafe(`
         ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "profilePhoto" TEXT;
       `);
-      console.log("[DB-INIT] profilePhoto column ensured.");
     } catch {
-      // Column might already exist or different DB engine
+      // Column might already exist
     }
 
     console.log("[DB-INIT] Tables created successfully.");
 
-    // Step 4: Seed data
-    await seedData();
+    // Step 3: Seed data
+    await seedData(client);
 
     _initialized = true;
     return true;
@@ -123,27 +152,43 @@ export async function ensureDatabase(): Promise<boolean> {
   }
 }
 
-async function runMigrations() {
+async function runMigrations(client: PrismaClient) {
   // Add profilePhoto column to User table if it doesn't exist
   try {
-    await prisma.$executeRawUnsafe(`
+    await client.$executeRawUnsafe(`
       ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "profilePhoto" TEXT;
     `);
   } catch {
-    // Column might already exist or different DB engine
+    // Column might already exist
+  }
+
+  // Create Subscriber table if it doesn't exist
+  try {
+    await client.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Subscriber" (
+        "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+        "email" TEXT NOT NULL,
+        "name" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "active" BOOLEAN NOT NULL DEFAULT true,
+        CONSTRAINT "Subscriber_email_key" UNIQUE ("email")
+      );
+    `);
+  } catch {
+    // Table might already exist
   }
 }
 
-async function seedData() {
+async function seedData(client: PrismaClient) {
   console.log("[DB-INIT] Seeding data...");
 
   // Seed owner account
-  const existingOwner = await prisma.user.findFirst({ where: { role: "owner" } });
+  const existingOwner = await client.user.findFirst({ where: { role: "owner" } });
   if (!existingOwner) {
     // Use bcryptjs to hash password
     const bcrypt = await import("bcryptjs");
     const passwordHash = await bcrypt.hash("MuhammadFerous40*****", 10);
-    await prisma.user.create({
+    await client.user.create({
       data: {
         username: "muhammadferousmsa",
         fullName: "Muhammad Ferous",
@@ -169,9 +214,9 @@ async function seedData() {
   ];
 
   for (const ch of channels) {
-    const existing = await prisma.channel.findFirst({ where: { name: ch.name } });
+    const existing = await client.channel.findFirst({ where: { name: ch.name } });
     if (!existing) {
-      await prisma.channel.create({ data: { ...ch, active: true, liveStatus: "automatic" } });
+      await client.channel.create({ data: { ...ch, active: true, liveStatus: "automatic" } });
     }
   }
   console.log("[DB-INIT] Channels seeded.");
@@ -194,20 +239,20 @@ async function seedData() {
   ];
 
   for (const s of settings) {
-    const existing = await prisma.setting.findUnique({ where: { key: s.key } });
+    const existing = await client.setting.findUnique({ where: { key: s.key } });
     if (!existing) {
-      await prisma.setting.create({ data: s });
+      await client.setting.create({ data: s });
     }
   }
   console.log("[DB-INIT] Settings seeded.");
 
   // Seed sample programs for today
   const today = new Date().toISOString().split("T")[0];
-  const tv1 = await prisma.channel.findFirst({ where: { name: "TV1" } });
+  const tv1 = await client.channel.findFirst({ where: { name: "TV1" } });
   if (tv1) {
-    const count = await prisma.program.count({ where: { channelId: tv1.id, date: today } });
+    const count = await client.program.count({ where: { channelId: tv1.id, date: today } });
     if (count === 0) {
-      await prisma.program.createMany({
+      await client.program.createMany({
         data: [
           { channelId: tv1.id, title: "Berita Pagi", date: today, startTime: "06:00", endTime: "07:00", description: "Laporan berita pagi.", status: "finished" },
           { channelId: tv1.id, title: "Selamat Pagi Malaysia", date: today, startTime: "07:00", endTime: "09:00", description: "Program pagi interaktif.", status: "finished" },
