@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 
 interface Replay {
@@ -32,6 +32,7 @@ export default function AdminReplaysPage() {
   const [uploadStatus, setUploadStatus] = useState("");
   const [uploadError, setUploadError] = useState("");
   const [driveStatus, setDriveStatus] = useState<GoogleDriveStatus>({ connected: false });
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Form state
   const [title, setTitle] = useState("");
@@ -129,6 +130,80 @@ export default function AdminReplaysPage() {
     reader.readAsDataURL(file);
   };
 
+  const uploadInChunks = async (file: File): Promise<{ fileId: string; replayId: string }> => {
+    const CHUNK_SIZE = 3 * 1024 * 1024; // 3MB chunks (safe for Vercel)
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    
+    // Step 1: Initialize upload session
+    setUploadStatus("Memulakan sesi muat naik...");
+    const initRes = await fetch("/api/google-drive/upload/init", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fileName: file.name,
+        mimeType: file.type || "video/mp4",
+        fileSize: file.size,
+        totalChunks,
+      }),
+    });
+
+    if (!initRes.ok) {
+      const errData = await initRes.json();
+      throw new Error(errData.error || "Gagal memulakan sesi muat naik");
+    }
+
+    const { uploadSessionId, driveFileName } = await initRes.json();
+
+    // Step 2: Upload chunks
+    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+      const start = chunkIndex * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      const chunk = file.slice(start, end);
+
+      setUploadStatus(`Memuat naik bahagian ${chunkIndex + 1} / ${totalChunks}...`);
+      setUploadProgress(Math.round(((chunkIndex + 1) / totalChunks) * 100));
+
+      const formData = new FormData();
+      formData.append("chunk", chunk);
+      formData.append("uploadSessionId", uploadSessionId);
+      formData.append("chunkIndex", chunkIndex.toString());
+      formData.append("totalChunks", totalChunks.toString());
+
+      const chunkRes = await fetch("/api/google-drive/upload/chunk", {
+        method: "POST",
+        body: formData,
+        signal: abortControllerRef.current?.signal,
+      });
+
+      if (!chunkRes.ok) {
+        const errData = await chunkRes.json();
+        throw new Error(errData.error || `Gagal memuat naik bahagian ${chunkIndex + 1}`);
+      }
+    }
+
+    // Step 3: Complete upload
+    setUploadStatus("Menyelesaikan muat naik ke Google Drive...");
+    const completeRes = await fetch("/api/google-drive/upload/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        uploadSessionId,
+        title,
+        description: description || "",
+        date,
+        fileSize: file.size,
+      }),
+    });
+
+    if (!completeRes.ok) {
+      const errData = await completeRes.json();
+      throw new Error(errData.error || "Gagal menyelesaikan muat naik");
+    }
+
+    const result = await completeRes.json();
+    return { fileId: result.fileId, replayId: result.replayId };
+  };
+
   const handleUpload = async () => {
     if (!videoFile || !title || !date) {
       setUploadError("Sila isi semua medan yang diperlukan.");
@@ -144,6 +219,7 @@ export default function AdminReplaysPage() {
     setUploadProgress(0);
     setUploadStatus("Menyediakan fail...");
     setUploadError("");
+    abortControllerRef.current = new AbortController();
 
     try {
       // Upload thumbnail first if exists
@@ -164,62 +240,18 @@ export default function AdminReplaysPage() {
         }
       }
 
-      // Create FormData for video upload
-      const formData = new FormData();
-      formData.append("video", videoFile);
-      formData.append("title", title);
-      formData.append("description", description || "");
-      formData.append("date", date);
-      if (thumbnailUrl) {
-        formData.append("thumbnail", thumbnailUrl);
+      // Upload video in chunks
+      setUploadStatus("Memuat naik video ke Google Drive...");
+      const { fileId, replayId } = await uploadInChunks(videoFile);
+
+      // Update thumbnail if exists
+      if (thumbnailUrl && replayId) {
+        await fetch(`/api/replays/${replayId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ thumbnail: thumbnailUrl }),
+        });
       }
-
-      setUploadStatus("Memuat naik ke Google Drive...");
-
-      // Use XMLHttpRequest for progress tracking
-      const result = await new Promise<{ success: boolean; replay: any }>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        
-        xhr.upload.onprogress = (event) => {
-          if (event.lengthComputable) {
-            const percent = Math.round((event.loaded / event.total) * 100);
-            setUploadProgress(percent);
-            
-            const loadedGB = (event.loaded / (1024 * 1024 * 1024)).toFixed(2);
-            const totalGB = (event.total / (1024 * 1024 * 1024)).toFixed(2);
-            setUploadStatus(`Memuat naik ke Google Drive... ${loadedGB} GB / ${totalGB} GB`);
-          }
-        };
-        
-        xhr.onload = () => {
-          if (xhr.status === 200) {
-            try {
-              resolve(JSON.parse(xhr.responseText));
-            } catch {
-              reject(new Error("Gagal membaca respons dari pelayan"));
-            }
-          } else {
-            try {
-              const errData = JSON.parse(xhr.responseText);
-              reject(new Error(errData.error || "Upload failed"));
-            } catch {
-              reject(new Error("Upload failed"));
-            }
-          }
-        };
-        
-        xhr.onerror = () => {
-          reject(new Error("Ralat rangkaian semasa memuat naik. Pastikan sambungan internet anda stabil dan cuba lagi."));
-        };
-        
-        xhr.ontimeout = () => {
-          reject(new Error("Masa muat naik tamat. Sila cuba lagi."));
-        };
-        
-        xhr.open("POST", "/api/google-drive/upload");
-        xhr.timeout = 600000; // 10 minutes timeout
-        xhr.send(formData);
-      });
 
       // Reset form
       setTitle("");
@@ -236,11 +268,22 @@ export default function AdminReplaysPage() {
       fetchReplays();
     } catch (err: any) {
       console.error("Upload error:", err);
-      const errorMsg = err?.message || "Gagal memuat naik video. Sila cuba lagi.";
-      setUploadError(errorMsg);
+      if (err.name === "AbortError") {
+        setUploadError("Muat naik dibatalkan.");
+      } else {
+        const errorMsg = err?.message || "Gagal memuat naik video. Sila cuba lagi.";
+        setUploadError(errorMsg);
+      }
     } finally {
       setUploading(false);
       setUploadStatus("");
+      abortControllerRef.current = null;
+    }
+  };
+
+  const handleCancelUpload = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
   };
 
@@ -491,20 +534,29 @@ export default function AdminReplaysPage() {
                       />
                     </div>
                     <p className="text-xs text-gray-500 mt-2">
-                      Video sedang dimuat naik terus ke Google Drive. Jangan tutup tetingkap ini.
+                      Video dimuat naik dalam bahagian-bahagian kecil. Jangan tutup tetingkap ini.
                     </p>
                   </div>
                 )}
 
                 {/* Actions */}
                 <div className="flex gap-3 pt-4">
-                  <button
-                    onClick={handleUpload}
-                    disabled={uploading || !videoFile || !title}
-                    className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white py-3 rounded-lg font-medium transition-colors"
-                  >
-                    {uploading ? "Memuat naik..." : "Muat Naik ke Google Drive"}
-                  </button>
+                  {uploading ? (
+                    <button
+                      onClick={handleCancelUpload}
+                      className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white py-3 rounded-lg font-medium transition-colors"
+                    >
+                      Batalkan Muat Naik
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleUpload}
+                      disabled={!videoFile || !title}
+                      className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white py-3 rounded-lg font-medium transition-colors"
+                    >
+                      Muat Naik ke Google Drive
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       if (!uploading) {
