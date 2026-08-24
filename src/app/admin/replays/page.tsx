@@ -121,34 +121,77 @@ export default function AdminReplaysPage() {
         }
       }
 
-      // Upload video
-      const formData = new FormData();
-      formData.append("video", videoFile);
+      // Chunked video upload
+      const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
+      const totalChunks = Math.ceil(videoFile.size / CHUNK_SIZE);
 
-      const xhr = new XMLHttpRequest();
-      
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          const percent = Math.round((event.loaded / event.total) * 100);
-          setUploadProgress(percent);
-        }
-      };
-
-      const videoPromise = new Promise<{ success: boolean; videoUrl: string; fileSize: number }>((resolve, reject) => {
-        xhr.onload = () => {
-          if (xhr.status === 200) {
-            resolve(JSON.parse(xhr.responseText));
-          } else {
-            reject(new Error("Upload failed"));
-          }
-        };
-        xhr.onerror = () => reject(new Error("Upload failed"));
+      // Step 1: Initialize upload
+      const initRes = await fetch("/api/upload/video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "init",
+          filename: videoFile.name,
+          fileSize: videoFile.size,
+        }),
       });
 
-      xhr.open("POST", "/api/upload/video");
-      xhr.send(formData);
+      if (!initRes.ok) {
+        const errData = await initRes.json();
+        throw new Error(errData.error || "Failed to initialize upload");
+      }
 
-      const videoResult = await videoPromise;
+      const { uploadId } = await initRes.json();
+
+      // Step 2: Upload chunks
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, videoFile.size);
+        const chunk = videoFile.slice(start, end);
+        
+        // Convert chunk to base64
+        const chunkBuffer = await chunk.arrayBuffer();
+        const chunkBase64 = btoa(
+          new Uint8Array(chunkBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+        );
+
+        const chunkRes = await fetch("/api/upload/video", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "chunk",
+            uploadId,
+            chunkIndex: i,
+            chunkData: chunkBase64,
+          }),
+        });
+
+        if (!chunkRes.ok) {
+          throw new Error(`Failed to upload chunk ${i + 1}/${totalChunks}`);
+        }
+
+        // Update progress
+        const progress = Math.round(((i + 1) / totalChunks) * 100);
+        setUploadProgress(progress);
+      }
+
+      // Step 3: Complete upload
+      const completeRes = await fetch("/api/upload/video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "complete",
+          uploadId,
+          filename: videoFile.name,
+          totalChunks,
+        }),
+      });
+
+      if (!completeRes.ok) {
+        throw new Error("Failed to complete upload");
+      }
+
+      const videoResult = await completeRes.json();
 
       // Create replay record
       const replayRes = await fetch("/api/replays", {
@@ -182,6 +225,7 @@ export default function AdminReplaysPage() {
       // Refresh list
       fetchReplays();
     } catch (err) {
+      console.error("Upload error:", err);
       setUploadError("Gagal memuat naik video. Sila cuba lagi.");
     } finally {
       setUploading(false);
