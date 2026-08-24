@@ -1,87 +1,102 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureDatabase } from "@/lib/db-init";
+import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
 
-// GET - Get subscriber count and check if email is subscribed
+// Generate anonymous ID from browser fingerprint + salt
+function generateAnonymousId(request: NextRequest): string {
+  // Use a combination of user agent and a unique salt stored in cookie
+  // This creates a device-specific anonymous ID
+  const userAgent = request.headers.get("user-agent") || "";
+  const acceptLang = request.headers.get("accept-language") || "";
+  
+  // Get or create device ID from cookie
+  const deviceId = request.cookies.get("ebilik_device_id")?.value || 
+    crypto.randomBytes(16).toString("hex");
+  
+  // Create hash from device-specific info
+  const hash = crypto.createHash("sha256")
+    .update(`${deviceId}-${userAgent.substring(0, 100)}-${acceptLang.substring(0, 50)}`)
+    .digest("hex");
+  
+  return hash;
+}
+
+// GET - Get subscriber count and check if this device is subscribed
 export async function GET(request: NextRequest) {
   try {
     await ensureDatabase();
 
-    const { searchParams } = new URL(request.url);
-    const email = searchParams.get("email");
+    const anonymousId = generateAnonymousId(request);
 
     // Get total active subscriber count
     const count = await prisma.subscriber.count({
       where: { active: true },
     });
 
-    // If email provided, check if already subscribed
-    let isSubscribed = false;
-    if (email) {
-      const subscriber = await prisma.subscriber.findUnique({
-        where: { email },
-      });
-      isSubscribed = subscriber?.active ?? false;
-    }
+    // Check if this anonymous ID is already subscribed
+    const subscriber = await prisma.subscriber.findUnique({
+      where: { anonymousId },
+    });
 
-    return NextResponse.json({
+    const isSubscribed = subscriber?.active ?? false;
+
+    const response = NextResponse.json({
       count,
       isSubscribed,
     });
+
+    // Set device ID cookie if not present
+    if (!request.cookies.get("ebilik_device_id")) {
+      const deviceId = crypto.randomBytes(16).toString("hex");
+      response.cookies.set("ebilik_device_id", deviceId, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 60 * 60 * 24 * 365 * 2, // 2 years
+        path: "/",
+      });
+    }
+
+    return response;
   } catch (error) {
     console.error("[SUBSCRIBE] GET error:", error);
     return NextResponse.json({ count: 0, isSubscribed: false }, { status: 500 });
   }
 }
 
-// POST - Subscribe
+// POST - Subscribe (one-click, no email required)
 export async function POST(request: NextRequest) {
   try {
     await ensureDatabase();
 
-    const { email, name } = await request.json();
-
-    if (!email || typeof email !== "string") {
-      return NextResponse.json(
-        { error: "Email diperlukan" },
-        { status: 400 }
-      );
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return NextResponse.json(
-        { error: "Format email tidak sah" },
-        { status: 400 }
-      );
-    }
+    const anonymousId = generateAnonymousId(request);
 
     // Check if already subscribed
     const existing = await prisma.subscriber.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { anonymousId },
     });
 
-    if (existing) {
-      if (existing.active) {
-        return NextResponse.json(
-          { message: "Anda telah melanggan", alreadySubscribed: true },
-          { status: 200 }
-        );
-      }
+    if (existing && existing.active) {
+      return NextResponse.json({
+        message: "Anda telah melanggan",
+        alreadySubscribed: true,
+      });
+    }
+
+    if (existing && !existing.active) {
       // Reactivate if previously unsubscribed
       await prisma.subscriber.update({
-        where: { email: email.toLowerCase() },
+        where: { anonymousId },
         data: { active: true },
       });
     } else {
       // Create new subscriber
       await prisma.subscriber.create({
         data: {
-          email: email.toLowerCase(),
-          name: name || null,
+          anonymousId,
         },
       });
     }
@@ -91,62 +106,27 @@ export async function POST(request: NextRequest) {
       where: { active: true },
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       message: "Berjaya melanggan!",
       count,
     });
+
+    // Set device ID cookie if not present
+    if (!request.cookies.get("ebilik_device_id")) {
+      const deviceId = crypto.randomBytes(16).toString("hex");
+      response.cookies.set("ebilik_device_id", deviceId, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 60 * 60 * 24 * 365 * 2, // 2 years
+        path: "/",
+      });
+    }
+
+    return response;
   } catch (error) {
     console.error("[SUBSCRIBE] POST error:", error);
-    return NextResponse.json(
-      { error: "Ralat pelayan. Sila cuba lagi." },
-      { status: 500 }
-    );
-  }
-}
-
-// DELETE - Unsubscribe
-export async function DELETE(request: NextRequest) {
-  try {
-    await ensureDatabase();
-
-    const { email } = await request.json();
-
-    if (!email || typeof email !== "string") {
-      return NextResponse.json(
-        { error: "Email diperlukan" },
-        { status: 400 }
-      );
-    }
-
-    const existing = await prisma.subscriber.findUnique({
-      where: { email: email.toLowerCase() },
-    });
-
-    if (!existing || !existing.active) {
-      return NextResponse.json(
-        { error: "Anda belum melanggan" },
-        { status: 404 }
-      );
-    }
-
-    // Soft delete - mark as inactive
-    await prisma.subscriber.update({
-      where: { email: email.toLowerCase() },
-      data: { active: false },
-    });
-
-    const count = await prisma.subscriber.count({
-      where: { active: true },
-    });
-
-    return NextResponse.json({
-      success: true,
-      message: "Berjaya berhenti melanggan",
-      count,
-    });
-  } catch (error) {
-    console.error("[SUBSCRIBE] DELETE error:", error);
     return NextResponse.json(
       { error: "Ralat pelayan. Sila cuba lagi." },
       { status: 500 }

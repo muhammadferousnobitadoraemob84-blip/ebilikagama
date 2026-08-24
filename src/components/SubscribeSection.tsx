@@ -5,42 +5,40 @@ import { useLanguage } from "@/components/LanguageProvider";
 
 export default function SubscribeSection() {
   const { t } = useLanguage();
-  const [email, setEmail] = useState("");
   const [subscriberCount, setSubscriberCount] = useState(0);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
-  const [showForm, setShowForm] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
 
-  // Fetch subscriber count on mount
+  // Fetch subscriber count and subscription status on mount
   useEffect(() => {
-    fetchSubscriberCount();
+    checkSubscriptionStatus();
   }, []);
 
-  const fetchSubscriberCount = async () => {
+  const checkSubscriptionStatus = async () => {
     try {
       const res = await fetch("/api/subscribe");
       if (res.ok) {
         const data = await res.json();
         setSubscriberCount(data.count);
+        setIsSubscribed(data.isSubscribed);
       }
     } catch {
-      // Ignore error - keep default count
+      // Ignore error - keep defaults
+    } finally {
+      setInitialLoading(false);
     }
   };
 
-  const handleSubscribe = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email) return;
+  const handleSubscribe = async () => {
+    if (loading || isSubscribed) return;
 
     setLoading(true);
-    setMessage("");
 
     try {
       const res = await fetch("/api/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
       });
 
       const data = await res.json();
@@ -48,14 +46,9 @@ export default function SubscribeSection() {
       if (res.ok) {
         setIsSubscribed(true);
         setSubscriberCount(data.count);
-        setMessage(t("subscribe_success"));
-        setEmail("");
-        setShowForm(false);
-      } else {
-        setMessage(data.error || t("subscribe_error"));
       }
     } catch {
-      setMessage(t("subscribe_error"));
+      // Silently fail - user can try again
     } finally {
       setLoading(false);
     }
@@ -89,78 +82,35 @@ export default function SubscribeSection() {
             </span>
           </div>
 
-          {/* Subscribe Form / Button */}
-          {!showForm ? (
-            <div className="text-center">
-              <button
-                onClick={() => setShowForm(true)}
-                className="bg-red-600 hover:bg-red-700 text-white px-6 sm:px-8 py-3 sm:py-4 rounded-xl font-bold text-sm sm:text-base transition-all transform hover:scale-105 flex items-center gap-2 mx-auto"
-              >
-                <span>✨</span>
-                {t("subscribe_button")}
-              </button>
-            </div>
-          ) : (
-            <form onSubmit={handleSubscribe} className="max-w-md mx-auto">
-              <div className="flex flex-col sm:flex-row gap-3">
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder={t("subscribe_email_placeholder")}
-                  required
-                  className="flex-1 bg-gray-800 border border-gray-700 text-white px-4 py-3 rounded-xl focus:outline-none focus:border-red-500 transition-colors"
-                />
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="bg-red-600 hover:bg-red-700 disabled:bg-red-800 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2"
-                >
-                  {loading ? (
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <>
-                      <span>✨</span>
-                      {t("subscribe_button")}
-                    </>
-                  )}
-                </button>
+          {/* Subscribe Button */}
+          <div className="text-center">
+            {initialLoading ? (
+              <div className="inline-flex items-center gap-2 bg-gray-700 text-gray-300 px-6 sm:px-8 py-3 sm:py-4 rounded-xl font-bold text-sm sm:text-base">
+                <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                Loading...
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowForm(false);
-                  setMessage("");
-                }}
-                className="text-gray-500 text-sm mt-3 hover:text-gray-400 transition-colors"
-              >
-                {t("subscribe_cancel")}
-              </button>
-            </form>
-          )}
-
-          {/* Message */}
-          {message && (
-            <div
-              className={`mt-4 text-center text-sm font-medium ${
-                isSubscribed ? "text-green-400" : "text-red-400"
-              }`}
-            >
-              {message}
-            </div>
-          )}
-
-          {/* Already Subscribed State */}
-          {isSubscribed && (
-            <div className="mt-4 text-center">
-              <span className="inline-flex items-center gap-2 bg-green-600/20 text-green-400 px-4 py-2 rounded-full text-sm font-medium">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            ) : isSubscribed ? (
+              <div className="inline-flex items-center gap-2 bg-green-600/20 text-green-400 px-6 sm:px-8 py-3 sm:py-4 rounded-xl font-bold text-sm sm:text-base border border-green-500/30">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
                 {t("subscribe_already")}
-              </span>
-            </div>
-          )}
+              </div>
+            ) : (
+              <button
+                onClick={handleSubscribe}
+                disabled={loading}
+                className="bg-red-600 hover:bg-red-700 disabled:bg-red-800 disabled:cursor-not-allowed text-white px-6 sm:px-8 py-3 sm:py-4 rounded-xl font-bold text-sm sm:text-base transition-all transform hover:scale-105 flex items-center gap-2 mx-auto"
+              >
+                {loading ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <span>✨</span>
+                )}
+                {t("subscribe_button")}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </section>

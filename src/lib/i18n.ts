@@ -82,11 +82,14 @@ const translations = {
     subscribe_description: "Subscribe for free to stay updated with our live broadcasts, programs and latest eBilikAgamaTV content.",
     subscribe_button: "SUBSCRIBE FOR FREE",
     subscribe_count_label: "subscribers",
-    subscribe_email_placeholder: "Enter your email",
     subscribe_success: "Successfully subscribed!",
     subscribe_error: "Subscription failed. Please try again.",
-    subscribe_already: "Already Subscribed",
-    subscribe_cancel: "Cancel",
+    subscribe_already: "SUBSCRIBED",
+
+    // Live Replay
+    live_replay_title: "Live Replay",
+    live_replay_description: "Watch recordings of our live broadcasts.",
+    replay_not_found: "Replay not found",
 
     // Footer
     copyright: "© 2026 eBilikAgamaTV. All rights reserved.",
@@ -161,11 +164,14 @@ const translations = {
     subscribe_description: "Langgan secara percuma untuk terus mengikuti siaran langsung, program dan kandungan terbaru eBilikAgamaTV.",
     subscribe_button: "LANGGAN PERCUMA",
     subscribe_count_label: "pelanggan",
-    subscribe_email_placeholder: "Masukkan email anda",
     subscribe_success: "Berjaya melanggan!",
     subscribe_error: "Langganan gagal. Sila cuba lagi.",
-    subscribe_already: "Sudah Dilanggan",
-    subscribe_cancel: "Batal",
+    subscribe_already: "SUDAH DILANGGAN",
+
+    // Live Replay
+    live_replay_title: "Ulang Tonton Siaran Langsung",
+    live_replay_description: "Tonton rakaman siaran langsung kami.",
+    replay_not_found: "Ulang tonton tidak dijumpai",
 
     // Footer
     copyright: "© 2026 eBilikAgamaTV. Hak cipta terpelihara.",
@@ -240,11 +246,14 @@ const translations = {
     subscribe_description: "免费订阅，及时获取直播、节目和最新 eBilikAgamaTV 内容。",
     subscribe_button: "免费订阅",
     subscribe_count_label: "订阅者",
-    subscribe_email_placeholder: "请输入您的邮箱",
     subscribe_success: "订阅成功！",
     subscribe_error: "订阅失败，请重试。",
     subscribe_already: "已订阅",
-    subscribe_cancel: "取消",
+
+    // Live Replay
+    live_replay_title: "直播回放",
+    live_replay_description: "观看我们的直播录像。",
+    replay_not_found: "未找到回放",
 
     // Footer
     copyright: "© 2026 eBilikAgamaTV. 版权所有。",

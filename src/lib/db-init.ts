@@ -118,15 +118,31 @@ export async function ensureDatabase(): Promise<boolean> {
       // Index might already exist
     }
 
-    // Subscriber table
+    // Subscriber table (anonymous)
     await client.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Subscriber" (
         "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
-        "email" TEXT NOT NULL,
-        "name" TEXT,
+        "anonymousId" TEXT NOT NULL,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "active" BOOLEAN NOT NULL DEFAULT true,
-        CONSTRAINT "Subscriber_email_key" UNIQUE ("email")
+        CONSTRAINT "Subscriber_anonymousId_key" UNIQUE ("anonymousId")
+      );
+    `);
+
+    // Replay table
+    await client.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Replay" (
+        "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+        "title" TEXT NOT NULL,
+        "description" TEXT,
+        "videoUrl" TEXT NOT NULL,
+        "thumbnail" TEXT,
+        "duration" INTEGER,
+        "fileSize" BIGINT,
+        "date" TEXT NOT NULL,
+        "published" BOOLEAN NOT NULL DEFAULT false,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL
       );
     `);
 
@@ -162,16 +178,36 @@ async function runMigrations(client: PrismaClient) {
     // Column might already exist
   }
 
-  // Create Subscriber table if it doesn't exist
+  // Create Subscriber table if it doesn't exist (new anonymous schema)
   try {
     await client.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Subscriber" (
         "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
-        "email" TEXT NOT NULL,
-        "name" TEXT,
+        "anonymousId" TEXT NOT NULL,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "active" BOOLEAN NOT NULL DEFAULT true,
-        CONSTRAINT "Subscriber_email_key" UNIQUE ("email")
+        CONSTRAINT "Subscriber_anonymousId_key" UNIQUE ("anonymousId")
+      );
+    `);
+  } catch {
+    // Table might already exist
+  }
+
+  // Create Replay table if it doesn't exist
+  try {
+    await client.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Replay" (
+        "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+        "title" TEXT NOT NULL,
+        "description" TEXT,
+        "videoUrl" TEXT NOT NULL,
+        "thumbnail" TEXT,
+        "duration" INTEGER,
+        "fileSize" BIGINT,
+        "date" TEXT NOT NULL,
+        "published" BOOLEAN NOT NULL DEFAULT false,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL
       );
     `);
   } catch {
