@@ -140,7 +140,75 @@ export async function getReplayFolderId(): Promise<string> {
 }
 
 /**
- * Upload file to Google Drive using resumable upload
+ * Initialize resumable upload and get upload URL
+ * This is used by the browser to upload directly to Google Drive
+ */
+export async function initializeResumableUpload(
+  accessToken: string,
+  fileName: string,
+  folderId: string
+): Promise<{ uploadUrl: string }> {
+  const initResponse = await fetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({
+        name: fileName,
+        parents: [folderId],
+        mimeType: "video/mp4",
+      }),
+    }
+  );
+
+  if (!initResponse.ok) {
+    const error = await initResponse.text();
+    console.error("[GOOGLE-DRIVE] Init upload failed:", error);
+    throw new Error("Failed to initialize upload to Google Drive");
+  }
+
+  const uploadUrl = initResponse.headers.get("Location");
+  if (!uploadUrl) {
+    throw new Error("No upload URL returned from Google Drive");
+  }
+
+  return { uploadUrl };
+}
+
+/**
+ * Finalize upload and set permissions
+ */
+export async function finalizeUpload(
+  accessToken: string,
+  fileId: string
+): Promise<{ fileId: string; webViewLink: string }> {
+  // Set file permissions to public
+  await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}/permissions`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        role: "reader",
+        type: "anyone",
+      }),
+    }
+  );
+
+  return {
+    fileId,
+    webViewLink: `https://drive.google.com/file/d/${fileId}/preview`,
+  };
+}
+
+/**
+ * Upload file to Google Drive (for small files only)
  */
 export async function uploadToGoogleDrive(
   accessToken: string,
@@ -157,11 +225,12 @@ export async function uploadToGoogleDrive(
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
+        "Content-Type": "application/json; charset=UTF-8",
       },
       body: JSON.stringify({
         name: fileName,
         parents: [folderId],
+        mimeType: mimeType,
       }),
     }
   );

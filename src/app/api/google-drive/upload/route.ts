@@ -4,22 +4,61 @@ import { prisma } from "@/lib/prisma";
 import { ensureDatabase } from "@/lib/db-init";
 import { 
   getReplayFolderId, 
-  uploadToGoogleDrive, 
-  deleteFromGoogleDrive 
+  initializeResumableUpload,
+  finalizeUpload,
+  deleteFromGoogleDrive,
+  refreshAccessToken
 } from "@/lib/google-drive";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
 
-// Helper to get Google Drive access token from database
-async function getGoogleDriveAccessToken() {
+// Helper to get Google Drive tokens from database
+async function getGoogleDriveTokens() {
   const accessTokenRecord = await prisma.setting.findUnique({
     where: { key: "google_drive_access_token" },
   });
-  return accessTokenRecord?.value || "";
+  const refreshTokenRecord = await prisma.setting.findUnique({
+    where: { key: "google_drive_refresh_token" },
+  });
+  return {
+    accessToken: accessTokenRecord?.value || "",
+    refreshToken: refreshTokenRecord?.value || "",
+  };
 }
 
-// POST - Upload video to Google Drive
+// Helper to refresh and update access token
+async function refreshAndUpdateToken(refreshToken: string) {
+  try {
+    const tokens = await refreshAccessToken(refreshToken);
+    await prisma.setting.upsert({
+      where: { key: "google_drive_access_token" },
+      update: { value: tokens.access_token },
+      create: { key: "google_drive_access_token", value: tokens.access_token },
+    });
+    return tokens.access_token;
+  } catch (error) {
+    console.error("[GOOGLE-DRIVE] Token refresh failed:", error);
+    throw new Error("Gagal memperbaharui token Google Drive");
+  }
+}
+
+// Helper to get valid access token (with auto-refresh)
+async function getValidAccessToken(): Promise<string> {
+  const { accessToken, refreshToken } = await getGoogleDriveTokens();
+  
+  if (!accessToken) {
+    throw new Error("Token Google Drive tidak ditemui");
+  }
+  
+  if (!refreshToken) {
+    throw new Error("Refresh token tidak ditemui");
+  }
+  
+  return accessToken;
+}
+
+// POST - Initialize resumable upload (get upload URL for browser)
 export async function POST(request: NextRequest) {
   try {
     await ensureDatabase();
@@ -49,8 +88,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get access token
-    const accessToken = await getGoogleDriveAccessToken();
-
+    const accessToken = await getValidAccessToken();
     if (!accessToken) {
       return NextResponse.json(
         { error: "Token Google Drive tidak ditemui." },
@@ -58,20 +96,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get file from form data
-    const formData = await request.formData();
-    const file = formData.get("video") as File;
+    // Get request body
+    const { fileName, mimeType, fileSize } = await request.json();
 
-    if (!file) {
+    if (!fileName || !mimeType || !fileSize) {
       return NextResponse.json(
-        { error: "Tiada fail video diberikan" },
+        { error: "Maklumat fail tidak lengkap" },
         { status: 400 }
       );
     }
 
     // Validate file size (20GB max)
     const MAX_SIZE = 20 * 1024 * 1024 * 1024;
-    if (file.size > MAX_SIZE) {
+    if (fileSize > MAX_SIZE) {
       return NextResponse.json(
         { error: "Fail terlalu besar. Saiz maksimum ialah 20 GB." },
         { status: 400 }
@@ -80,7 +117,7 @@ export async function POST(request: NextRequest) {
 
     // Validate file type
     const allowedTypes = ["video/mp4", "video/quicktime", "video/webm", "video/x-matroska"];
-    if (!allowedTypes.includes(file.type)) {
+    if (!allowedTypes.includes(mimeType)) {
       return NextResponse.json(
         { error: "Format video tidak disokong. Gunakan: MP4, MOV, WebM, MKV" },
         { status: 400 }
@@ -93,33 +130,102 @@ export async function POST(request: NextRequest) {
     // Generate unique filename
     const timestamp = Date.now();
     const random = crypto.randomBytes(4).toString("hex");
-    const ext = file.name.split(".").pop() || "mp4";
+    const ext = fileName.split(".").pop() || "mp4";
     const driveFileName = `${timestamp}-${random}.${ext}`;
 
-    // Convert file to buffer
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
-
-    // Upload to Google Drive
-    const result = await uploadToGoogleDrive(
+    // Initialize resumable upload and get upload URL
+    const { uploadUrl } = await initializeResumableUpload(
       accessToken,
       driveFileName,
-      file.type,
-      file.size,
-      fileBuffer,
       folderId
     );
 
+    // Store the upload URL temporarily (we'll need it to finalize)
+    await prisma.setting.upsert({
+      where: { key: `google_drive_upload_${timestamp}` },
+      update: { value: uploadUrl },
+      create: { key: `google_drive_upload_${timestamp}`, value: uploadUrl },
+    });
+
     return NextResponse.json({
       success: true,
-      fileId: result.fileId,
-      webViewLink: result.webViewLink,
-      fileName: driveFileName,
-      fileSize: file.size,
+      uploadUrl,
+      driveFileName,
+      uploadId: timestamp,
     });
   } catch (error) {
     console.error("[GOOGLE-DRIVE-UPLOAD] Error:", error);
     return NextResponse.json(
-      { error: "Gagal memuat naik ke Google Drive" },
+      { error: "Gagal memulakan muat naik ke Google Drive" },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT - Finalize upload and save to database
+export async function PUT(request: NextRequest) {
+  try {
+    await ensureDatabase();
+
+    // Verify admin authentication
+    const token = request.cookies.get("admin-token")?.value;
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    try {
+      await verifyToken(token);
+    } catch {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Get request body
+    const { fileId, title, description, date, thumbnail, fileSize, uploadId } = await request.json();
+
+    if (!fileId || !title) {
+      return NextResponse.json(
+        { error: "Maklumat tidak lengkap" },
+        { status: 400 }
+      );
+    }
+
+    // Get access token
+    const accessToken = await getValidAccessToken();
+
+    // Finalize upload (set permissions)
+    const result = await finalizeUpload(accessToken, fileId);
+
+    // Clean up upload ID from settings
+    if (uploadId) {
+      await prisma.setting.deleteMany({
+        where: { key: `google_drive_upload_${uploadId}` },
+      });
+    }
+
+    // Save replay to database
+    const replay = await prisma.replay.create({
+      data: {
+        title,
+        description: description || "",
+        videoUrl: result.webViewLink,
+        thumbnail: thumbnail || null,
+        duration: null,
+        fileSize: fileSize || null,
+        date: date || new Date().toISOString().split("T")[0],
+        published: false,
+        googleDriveId: fileId,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      replay,
+      fileId: result.fileId,
+    });
+  } catch (error) {
+    console.error("[GOOGLE-DRIVE-FINALIZE] Error:", error);
+    return NextResponse.json(
+      { error: "Gagal menyelesaikan muat naik" },
       { status: 500 }
     );
   }
@@ -152,14 +258,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Get access token
-    const accessToken = await getGoogleDriveAccessToken();
-
-    if (!accessToken) {
-      return NextResponse.json(
-        { error: "Google Drive not connected" },
-        { status: 400 }
-      );
-    }
+    const accessToken = await getValidAccessToken();
 
     // Delete from Google Drive
     const deleted = await deleteFromGoogleDrive(accessToken, fileId);

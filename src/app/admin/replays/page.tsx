@@ -161,57 +161,101 @@ export default function AdminReplaysPage() {
         }
       }
 
-      // Upload video to Google Drive
-      const formData = new FormData();
-      formData.append("video", videoFile);
-
-      const xhr = new XMLHttpRequest();
-      
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          const percent = Math.round((event.loaded / event.total) * 100);
-          setUploadProgress(percent);
-        }
-      };
-
-      const videoPromise = new Promise<{ success: boolean; fileId: string; fileName: string; fileSize: number }>((resolve, reject) => {
-        xhr.onload = () => {
-          if (xhr.status === 200) {
-            resolve(JSON.parse(xhr.responseText));
-          } else {
-            try {
-              const errData = JSON.parse(xhr.responseText);
-              reject(new Error(errData.error || "Upload failed"));
-            } catch {
-              reject(new Error("Upload failed"));
-            }
-          }
-        };
-        xhr.onerror = () => reject(new Error("Upload failed"));
-      });
-
-      xhr.open("POST", "/api/google-drive/upload");
-      xhr.send(formData);
-
-      const videoResult = await videoPromise;
-
-      // Create replay record
-      const replayRes = await fetch("/api/replays", {
+      // Step 1: Get upload URL from our API
+      const initRes = await fetch("/api/google-drive/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title,
-          description: description || null,
-          googleDriveId: videoResult.fileId,
-          thumbnail: thumbnailUrl,
-          fileSize: videoResult.fileSize,
-          date,
-          published: false,
+          fileName: videoFile.name,
+          mimeType: videoFile.type || "video/mp4",
+          fileSize: videoFile.size,
         }),
       });
 
-      if (!replayRes.ok) {
-        throw new Error("Failed to create replay record");
+      if (!initRes.ok) {
+        const errData = await initRes.json();
+        throw new Error(errData.error || "Gagal memulakan muat naik");
+      }
+
+      const { uploadUrl, uploadId } = await initRes.json();
+
+      // Step 2: Upload directly to Google Drive (bypassing Vercel)
+      const chunkSize = 10 * 1024 * 1024; // 10MB chunks
+      let offset = 0;
+      let fileId = "";
+
+      while (offset < videoFile.size) {
+        const end = Math.min(offset + chunkSize, videoFile.size);
+        const chunk = videoFile.slice(offset, end);
+        
+        // Use XMLHttpRequest for progress tracking
+        const chunkResult = await new Promise<{ ok: boolean; fileId?: string }>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const totalProgress = ((offset + event.loaded) / videoFile.size) * 100;
+              setUploadProgress(Math.round(totalProgress));
+            }
+          };
+          
+          xhr.onload = () => {
+            if (xhr.status === 308 || xhr.status === 200) {
+              // Get file ID from final chunk response
+              let newFileId = undefined;
+              if (xhr.status === 200 && xhr.responseText) {
+                try {
+                  const response = JSON.parse(xhr.responseText);
+                  newFileId = response.id;
+                } catch {
+                  // Ignore parse error for intermediate chunks
+                }
+              }
+              resolve({ ok: true, fileId: newFileId });
+            } else {
+              reject(new Error(`Upload failed at chunk offset ${offset}`));
+            }
+          };
+          
+          xhr.onerror = () => reject(new Error("Network error during upload"));
+          
+          // Determine Content-Range header
+          const contentRange = `bytes ${offset}-${end - 1}/${videoFile.size}`;
+          
+          xhr.open("PUT", uploadUrl);
+          xhr.setRequestHeader("Content-Range", contentRange);
+          xhr.send(chunk);
+        });
+
+        if (!chunkResult.ok) {
+          throw new Error("Upload failed");
+        }
+
+        if (chunkResult.fileId) {
+          fileId = chunkResult.fileId;
+        }
+
+        offset = end;
+      }
+
+      // Step 3: Finalize upload and save to database
+      const finalRes = await fetch("/api/google-drive/upload", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileId,
+          title,
+          description: description || null,
+          date,
+          thumbnail: thumbnailUrl,
+          fileSize: videoFile.size,
+          uploadId,
+        }),
+      });
+
+      if (!finalRes.ok) {
+        const errData = await finalRes.json();
+        throw new Error(errData.error || "Gagal menyimpan rakaman");
       }
 
       // Reset form
@@ -472,6 +516,9 @@ export default function AdminReplaysPage() {
                         style={{ width: `${uploadProgress}%` }}
                       />
                     </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Video dihantar terus ke Google Drive (tidak melalui pelayan)
+                    </p>
                   </div>
                 )}
 
