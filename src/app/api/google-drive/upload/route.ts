@@ -3,7 +3,7 @@ import { verifyToken } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ensureDatabase } from "@/lib/db-init";
 import { 
-  getOrCreateReplayFolder, 
+  getReplayFolderId, 
   uploadToGoogleDrive, 
   deleteFromGoogleDrive 
 } from "@/lib/google-drive";
@@ -87,8 +87,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get or create folder
-    const folderId = await getOrCreateReplayFolder(accessToken);
+    // Get folder ID
+    const folderId = await getReplayFolderId();
 
     // Generate unique filename
     const timestamp = Date.now();

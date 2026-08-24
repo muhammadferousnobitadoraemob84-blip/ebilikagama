@@ -9,8 +9,9 @@ const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || "";
 // Scopes needed for Google Drive
 const SCOPES = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly";
 
-// Folder name for Live Replays
-export const REPLAY_FOLDER_NAME = "eBilikAgamaTV - LIVE REPLAY";
+// User's Google Drive folder for Live Replays
+// https://drive.google.com/drive/folders/1YRUK9XzaE53553_nOltMw66HWK8j5-Z_
+export const REPLAY_FOLDER_ID = "1YRUK9XzaE53553_nOltMw66HWK8j5-Z_";
 
 /**
  * Get authorization URL for Google Drive connection
@@ -110,55 +111,12 @@ export async function verifyGoogleDriveConnection(
 }
 
 /**
- * Create or get the Live Replay folder
+ * Get the Live Replay folder ID
+ * Uses the user's pre-configured folder
  */
-export async function getOrCreateReplayFolder(
-  accessToken: string
-): Promise<string> {
-  // Search for existing folder
-  const searchParams = new URLSearchParams({
-    q: `name='${REPLAY_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-    fields: "files(id, name)",
-  });
-
-  const searchResponse = await fetch(
-    `https://www.googleapis.com/drive/v3/files?${searchParams.toString()}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }
-  );
-
-  if (searchResponse.ok) {
-    const searchData = await searchResponse.json();
-    if (searchData.files && searchData.files.length > 0) {
-      return searchData.files[0].id;
-    }
-  }
-
-  // Create new folder
-  const createResponse = await fetch(
-    "https://www.googleapis.com/drive/v3/files",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name: REPLAY_FOLDER_NAME,
-        mimeType: "application/vnd.google-apps.folder",
-      }),
-    }
-  );
-
-  if (!createResponse.ok) {
-    throw new Error("Failed to create folder");
-  }
-
-  const createData = await createResponse.json();
-  return createData.id;
+export async function getReplayFolderId(): Promise<string> {
+  // Use the user's configured folder ID
+  return REPLAY_FOLDER_ID;
 }
 
 /**
