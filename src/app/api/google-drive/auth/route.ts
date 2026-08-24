@@ -24,7 +24,9 @@ export async function GET(request: NextRequest) {
       "base64"
     );
 
-    const authUrl = getAuthUrl(state);
+    // Get the request URL to construct redirect URI
+    const requestUrl = request.url;
+    const authUrl = getAuthUrl(requestUrl, state);
 
     return NextResponse.json({ authUrl });
   } catch (error) {

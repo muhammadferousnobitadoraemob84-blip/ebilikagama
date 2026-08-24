@@ -29,8 +29,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Exchange code for tokens
-    const tokens = await exchangeCodeForTokens(code);
+    // Exchange code for tokens - pass request URL for redirect URI
+    const requestUrl = request.url;
+    const tokens = await exchangeCodeForTokens(code, requestUrl);
 
     if (!tokens.access_token) {
       return NextResponse.redirect(

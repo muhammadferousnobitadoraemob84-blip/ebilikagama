@@ -4,7 +4,23 @@
 // Google Drive configuration from environment variables
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
-const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || "";
+
+// Get redirect URI - use env var or construct from request
+export function getRedirectUri(requestUrl?: string): string {
+  // First try environment variable
+  if (process.env.GOOGLE_REDIRECT_URI) {
+    return process.env.GOOGLE_REDIRECT_URI;
+  }
+  
+  // Construct from request URL if available
+  if (requestUrl) {
+    const url = new URL(requestUrl);
+    return `${url.protocol}//${url.host}/api/google-drive/callback`;
+  }
+  
+  // Fallback to production URL
+  return "https://ebilikagamabeta.vercel.app/api/google-drive/callback";
+}
 
 // Scopes needed for Google Drive
 const SCOPES = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly";
@@ -16,10 +32,12 @@ export const REPLAY_FOLDER_ID = "1YRUK9XzaE53553_nOltMw66HWK8j5-Z_";
 /**
  * Get authorization URL for Google Drive connection
  */
-export function getAuthUrl(state?: string): string {
+export function getAuthUrl(requestUrl?: string, state?: string): string {
+  const redirectUri = getRedirectUri(requestUrl);
+  
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
-    redirect_uri: GOOGLE_REDIRECT_URI,
+    redirect_uri: redirectUri,
     response_type: "code",
     scope: SCOPES,
     access_type: "offline",
@@ -33,7 +51,9 @@ export function getAuthUrl(state?: string): string {
 /**
  * Exchange authorization code for tokens
  */
-export async function exchangeCodeForTokens(code: string) {
+export async function exchangeCodeForTokens(code: string, requestUrl?: string) {
+  const redirectUri = getRedirectUri(requestUrl);
+  
   const response = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: {
@@ -43,7 +63,7 @@ export async function exchangeCodeForTokens(code: string) {
       code,
       client_id: GOOGLE_CLIENT_ID,
       client_secret: GOOGLE_CLIENT_SECRET,
-      redirect_uri: GOOGLE_REDIRECT_URI,
+      redirect_uri: redirectUri,
       grant_type: "authorization_code",
     }),
   });
