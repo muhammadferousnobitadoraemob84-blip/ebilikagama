@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureDatabase } from "@/lib/db-init";
-import { verifyToken } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// GET - List published replays (public) or all replays (admin)
+// GET - List replays
 export async function GET(request: NextRequest) {
   try {
     await ensureDatabase();
@@ -13,67 +12,41 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const all = searchParams.get("all") === "true";
 
-    // Check if admin is authenticated
-    let isAdmin = false;
-    const token = request.cookies.get("admin-token")?.value;
-    if (token) {
-      try {
-        await verifyToken(token);
-        isAdmin = true;
-      } catch {
-        // Not authenticated
-      }
+    let replays;
+    if (all) {
+      // Admin view - get all replays
+      replays = await prisma.replay.findMany({
+        orderBy: { createdAt: "desc" },
+      });
+    } else {
+      // Public view - get only published replays
+      replays = await prisma.replay.findMany({
+        where: { published: true },
+        orderBy: { createdAt: "desc" },
+      });
     }
-
-    // Public users only see published replays, admins see all
-    const where = all && isAdmin ? {} : { published: true };
-
-    const replays = await prisma.replay.findMany({
-      where,
-      orderBy: { date: "desc" },
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        thumbnail: true,
-        duration: true,
-        fileSize: true,
-        date: true,
-        published: true,
-        createdAt: true,
-      },
-    });
 
     return NextResponse.json(replays);
   } catch (error) {
-    console.error("[REPLAYS] GET error:", error);
-    return NextResponse.json([], { status: 500 });
+    console.error("[REPLAYS] Error:", error);
+    return NextResponse.json(
+      { error: "Gagal memuatkan rakaman" },
+      { status: 500 }
+    );
   }
 }
 
-// POST - Create replay (admin only)
+// POST - Create replay
 export async function POST(request: NextRequest) {
   try {
     await ensureDatabase();
 
-    // Verify admin authentication
-    const token = request.cookies.get("admin-token")?.value;
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    try {
-      await verifyToken(token);
-    } catch {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const body = await request.json();
-    const { title, description, videoUrl, thumbnail, duration, fileSize, date, published } = body;
+    const { title, description, date, googleDriveId, googleDriveUrl, thumbnail, published } = body;
 
-    if (!title || !videoUrl || !date) {
+    if (!title || !googleDriveId) {
       return NextResponse.json(
-        { error: "Title, video URL, and date are required" },
+        { error: "Tajuk dan Google Drive ID diperlukan" },
         { status: 400 }
       );
     }
@@ -82,20 +55,20 @@ export async function POST(request: NextRequest) {
       data: {
         title,
         description: description || null,
-        videoUrl,
+        date: date || new Date().toISOString().split("T")[0],
+        googleDriveId,
+        googleDriveUrl: googleDriveUrl || null,
+        videoUrl: `https://drive.google.com/file/d/${googleDriveId}/preview`,
         thumbnail: thumbnail || null,
-        duration: duration || null,
-        fileSize: fileSize ? BigInt(fileSize) : null,
-        date,
-        published: published ?? false,
+        published: published || false,
       },
     });
 
-    return NextResponse.json(replay);
+    return NextResponse.json(replay, { status: 201 });
   } catch (error) {
-    console.error("[REPLAYS] POST error:", error);
+    console.error("[REPLAYS] Create error:", error);
     return NextResponse.json(
-      { error: "Failed to create replay" },
+      { error: "Gagal mencipta rakaman" },
       { status: 500 }
     );
   }

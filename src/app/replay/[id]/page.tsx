@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useLanguage } from "@/components/LanguageProvider";
 
 interface Replay {
   id: string;
@@ -14,110 +13,67 @@ interface Replay {
   googleDriveUrl: string | null;
   thumbnail: string | null;
   duration: number | null;
-  fileSize: bigint | null;
   date: string;
   published: boolean;
 }
 
-function formatDuration(seconds: number | null): string {
-  if (!seconds) return "";
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-  }
-  return `${minutes}:${secs.toString().padStart(2, "0")}`;
-}
-
-function formatDate(dateStr: string, language: string): string {
-  try {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString(
-      language === "bm" ? "ms-MY" : language === "zh" ? "zh-CN" : "en-US",
-      { year: "numeric", month: "long", day: "numeric" }
-    );
-  } catch {
-    return dateStr;
-  }
-}
-
-function formatFileSize(bytes: bigint | null): string {
-  if (!bytes) return "";
-  const gb = Number(bytes) / (1024 * 1024 * 1024);
-  if (gb >= 1) {
-    return `${gb.toFixed(1)} GB`;
-  }
-  const mb = Number(bytes) / (1024 * 1024);
-  return `${mb.toFixed(0)} MB`;
-}
-
 export default function ReplayPage() {
   const params = useParams();
-  const { t, language } = useLanguage();
   const [replay, setReplay] = useState<Replay | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!params.id) return;
-
-    fetch(`/api/replays/${params.id}`)
-      .then((r) => {
-        if (!r.ok) throw new Error("Not found");
-        return r.json();
-      })
-      .then((data) => {
-        setReplay(data);
-        setLoading(false);
-      })
-      .catch(() => {
-        setError(true);
-        setLoading(false);
-      });
+    if (params.id) {
+      fetchReplay(params.id as string);
+    }
   }, [params.id]);
 
-  // Get video source URL - prefer Google Drive if available
-  const getVideoSrc = () => {
-    if (!replay) return "";
-    
-    // If Google Drive ID exists, use Google Drive preview URL
-    if (replay.googleDriveId) {
-      // Use Google Drive's video preview (works for public files)
-      return `https://drive.google.com/file/d/${replay.googleDriveId}/preview`;
+  const fetchReplay = async (id: string) => {
+    try {
+      const res = await fetch(`/api/replays/${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setReplay(data);
+      } else {
+        setError("Rakaman tidak ditemui.");
+      }
+    } catch {
+      setError("Gagal memuatkan rakaman.");
+    } finally {
+      setLoading(false);
     }
-    
-    // Fallback to direct video URL
-    return replay.videoUrl || "";
   };
 
-  const useIframe = replay?.googleDriveId;
+  // Generate Google Drive embed URL
+  const getGoogleDriveEmbedUrl = (fileId: string): string => {
+    return `https://drive.google.com/file/d/${fileId}/preview`;
+  };
+
+  // Generate Google Drive direct view URL
+  const getGoogleDriveViewUrl = (fileId: string): string => {
+    return `https://drive.google.com/file/d/${fileId}/view`;
+  };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-black">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-400 text-sm">{t("loading")}</p>
-        </div>
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="w-12 h-12 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   if (error || !replay) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-black px-4">
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
         <div className="text-center">
-          <h2 className="text-white text-lg sm:text-2xl font-bold mb-4">
-            {t("replay_not_found")}
-          </h2>
+          <h1 className="text-2xl font-bold mb-4">Rakaman Tidak Ditemui</h1>
+          <p className="text-gray-400 mb-6">{error || "Rakaman ini tidak wujud."}</p>
           <Link
             href="/"
-            className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-5 py-3 rounded-xl transition-colors text-sm"
+            className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-medium"
           >
-            {t("back_to_channels")}
+            Kembali ke Utama
           </Link>
         </div>
       </div>
@@ -125,91 +81,78 @@ export default function ReplayPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black">
-      {/* Back Button */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-3 sm:pt-6">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1.5 sm:gap-2 text-gray-400 hover:text-white transition-colors text-xs sm:text-sm font-medium"
-        >
-          <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          {t("back")}
-        </Link>
+    <div className="min-h-screen bg-black text-white">
+      {/* Header */}
+      <div className="bg-gray-900 border-b border-gray-800">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center gap-4">
+          <Link
+            href="/"
+            className="text-gray-400 hover:text-white transition-colors"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </Link>
+          <div>
+            <h1 className="text-xl font-bold">{replay.title}</h1>
+            <p className="text-gray-400 text-sm">{replay.date}</p>
+          </div>
+        </div>
       </div>
 
       {/* Video Player */}
-      <div className="max-w-7xl mx-auto px-0 sm:px-6 lg:px-8 pt-2 sm:pt-4">
-        <div className="sm:px-0">
-          {useIframe ? (
-            // Google Drive iframe player
-            <div className="relative w-full aspect-video">
-              <iframe
-                src={getVideoSrc()}
-                className="absolute inset-0 w-full h-full rounded-none sm:rounded-xl"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
-            </div>
-          ) : (
-            // Direct video player
-            <video
-              ref={videoRef}
-              className="w-full rounded-none sm:rounded-xl"
-              controls
-              playsInline
-              poster={replay.thumbnail || undefined}
-            >
-              <source src={replay.videoUrl || ""} />
-              Your browser does not support the video tag.
-            </video>
-          )}
-        </div>
-      </div>
-
-      {/* Replay Info */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
-        <div className="flex items-start gap-3 mb-4">
-          <div className="bg-red-600 text-white text-xs font-bold px-2 py-1 rounded">
-            LIVE REPLAY
+      <div className="max-w-6xl mx-auto px-4 py-6">
+        {replay.googleDriveId ? (
+          <div className="relative w-full aspect-video bg-gray-900 rounded-xl overflow-hidden">
+            <iframe
+              src={getGoogleDriveEmbedUrl(replay.googleDriveId)}
+              className="absolute inset-0 w-full h-full"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              title={replay.title}
+            />
           </div>
-        </div>
-
-        <h1 className="text-white text-xl sm:text-2xl md:text-3xl font-bold mb-3">
-          {replay.title}
-        </h1>
-
-        <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-xs sm:text-sm text-gray-400 mb-4">
-          <span className="flex items-center gap-1.5">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            {formatDate(replay.date, language)}
-          </span>
-          {replay.duration && (
-            <span className="flex items-center gap-1.5">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        ) : (
+          <div className="relative w-full aspect-video bg-gray-900 rounded-xl overflow-hidden flex items-center justify-center">
+            <div className="text-center">
+              <svg className="w-16 h-16 text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              {formatDuration(replay.duration)}
-            </span>
-          )}
-          {replay.fileSize && (
-            <span className="flex items-center gap-1.5">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              {formatFileSize(replay.fileSize)}
-            </span>
-          )}
-        </div>
-
-        {replay.description && (
-          <p className="text-gray-400 text-sm sm:text-base leading-relaxed max-w-3xl">
-            {replay.description}
-          </p>
+              <p className="text-gray-400">Video tidak tersedia</p>
+            </div>
+          </div>
         )}
+
+        {/* Video Info */}
+        <div className="mt-6">
+          <h2 className="text-2xl font-bold mb-2">{replay.title}</h2>
+          <p className="text-gray-400 mb-4">{replay.date}</p>
+          
+          {replay.description && (
+            <div className="bg-gray-900 rounded-xl p-4">
+              <h3 className="font-medium mb-2">Penerangan</h3>
+              <p className="text-gray-400">{replay.description}</p>
+            </div>
+          )}
+
+          {/* Open in Google Drive button */}
+          {replay.googleDriveId && (
+            <div className="mt-4">
+              <a
+                href={getGoogleDriveViewUrl(replay.googleDriveId)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                Buka di Google Drive
+              </a>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

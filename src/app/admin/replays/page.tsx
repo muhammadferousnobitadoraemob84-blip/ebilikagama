@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 
 interface Replay {
@@ -18,33 +18,34 @@ interface Replay {
   createdAt: string;
 }
 
-interface GoogleDriveStatus {
-  connected: boolean;
-  email?: string;
-}
-
 export default function AdminReplaysPage() {
   const [replays, setReplays] = useState<Replay[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showUpload, setShowUpload] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadStatus, setUploadStatus] = useState("");
-  const [uploadError, setUploadError] = useState("");
-  const [driveStatus, setDriveStatus] = useState<GoogleDriveStatus>({ connected: false });
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [editingReplay, setEditingReplay] = useState<Replay | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   // Form state
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [googleDriveLink, setGoogleDriveLink] = useState("");
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
   const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null);
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+
+  // Validation state
+  const [validating, setValidating] = useState(false);
+  const [validationResult, setValidationResult] = useState<{
+    valid: boolean;
+    fileId?: string;
+    message: string;
+  } | null>(null);
 
   useEffect(() => {
     fetchReplays();
-    checkDriveStatus();
   }, []);
 
   const fetchReplays = async () => {
@@ -61,68 +62,83 @@ export default function AdminReplaysPage() {
     }
   };
 
-  const checkDriveStatus = async () => {
-    try {
-      const res = await fetch("/api/google-drive/status");
-      if (res.ok) {
-        const data = await res.json();
-        setDriveStatus(data);
-      }
-    } catch {
-      // Ignore error
-    }
+  // Extract Google Drive file ID from URL
+  const extractGoogleDriveFileId = (url: string): string | null => {
+    // Format: https://drive.google.com/file/d/FILE_ID/view
+    const match1 = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if (match1) return match1[1];
+
+    // Format: https://drive.google.com/open?id=FILE_ID
+    const match2 = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (match2) return match2[1];
+
+    // Format: https://drive.google.com/uc?id=FILE_ID
+    const match3 = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (match3) return match3[1];
+
+    return null;
   };
 
-  const handleConnectDrive = async () => {
-    try {
-      const res = await fetch("/api/google-drive/auth");
-      if (res.ok) {
-        const data = await res.json();
-        if (data.authUrl) {
-          window.location.href = data.authUrl;
-        }
-      }
-    } catch {
-      setUploadError("Gagal mendapatkan URL pengesahan Google Drive");
-    }
-  };
-
-  const handleVideoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Validate file size (20GB max)
-    const maxSize = 20 * 1024 * 1024 * 1024;
-    if (file.size > maxSize) {
-      setUploadError("Fail terlalu besar. Saiz maksimum ialah 20 GB.");
+  // Validate Google Drive link
+  const handleValidateLink = async () => {
+    if (!googleDriveLink.trim()) {
+      setValidationResult({
+        valid: false,
+        message: "Sila masukkan Google Drive link.",
+      });
       return;
     }
 
-    // Validate file type
-    const allowedTypes = ["video/mp4", "video/quicktime", "video/webm", "video/x-matroska"];
-    if (!allowedTypes.includes(file.type)) {
-      setUploadError("Format video tidak disokong. Gunakan: MP4, MOV, WebM, MKV");
+    const fileId = extractGoogleDriveFileId(googleDriveLink);
+
+    if (!fileId) {
+      setValidationResult({
+        valid: false,
+        message: "Google Drive link tidak sah. Format yang betul: https://drive.google.com/file/d/FILE_ID/view",
+      });
       return;
     }
 
-    setVideoFile(file);
-    setUploadError("");
+    setValidating(true);
+    setValidationResult(null);
+
+    try {
+      const res = await fetch("/api/google-drive/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ link: googleDriveLink, fileId }),
+      });
+
+      const data = await res.json();
+
+      setValidationResult({
+        valid: data.valid,
+        fileId,
+        message: data.message,
+      });
+    } catch {
+      setValidationResult({
+        valid: false,
+        fileId,
+        message: "Gagal menyemak video. Sila cuba lagi.",
+      });
+    } finally {
+      setValidating(false);
+    }
   };
 
+  // Handle thumbnail change
   const handleThumbnailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file size (5MB max)
     const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
-      setUploadError("Gambar terlalu besar. Saiz maksimum ialah 5 MB.");
+      setError("Gambar terlalu besar. Saiz maksimum ialah 5 MB.");
       return;
     }
 
     setThumbnailFile(file);
-    
-    // Create preview
     const reader = new FileReader();
     reader.onload = (e) => {
       setThumbnailPreview(e.target?.result as string);
@@ -130,191 +146,153 @@ export default function AdminReplaysPage() {
     reader.readAsDataURL(file);
   };
 
-  const uploadInChunks = async (file: File): Promise<{ fileId: string; replayId: string }> => {
-    const CHUNK_SIZE = 3 * 1024 * 1024; // 3MB chunks (safe for Vercel)
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-    
-    // Step 1: Initialize upload session
-    setUploadStatus("Memulakan sesi muat naik...");
-    const initRes = await fetch("/api/google-drive/upload/init", {
+  // Upload thumbnail
+  const uploadThumbnail = async (): Promise<string | null> => {
+    if (!thumbnailFile) return thumbnailUrl;
+
+    const formData = new FormData();
+    formData.append("thumbnail", thumbnailFile);
+
+    const res = await fetch("/api/upload/thumbnail", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fileName: file.name,
-        mimeType: file.type || "video/mp4",
-        fileSize: file.size,
-        totalChunks,
-      }),
+      body: formData,
     });
 
-    if (!initRes.ok) {
-      const errData = await initRes.json();
-      throw new Error(errData.error || "Gagal memulakan sesi muat naik");
+    if (res.ok) {
+      const data = await res.json();
+      return data.thumbnailUrl;
     }
 
-    const { uploadSessionId, driveFileName } = await initRes.json();
-
-    // Step 2: Upload chunks
-    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-      const start = chunkIndex * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, file.size);
-      const chunk = file.slice(start, end);
-
-      setUploadStatus(`Memuat naik bahagian ${chunkIndex + 1} / ${totalChunks}...`);
-      setUploadProgress(Math.round(((chunkIndex + 1) / totalChunks) * 100));
-
-      const formData = new FormData();
-      formData.append("chunk", chunk);
-      formData.append("uploadSessionId", uploadSessionId);
-      formData.append("chunkIndex", chunkIndex.toString());
-      formData.append("totalChunks", totalChunks.toString());
-
-      const chunkRes = await fetch("/api/google-drive/upload/chunk", {
-        method: "POST",
-        body: formData,
-        signal: abortControllerRef.current?.signal,
-      });
-
-      if (!chunkRes.ok) {
-        const errData = await chunkRes.json();
-        throw new Error(errData.error || `Gagal memuat naik bahagian ${chunkIndex + 1}`);
-      }
-    }
-
-    // Step 3: Complete upload
-    setUploadStatus("Menyelesaikan muat naik ke Google Drive...");
-    const completeRes = await fetch("/api/google-drive/upload/complete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        uploadSessionId,
-        title,
-        description: description || "",
-        date,
-        fileSize: file.size,
-      }),
-    });
-
-    if (!completeRes.ok) {
-      const errData = await completeRes.json();
-      throw new Error(errData.error || "Gagal menyelesaikan muat naik");
-    }
-
-    const result = await completeRes.json();
-    return { fileId: result.fileId, replayId: result.replayId };
+    return null;
   };
 
-  const handleUpload = async () => {
-    if (!videoFile || !title || !date) {
-      setUploadError("Sila isi semua medan yang diperlukan.");
+  // Save replay
+  const handleSave = async (publish: boolean) => {
+    if (!title.trim()) {
+      setError("Sila masukkan tajuk.");
       return;
     }
 
-    if (!driveStatus.connected) {
-      setUploadError("Google Drive tidak disambungkan. Sila sambungkan terlebih dahulu.");
+    if (!googleDriveLink.trim()) {
+      setError("Sila masukkan Google Drive link.");
       return;
     }
 
-    setUploading(true);
-    setUploadProgress(0);
-    setUploadStatus("Menyediakan fail...");
-    setUploadError("");
-    abortControllerRef.current = new AbortController();
+    const fileId = extractGoogleDriveFileId(googleDriveLink);
+    if (!fileId) {
+      setError("Google Drive link tidak sah.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setSuccess("");
 
     try {
-      // Upload thumbnail first if exists
-      let thumbnailUrl = null;
+      // Upload thumbnail if exists
+      let finalThumbnailUrl = thumbnailUrl;
       if (thumbnailFile) {
-        setUploadStatus("Memuat naik thumbnail...");
-        const thumbFormData = new FormData();
-        thumbFormData.append("thumbnail", thumbnailFile);
-        
-        const thumbRes = await fetch("/api/upload/thumbnail", {
-          method: "POST",
-          body: thumbFormData,
-        });
-        
-        if (thumbRes.ok) {
-          const thumbData = await thumbRes.json();
-          thumbnailUrl = thumbData.thumbnailUrl;
-        }
+        finalThumbnailUrl = await uploadThumbnail();
       }
 
-      // Upload video in chunks
-      setUploadStatus("Memuat naik video ke Google Drive...");
-      const { fileId, replayId } = await uploadInChunks(videoFile);
+      // Create or update replay
+      const replayData = {
+        title: title.trim(),
+        description: description.trim() || null,
+        date,
+        googleDriveId: fileId,
+        googleDriveUrl: googleDriveLink,
+        thumbnail: finalThumbnailUrl,
+        published: publish,
+      };
 
-      // Update thumbnail if exists
-      if (thumbnailUrl && replayId) {
-        await fetch(`/api/replays/${replayId}`, {
+      let res;
+      if (editingReplay) {
+        res = await fetch(`/api/replays/${editingReplay.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ thumbnail: thumbnailUrl }),
+          body: JSON.stringify(replayData),
         });
+      } else {
+        res = await fetch("/api/replays", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(replayData),
+        });
+      }
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Gagal menyimpan rakaman");
       }
 
       // Reset form
-      setTitle("");
-      setDescription("");
-      setDate(new Date().toISOString().split("T")[0]);
-      setVideoFile(null);
-      setThumbnailFile(null);
-      setThumbnailPreview(null);
-      setShowUpload(false);
-      setUploadProgress(0);
-      setUploadStatus("");
+      resetForm();
+      setShowAdd(false);
+      setEditingReplay(null);
+      setSuccess(editingReplay ? "Rakaman berjaya dikemas kini!" : "Rakaman berjaya ditambah!");
 
       // Refresh list
       fetchReplays();
     } catch (err: any) {
-      console.error("Upload error:", err);
-      if (err.name === "AbortError") {
-        setUploadError("Muat naik dibatalkan.");
-      } else {
-        const errorMsg = err?.message || "Gagal memuat naik video. Sila cuba lagi.";
-        setUploadError(errorMsg);
-      }
+      setError(err?.message || "Gagal menyimpan rakaman.");
     } finally {
-      setUploading(false);
-      setUploadStatus("");
-      abortControllerRef.current = null;
+      setSaving(false);
     }
   };
 
-  const handleCancelUpload = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
+  // Reset form
+  const resetForm = () => {
+    setTitle("");
+    setDescription("");
+    setDate(new Date().toISOString().split("T")[0]);
+    setGoogleDriveLink("");
+    setThumbnailFile(null);
+    setThumbnailPreview(null);
+    setThumbnailUrl(null);
+    setValidationResult(null);
+    setError("");
+    setSuccess("");
   };
 
-  const handleDelete = async (id: string, googleDriveId?: string | null) => {
-    if (!confirm("Padam video ini? Tindakan ini tidak boleh dibatalkan.")) {
+  // Edit replay
+  const handleEdit = (replay: Replay) => {
+    setEditingReplay(replay);
+    setTitle(replay.title);
+    setDescription(replay.description || "");
+    setDate(replay.date);
+    setGoogleDriveLink(replay.googleDriveUrl || "");
+    setThumbnailPreview(replay.thumbnail);
+    setThumbnailUrl(replay.thumbnail);
+    setValidationResult({
+      valid: true,
+      fileId: replay.googleDriveId || undefined,
+      message: "Video sedia ada.",
+    });
+    setShowAdd(true);
+  };
+
+  // Delete replay
+  const handleDelete = async (id: string) => {
+    if (!confirm("Padam rakaman ini? Tindakan ini tidak boleh dibatalkan.")) {
       return;
     }
 
     try {
-      // Delete from Google Drive if exists
-      if (googleDriveId) {
-        await fetch("/api/google-drive/upload", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileId: googleDriveId }),
-        });
-      }
-
-      // Delete from database
       const res = await fetch(`/api/replays/${id}`, {
         method: "DELETE",
       });
 
       if (res.ok) {
         fetchReplays();
+        setSuccess("Rakaman berjaya dipadam.");
       }
     } catch {
       // Ignore error
     }
   };
 
+  // Toggle publish
   const handleTogglePublish = async (id: string, published: boolean) => {
     try {
       const res = await fetch(`/api/replays/${id}`, {
@@ -331,16 +309,6 @@ export default function AdminReplaysPage() {
     }
   };
 
-  const formatFileSize = (bytes: bigint | null): string => {
-    if (!bytes) return "";
-    const gb = Number(bytes) / (1024 * 1024 * 1024);
-    if (gb >= 1) {
-      return `${gb.toFixed(1)} GB`;
-    }
-    const mb = Number(bytes) / (1024 * 1024);
-    return `${mb.toFixed(0)} MB`;
-  };
-
   return (
     <div className="min-h-screen bg-gray-950 text-white p-6">
       <div className="max-w-6xl mx-auto">
@@ -351,65 +319,49 @@ export default function AdminReplaysPage() {
             <p className="text-gray-400">Urus rakaman siaran langsung</p>
           </div>
           <button
-            onClick={() => setShowUpload(true)}
-            disabled={!driveStatus.connected}
-            className="bg-red-600 hover:bg-red-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2"
+            onClick={() => {
+              resetForm();
+              setEditingReplay(null);
+              setShowAdd(true);
+            }}
+            className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            Upload Live Replay
+            Tambah Live Replay
           </button>
         </div>
 
-        {/* Google Drive Status */}
-        <div className="bg-gray-900 rounded-xl p-4 mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${driveStatus.connected ? "bg-green-600/20" : "bg-yellow-600/20"}`}>
-              <svg className={`w-5 h-5 ${driveStatus.connected ? "text-green-400" : "text-yellow-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
-              </svg>
-            </div>
-            <div>
-              <p className="font-medium">
-                Google Drive Storage
-              </p>
-              <p className="text-sm text-gray-400">
-                {driveStatus.connected ? (
-                  <span className="text-green-400">✓ Disambungkan{driveStatus.email ? ` (${driveStatus.email})` : ""}</span>
-                ) : (
-                  <span className="text-yellow-400">⚠ Tidak Disambungkan</span>
-                )}
-              </p>
-            </div>
+        {/* Success/Error Messages */}
+        {success && (
+          <div className="bg-green-500/20 border border-green-500 text-green-400 px-4 py-3 rounded-lg mb-4">
+            {success}
           </div>
-          {!driveStatus.connected && (
-            <button
-              onClick={handleConnectDrive}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium text-sm"
-            >
-              Sambung Google Drive
-            </button>
-          )}
-        </div>
+        )}
 
-        {/* Upload Modal */}
-        {showUpload && (
+        {error && (
+          <div className="bg-red-500/20 border border-red-500 text-red-400 px-4 py-3 rounded-lg mb-4">
+            {error}
+          </div>
+        )}
+
+        {/* Add/Edit Modal */}
+        {showAdd && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
             <div className="bg-gray-900 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold">Upload Live Replay</h2>
+                <h2 className="text-xl font-bold">
+                  {editingReplay ? "Edit Live Replay" : "Tambah Live Replay"}
+                </h2>
                 <button
                   onClick={() => {
-                    if (!uploading) {
-                      setShowUpload(false);
-                      setUploadError("");
-                      setUploadProgress(0);
-                      setUploadStatus("");
-                    }
+                    setShowAdd(false);
+                    setEditingReplay(null);
+                    resetForm();
                   }}
                   className="text-gray-400 hover:text-white"
-                  disabled={uploading}
+                  disabled={saving}
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -417,9 +369,9 @@ export default function AdminReplaysPage() {
                 </button>
               </div>
 
-              {uploadError && (
+              {error && (
                 <div className="bg-red-500/20 border border-red-500 text-red-400 px-4 py-3 rounded-lg mb-4">
-                  {uploadError}
+                  {error}
                 </div>
               )}
 
@@ -433,7 +385,7 @@ export default function AdminReplaysPage() {
                     onChange={(e) => setTitle(e.target.value)}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-red-500"
                     placeholder="Ceramah Perdana 2026"
-                    disabled={uploading}
+                    disabled={saving}
                   />
                 </div>
 
@@ -445,7 +397,7 @@ export default function AdminReplaysPage() {
                     onChange={(e) => setDescription(e.target.value)}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-red-500 h-24 resize-none"
                     placeholder="Penerangan ringkas tentang siaran..."
-                    disabled={uploading}
+                    disabled={saving}
                   />
                 </div>
 
@@ -457,40 +409,47 @@ export default function AdminReplaysPage() {
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-red-500"
-                    disabled={uploading}
+                    disabled={saving}
                   />
                 </div>
 
-                {/* Video Upload */}
+                {/* Google Drive Link */}
                 <div>
-                  <label className="block text-sm font-medium mb-2">Video *</label>
-                  <div className="border-2 border-dashed border-gray-700 rounded-lg p-6 text-center hover:border-red-500 transition-colors">
+                  <label className="block text-sm font-medium mb-2">Google Drive Video Link *</label>
+                  <div className="flex gap-2">
                     <input
-                      type="file"
-                      accept="video/mp4,video/quicktime,video/webm,video/x-matroska"
-                      onChange={handleVideoChange}
-                      className="hidden"
-                      id="video-upload"
-                      disabled={uploading}
+                      type="url"
+                      value={googleDriveLink}
+                      onChange={(e) => {
+                        setGoogleDriveLink(e.target.value);
+                        setValidationResult(null);
+                      }}
+                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-red-500"
+                      placeholder="https://drive.google.com/file/d/FILE_ID/view"
+                      disabled={saving}
                     />
-                    <label htmlFor="video-upload" className={`cursor-pointer ${uploading ? "pointer-events-none opacity-50" : ""}`}>
-                      {videoFile ? (
-                        <div>
-                          <p className="text-green-400 font-medium">{videoFile.name}</p>
-                          <p className="text-gray-400 text-sm mt-1">{formatFileSize(BigInt(videoFile.size))}</p>
-                        </div>
-                      ) : (
-                        <div>
-                          <svg className="w-12 h-12 text-gray-500 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                          </svg>
-                          <p className="text-gray-400">Klik untuk pilih video</p>
-                          <p className="text-gray-500 text-sm mt-1">Saiz maksimum: 20 GB</p>
-                          <p className="text-gray-500 text-sm">Format: MP4, MOV, WebM, MKV</p>
-                        </div>
-                      )}
-                    </label>
+                    <button
+                      onClick={handleValidateLink}
+                      disabled={saving || validating || !googleDriveLink.trim()}
+                      className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap"
+                    >
+                      {validating ? "Menyemak..." : "Semak Video"}
+                    </button>
                   </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Paste Google Drive sharing link di sini. Pastikan video ditetapkan sebagai &quot;Anyone with the link&quot;.
+                  </p>
+
+                  {/* Validation Result */}
+                  {validationResult && (
+                    <div className={`mt-2 px-3 py-2 rounded-lg text-sm ${
+                      validationResult.valid
+                        ? "bg-green-500/20 border border-green-500 text-green-400"
+                        : "bg-red-500/20 border border-red-500 text-red-400"
+                    }`}>
+                      {validationResult.valid ? "✓" : "✕"} {validationResult.message}
+                    </div>
+                  )}
                 </div>
 
                 {/* Thumbnail */}
@@ -503,9 +462,9 @@ export default function AdminReplaysPage() {
                       onChange={handleThumbnailChange}
                       className="hidden"
                       id="thumbnail-upload"
-                      disabled={uploading}
+                      disabled={saving}
                     />
-                    <label htmlFor="thumbnail-upload" className={`cursor-pointer ${uploading ? "pointer-events-none opacity-50" : ""}`}>
+                    <label htmlFor="thumbnail-upload" className={`cursor-pointer ${saving ? "pointer-events-none opacity-50" : ""}`}>
                       {thumbnailPreview ? (
                         <img src={thumbnailPreview} alt="Thumbnail" className="max-h-32 mx-auto rounded-lg" />
                       ) : (
@@ -520,53 +479,29 @@ export default function AdminReplaysPage() {
                   </div>
                 </div>
 
-                {/* Upload Progress */}
-                {uploading && (
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-gray-400">{uploadStatus || "Memuat naik..."}</span>
-                      <span className="text-sm font-medium">{uploadProgress}%</span>
-                    </div>
-                    <div className="w-full bg-gray-700 rounded-full h-2">
-                      <div
-                        className="bg-red-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${uploadProgress}%` }}
-                      />
-                    </div>
-                    <p className="text-xs text-gray-500 mt-2">
-                      Video dimuat naik dalam bahagian-bahagian kecil. Jangan tutup tetingkap ini.
-                    </p>
-                  </div>
-                )}
-
                 {/* Actions */}
                 <div className="flex gap-3 pt-4">
-                  {uploading ? (
-                    <button
-                      onClick={handleCancelUpload}
-                      className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white py-3 rounded-lg font-medium transition-colors"
-                    >
-                      Batalkan Muat Naik
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleUpload}
-                      disabled={!videoFile || !title}
-                      className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white py-3 rounded-lg font-medium transition-colors"
-                    >
-                      Muat Naik ke Google Drive
-                    </button>
-                  )}
+                  <button
+                    onClick={() => handleSave(true)}
+                    disabled={saving || !title.trim() || !googleDriveLink.trim()}
+                    className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white py-3 rounded-lg font-medium transition-colors"
+                  >
+                    {saving ? "Menyimpan..." : "Save & Publish"}
+                  </button>
+                  <button
+                    onClick={() => handleSave(false)}
+                    disabled={saving || !title.trim() || !googleDriveLink.trim()}
+                    className="flex-1 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white py-3 rounded-lg font-medium transition-colors"
+                  >
+                    {saving ? "Menyimpan..." : "Save as Draft"}
+                  </button>
                   <button
                     onClick={() => {
-                      if (!uploading) {
-                        setShowUpload(false);
-                        setUploadError("");
-                        setUploadProgress(0);
-                        setUploadStatus("");
-                      }
+                      setShowAdd(false);
+                      setEditingReplay(null);
+                      resetForm();
                     }}
-                    disabled={uploading}
+                    disabled={saving}
                     className="px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium transition-colors"
                   >
                     Batal
@@ -588,7 +523,7 @@ export default function AdminReplaysPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <p className="text-gray-400">Tiada rakaman lagi. Klik &quot;Upload Live Replay&quot; untuk memulakan.</p>
+            <p className="text-gray-400">Tiada rakaman lagi. Klik &quot;Tambah Live Replay&quot; untuk memulakan.</p>
           </div>
         ) : (
           <div className="bg-gray-900 rounded-xl overflow-hidden">
@@ -597,7 +532,6 @@ export default function AdminReplaysPage() {
                 <tr>
                   <th className="text-left px-6 py-4 text-sm font-medium text-gray-400">Video</th>
                   <th className="text-left px-6 py-4 text-sm font-medium text-gray-400">Tarikh</th>
-                  <th className="text-left px-6 py-4 text-sm font-medium text-gray-400">Saiz</th>
                   <th className="text-left px-6 py-4 text-sm font-medium text-gray-400">Status</th>
                   <th className="text-right px-6 py-4 text-sm font-medium text-gray-400">Tindakan</th>
                 </tr>
@@ -621,11 +555,15 @@ export default function AdminReplaysPage() {
                           {replay.description && (
                             <p className="text-gray-400 text-sm truncate max-w-xs">{replay.description}</p>
                           )}
+                          {replay.googleDriveUrl && (
+                            <p className="text-gray-500 text-xs truncate max-w-xs mt-1">
+                              🔗 {replay.googleDriveUrl}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 text-gray-400">{replay.date}</td>
-                    <td className="px-6 py-4 text-gray-400">{formatFileSize(replay.fileSize)}</td>
                     <td className="px-6 py-4">
                       <span className={`px-2 py-1 rounded text-xs font-medium ${replay.published ? "bg-green-500/20 text-green-400" : "bg-yellow-500/20 text-yellow-400"}`}>
                         {replay.published ? "Published" : "Draft"}
@@ -639,6 +577,12 @@ export default function AdminReplaysPage() {
                         >
                           {replay.published ? "Unpublish" : "Publish"}
                         </button>
+                        <button
+                          onClick={() => handleEdit(replay)}
+                          className="px-3 py-1 text-sm rounded hover:bg-gray-700 transition-colors"
+                        >
+                          Edit
+                        </button>
                         <Link
                           href={`/replay/${replay.id}`}
                           className="px-3 py-1 text-sm rounded hover:bg-gray-700 transition-colors"
@@ -647,7 +591,7 @@ export default function AdminReplaysPage() {
                           Lihat
                         </Link>
                         <button
-                          onClick={() => handleDelete(replay.id, replay.googleDriveId)}
+                          onClick={() => handleDelete(replay.id)}
                           className="px-3 py-1 text-sm text-red-400 rounded hover:bg-red-500/20 transition-colors"
                         >
                           Padam

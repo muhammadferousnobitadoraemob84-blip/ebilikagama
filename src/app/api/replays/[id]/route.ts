@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureDatabase } from "@/lib/db-init";
-import { verifyToken } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -19,17 +18,23 @@ export async function GET(
     });
 
     if (!replay) {
-      return NextResponse.json({ error: "Replay not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Rakaman tidak ditemui" },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json(replay);
   } catch (error) {
-    console.error("[REPLAY] GET error:", error);
-    return NextResponse.json({ error: "Failed to fetch replay" }, { status: 500 });
+    console.error("[REPLAY] Error:", error);
+    return NextResponse.json(
+      { error: "Gagal memuatkan rakaman" },
+      { status: 500 }
+    );
   }
 }
 
-// PUT - Update replay (admin only)
+// PUT - Update replay
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -38,46 +43,47 @@ export async function PUT(
     await ensureDatabase();
     const { id } = await params;
 
-    // Verify admin authentication
-    const token = request.cookies.get("admin-token")?.value;
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    try {
-      await verifyToken(token);
-    } catch {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const body = await request.json();
-    const { title, description, videoUrl, thumbnail, duration, fileSize, date, published } = body;
+    const { title, description, date, googleDriveId, googleDriveUrl, thumbnail, published } = body;
 
-    const replay = await prisma.replay.update({
+    const replay = await prisma.replay.findUnique({
+      where: { id },
+    });
+
+    if (!replay) {
+      return NextResponse.json(
+        { error: "Rakaman tidak ditemui" },
+        { status: 404 }
+      );
+    }
+
+    const updated = await prisma.replay.update({
       where: { id },
       data: {
         ...(title !== undefined && { title }),
         ...(description !== undefined && { description }),
-        ...(videoUrl !== undefined && { videoUrl }),
-        ...(thumbnail !== undefined && { thumbnail }),
-        ...(duration !== undefined && { duration }),
-        ...(fileSize !== undefined && { fileSize: fileSize ? BigInt(fileSize) : null }),
         ...(date !== undefined && { date }),
+        ...(googleDriveId !== undefined && { 
+          googleDriveId,
+          videoUrl: `https://drive.google.com/file/d/${googleDriveId}/preview`,
+        }),
+        ...(googleDriveUrl !== undefined && { googleDriveUrl }),
+        ...(thumbnail !== undefined && { thumbnail }),
         ...(published !== undefined && { published }),
       },
     });
 
-    return NextResponse.json(replay);
+    return NextResponse.json(updated);
   } catch (error) {
-    console.error("[REPLAY] PUT error:", error);
+    console.error("[REPLAY] Update error:", error);
     return NextResponse.json(
-      { error: "Failed to update replay" },
+      { error: "Gagal mengemas kini rakaman" },
       { status: 500 }
     );
   }
 }
 
-// DELETE - Delete replay (admin only)
+// DELETE - Delete replay
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -86,40 +92,27 @@ export async function DELETE(
     await ensureDatabase();
     const { id } = await params;
 
-    // Verify admin authentication
-    const token = request.cookies.get("admin-token")?.value;
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    try {
-      await verifyToken(token);
-    } catch {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Get replay first to potentially delete from storage
     const replay = await prisma.replay.findUnique({
       where: { id },
     });
 
     if (!replay) {
-      return NextResponse.json({ error: "Replay not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Rakaman tidak ditemui" },
+        { status: 404 }
+      );
     }
 
-    // Delete from database
+    // Delete from database (do NOT delete from Google Drive)
     await prisma.replay.delete({
       where: { id },
     });
 
-    // TODO: If using external storage, delete the video file here
-    // For now, we just delete the database record
-
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("[REPLAY] DELETE error:", error);
+    console.error("[REPLAY] Delete error:", error);
     return NextResponse.json(
-      { error: "Failed to delete replay" },
+      { error: "Gagal memadam rakaman" },
       { status: 500 }
     );
   }
