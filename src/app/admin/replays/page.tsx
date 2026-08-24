@@ -122,10 +122,13 @@ export default function AdminReplaysPage() {
       }
 
       // Chunked video upload
-      const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
+      const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks (smaller for reliability)
       const totalChunks = Math.ceil(videoFile.size / CHUNK_SIZE);
+      
+      setUploadProgress(0);
 
       // Step 1: Initialize upload
+      console.log("[UPLOAD] Initializing...");
       const initRes = await fetch("/api/upload/video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -142,6 +145,7 @@ export default function AdminReplaysPage() {
       }
 
       const { uploadId } = await initRes.json();
+      console.log("[UPLOAD] Upload ID:", uploadId, "Total chunks:", totalChunks);
 
       // Step 2: Upload chunks
       for (let i = 0; i < totalChunks; i++) {
@@ -149,12 +153,21 @@ export default function AdminReplaysPage() {
         const end = Math.min(start + CHUNK_SIZE, videoFile.size);
         const chunk = videoFile.slice(start, end);
         
-        // Convert chunk to base64
-        const chunkBuffer = await chunk.arrayBuffer();
-        const chunkBase64 = btoa(
-          new Uint8Array(chunkBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
-        );
+        // Convert chunk to base64 using FileReader for better memory handling
+        const chunkBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = reader.result as string;
+            // Remove data:...;base64, prefix
+            const base64 = result.split(",")[1];
+            resolve(base64);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(chunk);
+        });
 
+        console.log(`[UPLOAD] Uploading chunk ${i + 1}/${totalChunks}...`);
+        
         const chunkRes = await fetch("/api/upload/video", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -167,15 +180,19 @@ export default function AdminReplaysPage() {
         });
 
         if (!chunkRes.ok) {
-          throw new Error(`Failed to upload chunk ${i + 1}/${totalChunks}`);
+          const errText = await chunkRes.text();
+          console.error("[UPLOAD] Chunk error:", errText);
+          throw new Error(`Failed to upload chunk ${i + 1}/${totalChunks}: ${errText}`);
         }
 
         // Update progress
         const progress = Math.round(((i + 1) / totalChunks) * 100);
         setUploadProgress(progress);
+        console.log(`[UPLOAD] Progress: ${progress}%`);
       }
 
       // Step 3: Complete upload
+      console.log("[UPLOAD] Completing upload...");
       const completeRes = await fetch("/api/upload/video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -188,10 +205,12 @@ export default function AdminReplaysPage() {
       });
 
       if (!completeRes.ok) {
-        throw new Error("Failed to complete upload");
+        const errData = await completeRes.json();
+        throw new Error(errData.error || "Failed to complete upload");
       }
 
       const videoResult = await completeRes.json();
+      console.log("[UPLOAD] Upload complete:", videoResult);
 
       // Create replay record
       const replayRes = await fetch("/api/replays", {
@@ -224,9 +243,10 @@ export default function AdminReplaysPage() {
 
       // Refresh list
       fetchReplays();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Upload error:", err);
-      setUploadError("Gagal memuat naik video. Sila cuba lagi.");
+      const errorMsg = err?.message || "Gagal memuat naik video. Sila cuba lagi.";
+      setUploadError(errorMsg);
     } finally {
       setUploading(false);
     }
