@@ -4,14 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { ensureDatabase } from "@/lib/db-init";
 import { 
   getReplayFolderId, 
-  initializeResumableUpload,
-  finalizeUpload,
   deleteFromGoogleDrive,
   refreshAccessToken
 } from "@/lib/google-drive";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300; // 5 minutes for large uploads
 
 // Helper to get Google Drive tokens from database
 async function getGoogleDriveTokens() {
@@ -43,7 +42,7 @@ async function refreshAndUpdateToken(refreshToken: string) {
   }
 }
 
-// Helper to get valid access token (with auto-refresh)
+// Helper to get valid access token
 async function getValidAccessToken(): Promise<string> {
   const { accessToken, refreshToken } = await getGoogleDriveTokens();
   
@@ -58,7 +57,7 @@ async function getValidAccessToken(): Promise<string> {
   return accessToken;
 }
 
-// POST - Initialize resumable upload (get upload URL for browser)
+// POST - Upload video using resumable upload with chunks
 export async function POST(request: NextRequest) {
   try {
     await ensureDatabase();
@@ -89,26 +88,25 @@ export async function POST(request: NextRequest) {
 
     // Get access token
     const accessToken = await getValidAccessToken();
-    if (!accessToken) {
-      return NextResponse.json(
-        { error: "Token Google Drive tidak ditemui." },
-        { status: 400 }
-      );
-    }
 
-    // Get request body
-    const { fileName, mimeType, fileSize } = await request.json();
+    // Get form data
+    const formData = await request.formData();
+    const file = formData.get("video") as File;
+    const title = formData.get("title") as string;
+    const description = formData.get("description") as string;
+    const date = formData.get("date") as string;
+    const thumbnail = formData.get("thumbnail") as string | null;
 
-    if (!fileName || !mimeType || !fileSize) {
+    if (!file || !title) {
       return NextResponse.json(
-        { error: "Maklumat fail tidak lengkap" },
+        { error: "Maklumat tidak lengkap" },
         { status: 400 }
       );
     }
 
     // Validate file size (20GB max)
     const MAX_SIZE = 20 * 1024 * 1024 * 1024;
-    if (fileSize > MAX_SIZE) {
+    if (file.size > MAX_SIZE) {
       return NextResponse.json(
         { error: "Fail terlalu besar. Saiz maksimum ialah 20 GB." },
         { status: 400 }
@@ -117,7 +115,8 @@ export async function POST(request: NextRequest) {
 
     // Validate file type
     const allowedTypes = ["video/mp4", "video/quicktime", "video/webm", "video/x-matroska"];
-    if (!allowedTypes.includes(mimeType)) {
+    const fileType = file.type || "video/mp4";
+    if (!allowedTypes.includes(fileType)) {
       return NextResponse.json(
         { error: "Format video tidak disokong. Gunakan: MP4, MOV, WebM, MKV" },
         { status: 400 }
@@ -130,87 +129,129 @@ export async function POST(request: NextRequest) {
     // Generate unique filename
     const timestamp = Date.now();
     const random = crypto.randomBytes(4).toString("hex");
-    const ext = fileName.split(".").pop() || "mp4";
+    const ext = file.name.split(".").pop() || "mp4";
     const driveFileName = `${timestamp}-${random}.${ext}`;
 
-    // Initialize resumable upload and get upload URL
-    const { uploadUrl } = await initializeResumableUpload(
-      accessToken,
-      driveFileName,
-      folderId
+    // Step 1: Initialize resumable upload
+    const initResponse = await fetch(
+      "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json; charset=UTF-8",
+        },
+        body: JSON.stringify({
+          name: driveFileName,
+          parents: [folderId],
+          mimeType: fileType,
+        }),
+      }
     );
 
-    // Store the upload URL temporarily (we'll need it to finalize)
-    await prisma.setting.upsert({
-      where: { key: `google_drive_upload_${timestamp}` },
-      update: { value: uploadUrl },
-      create: { key: `google_drive_upload_${timestamp}`, value: uploadUrl },
-    });
-
-    return NextResponse.json({
-      success: true,
-      uploadUrl,
-      driveFileName,
-      uploadId: timestamp,
-    });
-  } catch (error) {
-    console.error("[GOOGLE-DRIVE-UPLOAD] Error:", error);
-    return NextResponse.json(
-      { error: "Gagal memulakan muat naik ke Google Drive" },
-      { status: 500 }
-    );
-  }
-}
-
-// PUT - Finalize upload and save to database
-export async function PUT(request: NextRequest) {
-  try {
-    await ensureDatabase();
-
-    // Verify admin authentication
-    const token = request.cookies.get("admin-token")?.value;
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!initResponse.ok) {
+      const errorText = await initResponse.text();
+      console.error("[GOOGLE-DRIVE] Init upload failed:", errorText);
+      throw new Error("Gagal memulakan muat naik ke Google Drive");
     }
 
-    try {
-      await verifyToken(token);
-    } catch {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const uploadUrl = initResponse.headers.get("Location");
+    if (!uploadUrl) {
+      throw new Error("Tiada URL muat naik diterima dari Google Drive");
     }
 
-    // Get request body
-    const { fileId, title, description, date, thumbnail, fileSize, uploadId } = await request.json();
+    // Step 2: Upload file in chunks using streaming
+    const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks (smaller for Vercel)
+    const fileSize = file.size;
+    let offset = 0;
+    let fileId = "";
 
-    if (!fileId || !title) {
-      return NextResponse.json(
-        { error: "Maklumat tidak lengkap" },
-        { status: 400 }
-      );
-    }
+    // Convert file to ArrayBuffer in chunks
+    const fileBuffer = await file.arrayBuffer();
 
-    // Get access token
-    const accessToken = await getValidAccessToken();
-
-    // Finalize upload (set permissions)
-    const result = await finalizeUpload(accessToken, fileId);
-
-    // Clean up upload ID from settings
-    if (uploadId) {
-      await prisma.setting.deleteMany({
-        where: { key: `google_drive_upload_${uploadId}` },
+    while (offset < fileSize) {
+      const end = Math.min(offset + CHUNK_SIZE, fileSize);
+      const chunk = fileBuffer.slice(offset, end);
+      
+      const contentRange = `bytes ${offset}-${end - 1}/${fileSize}`;
+      
+      const chunkResponse = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Range": contentRange,
+        },
+        body: chunk,
       });
+
+      // 308 Resume Incomplete is expected for intermediate chunks
+      // 200 OK is returned for the final chunk
+      if (chunkResponse.status !== 308 && chunkResponse.status !== 200) {
+        const errorText = await chunkResponse.text();
+        console.error("[GOOGLE-DRIVE] Chunk upload failed:", chunkResponse.status, errorText);
+        throw new Error(`Gagal memuat naik pada offset ${offset}`);
+      }
+
+      // Get file ID from final response
+      if (chunkResponse.status === 200) {
+        try {
+          const responseData = await chunkResponse.json();
+          fileId = responseData.id;
+        } catch {
+          // Response might be empty for some cases
+        }
+      }
+
+      offset = end;
     }
 
-    // Save replay to database
+    // If we didn't get fileId from the response, try to get it
+    if (!fileId) {
+      // Make a HEAD request to get the file metadata
+      const metadataResponse = await fetch(
+        `https://www.googleapis.com/upload/drive/v3/files/${uploadUrl.split("/")[6]}?fields=id`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
+      
+      if (metadataResponse.ok) {
+        const metadata = await metadataResponse.json();
+        fileId = metadata.id;
+      }
+    }
+
+    if (!fileId) {
+      throw new Error("Gagal mendapatkan ID fail dari Google Drive");
+    }
+
+    // Step 3: Set file permissions to public (anyone with link can view)
+    await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}/permissions`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          role: "reader",
+          type: "anyone",
+        }),
+      }
+    );
+
+    // Step 4: Save replay to database
     const replay = await prisma.replay.create({
       data: {
         title,
         description: description || "",
-        videoUrl: result.webViewLink,
+        videoUrl: `https://drive.google.com/file/d/${fileId}/preview`,
         thumbnail: thumbnail || null,
         duration: null,
-        fileSize: fileSize || null,
+        fileSize: BigInt(fileSize),
         date: date || new Date().toISOString().split("T")[0],
         published: false,
         googleDriveId: fileId,
@@ -220,12 +261,13 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({
       success: true,
       replay,
-      fileId: result.fileId,
+      fileId,
     });
   } catch (error) {
-    console.error("[GOOGLE-DRIVE-FINALIZE] Error:", error);
+    console.error("[GOOGLE-DRIVE-UPLOAD] Error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Gagal memuat naik video";
     return NextResponse.json(
-      { error: "Gagal menyelesaikan muat naik" },
+      { error: errorMessage },
       { status: 500 }
     );
   }

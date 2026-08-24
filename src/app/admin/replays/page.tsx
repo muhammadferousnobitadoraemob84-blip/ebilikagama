@@ -29,6 +29,7 @@ export default function AdminReplaysPage() {
   const [showUpload, setShowUpload] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState("");
   const [uploadError, setUploadError] = useState("");
   const [driveStatus, setDriveStatus] = useState<GoogleDriveStatus>({ connected: false });
 
@@ -141,12 +142,14 @@ export default function AdminReplaysPage() {
 
     setUploading(true);
     setUploadProgress(0);
+    setUploadStatus("Menyediakan fail...");
     setUploadError("");
 
     try {
       // Upload thumbnail first if exists
       let thumbnailUrl = null;
       if (thumbnailFile) {
+        setUploadStatus("Memuat naik thumbnail...");
         const thumbFormData = new FormData();
         thumbFormData.append("thumbnail", thumbnailFile);
         
@@ -161,102 +164,62 @@ export default function AdminReplaysPage() {
         }
       }
 
-      // Step 1: Get upload URL from our API
-      const initRes = await fetch("/api/google-drive/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fileName: videoFile.name,
-          mimeType: videoFile.type || "video/mp4",
-          fileSize: videoFile.size,
-        }),
-      });
-
-      if (!initRes.ok) {
-        const errData = await initRes.json();
-        throw new Error(errData.error || "Gagal memulakan muat naik");
+      // Create FormData for video upload
+      const formData = new FormData();
+      formData.append("video", videoFile);
+      formData.append("title", title);
+      formData.append("description", description || "");
+      formData.append("date", date);
+      if (thumbnailUrl) {
+        formData.append("thumbnail", thumbnailUrl);
       }
 
-      const { uploadUrl, uploadId } = await initRes.json();
+      setUploadStatus("Memuat naik ke Google Drive...");
 
-      // Step 2: Upload directly to Google Drive (bypassing Vercel)
-      const chunkSize = 10 * 1024 * 1024; // 10MB chunks
-      let offset = 0;
-      let fileId = "";
-
-      while (offset < videoFile.size) {
-        const end = Math.min(offset + chunkSize, videoFile.size);
-        const chunk = videoFile.slice(offset, end);
+      // Use XMLHttpRequest for progress tracking
+      const result = await new Promise<{ success: boolean; replay: any }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
         
-        // Use XMLHttpRequest for progress tracking
-        const chunkResult = await new Promise<{ ok: boolean; fileId?: string }>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          
-          xhr.upload.onprogress = (event) => {
-            if (event.lengthComputable) {
-              const totalProgress = ((offset + event.loaded) / videoFile.size) * 100;
-              setUploadProgress(Math.round(totalProgress));
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percent = Math.round((event.loaded / event.total) * 100);
+            setUploadProgress(percent);
+            
+            const loadedGB = (event.loaded / (1024 * 1024 * 1024)).toFixed(2);
+            const totalGB = (event.total / (1024 * 1024 * 1024)).toFixed(2);
+            setUploadStatus(`Memuat naik ke Google Drive... ${loadedGB} GB / ${totalGB} GB`);
+          }
+        };
+        
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            try {
+              resolve(JSON.parse(xhr.responseText));
+            } catch {
+              reject(new Error("Gagal membaca respons dari pelayan"));
             }
-          };
-          
-          xhr.onload = () => {
-            if (xhr.status === 308 || xhr.status === 200) {
-              // Get file ID from final chunk response
-              let newFileId = undefined;
-              if (xhr.status === 200 && xhr.responseText) {
-                try {
-                  const response = JSON.parse(xhr.responseText);
-                  newFileId = response.id;
-                } catch {
-                  // Ignore parse error for intermediate chunks
-                }
-              }
-              resolve({ ok: true, fileId: newFileId });
-            } else {
-              reject(new Error(`Upload failed at chunk offset ${offset}`));
+          } else {
+            try {
+              const errData = JSON.parse(xhr.responseText);
+              reject(new Error(errData.error || "Upload failed"));
+            } catch {
+              reject(new Error("Upload failed"));
             }
-          };
-          
-          xhr.onerror = () => reject(new Error("Network error during upload"));
-          
-          // Determine Content-Range header
-          const contentRange = `bytes ${offset}-${end - 1}/${videoFile.size}`;
-          
-          xhr.open("PUT", uploadUrl);
-          xhr.setRequestHeader("Content-Range", contentRange);
-          xhr.send(chunk);
-        });
-
-        if (!chunkResult.ok) {
-          throw new Error("Upload failed");
-        }
-
-        if (chunkResult.fileId) {
-          fileId = chunkResult.fileId;
-        }
-
-        offset = end;
-      }
-
-      // Step 3: Finalize upload and save to database
-      const finalRes = await fetch("/api/google-drive/upload", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fileId,
-          title,
-          description: description || null,
-          date,
-          thumbnail: thumbnailUrl,
-          fileSize: videoFile.size,
-          uploadId,
-        }),
+          }
+        };
+        
+        xhr.onerror = () => {
+          reject(new Error("Ralat rangkaian semasa memuat naik. Pastikan sambungan internet anda stabil dan cuba lagi."));
+        };
+        
+        xhr.ontimeout = () => {
+          reject(new Error("Masa muat naik tamat. Sila cuba lagi."));
+        };
+        
+        xhr.open("POST", "/api/google-drive/upload");
+        xhr.timeout = 600000; // 10 minutes timeout
+        xhr.send(formData);
       });
-
-      if (!finalRes.ok) {
-        const errData = await finalRes.json();
-        throw new Error(errData.error || "Gagal menyimpan rakaman");
-      }
 
       // Reset form
       setTitle("");
@@ -267,6 +230,7 @@ export default function AdminReplaysPage() {
       setThumbnailPreview(null);
       setShowUpload(false);
       setUploadProgress(0);
+      setUploadStatus("");
 
       // Refresh list
       fetchReplays();
@@ -276,6 +240,7 @@ export default function AdminReplaysPage() {
       setUploadError(errorMsg);
     } finally {
       setUploading(false);
+      setUploadStatus("");
     }
   };
 
@@ -393,11 +358,15 @@ export default function AdminReplaysPage() {
                 <h2 className="text-xl font-bold">Upload Live Replay</h2>
                 <button
                   onClick={() => {
-                    setShowUpload(false);
-                    setUploadError("");
-                    setUploadProgress(0);
+                    if (!uploading) {
+                      setShowUpload(false);
+                      setUploadError("");
+                      setUploadProgress(0);
+                      setUploadStatus("");
+                    }
                   }}
                   className="text-gray-400 hover:text-white"
+                  disabled={uploading}
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -421,6 +390,7 @@ export default function AdminReplaysPage() {
                     onChange={(e) => setTitle(e.target.value)}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-red-500"
                     placeholder="Ceramah Perdana 2026"
+                    disabled={uploading}
                   />
                 </div>
 
@@ -432,6 +402,7 @@ export default function AdminReplaysPage() {
                     onChange={(e) => setDescription(e.target.value)}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-red-500 h-24 resize-none"
                     placeholder="Penerangan ringkas tentang siaran..."
+                    disabled={uploading}
                   />
                 </div>
 
@@ -443,6 +414,7 @@ export default function AdminReplaysPage() {
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-red-500"
+                    disabled={uploading}
                   />
                 </div>
 
@@ -456,8 +428,9 @@ export default function AdminReplaysPage() {
                       onChange={handleVideoChange}
                       className="hidden"
                       id="video-upload"
+                      disabled={uploading}
                     />
-                    <label htmlFor="video-upload" className="cursor-pointer">
+                    <label htmlFor="video-upload" className={`cursor-pointer ${uploading ? "pointer-events-none opacity-50" : ""}`}>
                       {videoFile ? (
                         <div>
                           <p className="text-green-400 font-medium">{videoFile.name}</p>
@@ -487,8 +460,9 @@ export default function AdminReplaysPage() {
                       onChange={handleThumbnailChange}
                       className="hidden"
                       id="thumbnail-upload"
+                      disabled={uploading}
                     />
-                    <label htmlFor="thumbnail-upload" className="cursor-pointer">
+                    <label htmlFor="thumbnail-upload" className={`cursor-pointer ${uploading ? "pointer-events-none opacity-50" : ""}`}>
                       {thumbnailPreview ? (
                         <img src={thumbnailPreview} alt="Thumbnail" className="max-h-32 mx-auto rounded-lg" />
                       ) : (
@@ -507,7 +481,7 @@ export default function AdminReplaysPage() {
                 {uploading && (
                   <div className="bg-gray-800 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-gray-400">Memuat naik ke Google Drive...</span>
+                      <span className="text-sm text-gray-400">{uploadStatus || "Memuat naik..."}</span>
                       <span className="text-sm font-medium">{uploadProgress}%</span>
                     </div>
                     <div className="w-full bg-gray-700 rounded-full h-2">
@@ -517,7 +491,7 @@ export default function AdminReplaysPage() {
                       />
                     </div>
                     <p className="text-xs text-gray-500 mt-2">
-                      Video dihantar terus ke Google Drive (tidak melalui pelayan)
+                      Video sedang dimuat naik terus ke Google Drive. Jangan tutup tetingkap ini.
                     </p>
                   </div>
                 )}
@@ -533,9 +507,12 @@ export default function AdminReplaysPage() {
                   </button>
                   <button
                     onClick={() => {
-                      setShowUpload(false);
-                      setUploadError("");
-                      setUploadProgress(0);
+                      if (!uploading) {
+                        setShowUpload(false);
+                        setUploadError("");
+                        setUploadProgress(0);
+                        setUploadStatus("");
+                      }
                     }}
                     disabled={uploading}
                     className="px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium transition-colors"
