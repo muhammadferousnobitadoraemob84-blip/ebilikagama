@@ -5,43 +5,28 @@ import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
 
-// Generate anonymous ID from browser fingerprint + salt
-function generateAnonymousId(request: NextRequest): string {
-  // Use a combination of user agent and a unique salt stored in cookie
-  // This creates a device-specific anonymous ID
-  const userAgent = request.headers.get("user-agent") || "";
-  const acceptLang = request.headers.get("accept-language") || "";
-  
-  // Get or create device ID from cookie
-  const deviceId = request.cookies.get("ebilik_device_id")?.value || 
-    crypto.randomBytes(16).toString("hex");
-  
-  // Create hash from device-specific info
-  const hash = crypto.createHash("sha256")
-    .update(`${deviceId}-${userAgent.substring(0, 100)}-${acceptLang.substring(0, 50)}`)
-    .digest("hex");
-  
-  return hash;
-}
-
 // GET - Get subscriber count and check if this device is subscribed
 export async function GET(request: NextRequest) {
   try {
     await ensureDatabase();
 
-    const anonymousId = generateAnonymousId(request);
-
+    // Get device ID from cookie or create new one
+    let deviceId = request.cookies.get("ebilik_device_id")?.value;
+    
     // Get total active subscriber count
     const count = await prisma.subscriber.count({
       where: { active: true },
     });
 
-    // Check if this anonymous ID is already subscribed
-    const subscriber = await prisma.subscriber.findUnique({
-      where: { anonymousId },
-    });
+    let isSubscribed = false;
 
-    const isSubscribed = subscriber?.active ?? false;
+    // If we have a device ID, check if subscribed
+    if (deviceId) {
+      const subscriber = await prisma.subscriber.findUnique({
+        where: { anonymousId: deviceId },
+      });
+      isSubscribed = subscriber?.active ?? false;
+    }
 
     const response = NextResponse.json({
       count,
@@ -49,9 +34,9 @@ export async function GET(request: NextRequest) {
     });
 
     // Set device ID cookie if not present
-    if (!request.cookies.get("ebilik_device_id")) {
-      const deviceId = crypto.randomBytes(16).toString("hex");
-      response.cookies.set("ebilik_device_id", deviceId, {
+    if (!deviceId) {
+      const newDeviceId = crypto.randomUUID();
+      response.cookies.set("ebilik_device_id", newDeviceId, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
@@ -63,7 +48,8 @@ export async function GET(request: NextRequest) {
     return response;
   } catch (error) {
     console.error("[SUBSCRIBE] GET error:", error);
-    return NextResponse.json({ count: 0, isSubscribed: false }, { status: 500 });
+    // Return count 0 on error so page still renders
+    return NextResponse.json({ count: 0, isSubscribed: false }, { status: 200 });
   }
 }
 
@@ -72,39 +58,71 @@ export async function POST(request: NextRequest) {
   try {
     await ensureDatabase();
 
-    const anonymousId = generateAnonymousId(request);
+    // Get or create device ID
+    let deviceId = request.cookies.get("ebilik_device_id")?.value;
+    
+    if (!deviceId) {
+      // Create new device ID
+      deviceId = crypto.randomUUID();
+    }
+
+    console.log("[SUBSCRIBE] Attempting subscription for device:", deviceId);
 
     // Check if already subscribed
-    const existing = await prisma.subscriber.findUnique({
-      where: { anonymousId },
-    });
+    let existing;
+    try {
+      existing = await prisma.subscriber.findUnique({
+        where: { anonymousId: deviceId },
+      });
+    } catch (findErr) {
+      console.error("[SUBSCRIBE] Find error:", findErr);
+      // If find fails, table might not exist properly, try to continue
+      existing = null;
+    }
 
     if (existing && existing.active) {
+      console.log("[SUBSCRIBE] Already subscribed");
+      const count = await prisma.subscriber.count({ where: { active: true } });
       return NextResponse.json({
+        success: true,
         message: "Anda telah melanggan",
         alreadySubscribed: true,
+        count,
       });
     }
 
-    if (existing && !existing.active) {
-      // Reactivate if previously unsubscribed
-      await prisma.subscriber.update({
-        where: { anonymousId },
-        data: { active: true },
-      });
-    } else {
-      // Create new subscriber
-      await prisma.subscriber.create({
-        data: {
-          anonymousId,
-        },
-      });
+    // Create or reactivate subscription
+    try {
+      if (existing && !existing.active) {
+        // Reactivate if previously unsubscribed
+        await prisma.subscriber.update({
+          where: { anonymousId: deviceId },
+          data: { active: true },
+        });
+        console.log("[SUBSCRIBE] Reactivated subscription");
+      } else {
+        // Create new subscriber
+        await prisma.subscriber.create({
+          data: {
+            anonymousId: deviceId,
+          },
+        });
+        console.log("[SUBSCRIBE] Created new subscription");
+      }
+    } catch (createErr) {
+      console.error("[SUBSCRIBE] Create/update error:", createErr);
+      return NextResponse.json(
+        { error: "Gagal menyimpan langganan. Sila cuba lagi." },
+        { status: 500 }
+      );
     }
 
     // Get updated count
     const count = await prisma.subscriber.count({
       where: { active: true },
     });
+
+    console.log("[SUBSCRIBE] Success! New count:", count);
 
     const response = NextResponse.json({
       success: true,
@@ -114,7 +132,6 @@ export async function POST(request: NextRequest) {
 
     // Set device ID cookie if not present
     if (!request.cookies.get("ebilik_device_id")) {
-      const deviceId = crypto.randomBytes(16).toString("hex");
       response.cookies.set("ebilik_device_id", deviceId, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",

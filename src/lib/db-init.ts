@@ -118,9 +118,10 @@ export async function ensureDatabase(): Promise<boolean> {
       // Index might already exist
     }
 
-    // Subscriber table (anonymous)
+    // Subscriber table (anonymous) - drop old table if exists and recreate
+    await client.$executeRawUnsafe(`DROP TABLE IF EXISTS "Subscriber" CASCADE;`);
     await client.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "Subscriber" (
+      CREATE TABLE "Subscriber" (
         "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
         "anonymousId" TEXT NOT NULL,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -146,15 +147,6 @@ export async function ensureDatabase(): Promise<boolean> {
       );
     `);
 
-    // Add profilePhoto column to User table if it doesn't exist
-    try {
-      await client.$executeRawUnsafe(`
-        ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "profilePhoto" TEXT;
-      `);
-    } catch {
-      // Column might already exist
-    }
-
     console.log("[DB-INIT] Tables created successfully.");
 
     // Step 3: Seed data
@@ -176,6 +168,25 @@ async function runMigrations(client: PrismaClient) {
     `);
   } catch {
     // Column might already exist
+  }
+
+  // Check if Subscriber table has the correct schema
+  // If it has 'email' column instead of 'anonymousId', drop and recreate
+  try {
+    const hasEmailColumn = await client.$queryRaw`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'Subscriber' AND column_name = 'email'
+      ) as exists
+    `;
+    
+    const result = hasEmailColumn as { exists: boolean }[];
+    if (result && result[0] && result[0].exists) {
+      console.log("[DB-INIT] Subscriber table has old schema, recreating...");
+      await client.$executeRawUnsafe(`DROP TABLE IF EXISTS "Subscriber" CASCADE;`);
+    }
+  } catch {
+    // Table might not exist yet
   }
 
   // Create Subscriber table if it doesn't exist (new anonymous schema)
