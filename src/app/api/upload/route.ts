@@ -14,14 +14,11 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData();
     const file = formData.get("file") as File;
-    const purpose = formData.get("purpose") as string; // e.g. "site_logo", "hero_image", "channel_thumbnail"
-    const targetId = formData.get("targetId") as string; // e.g. channel ID for channel thumbnails
+    const purpose = formData.get("purpose") as string;
+    const targetId = formData.get("targetId") as string;
 
     if (!file) {
-      return NextResponse.json(
-        { error: "Tiada fail dihantar" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Tiada fail dihantar" }, { status: 400 });
     }
 
     // Validate file type
@@ -35,10 +32,7 @@ export async function POST(request: NextRequest) {
 
     // Validate file size (5MB max)
     if (file.size > 5 * 1024 * 1024) {
-      return NextResponse.json(
-        { error: "Saiz fail melebihi 5MB" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Saiz fail melebihi 5MB" }, { status: 400 });
     }
 
     // Convert to base64 data URL
@@ -47,43 +41,71 @@ export async function POST(request: NextRequest) {
     const base64 = buffer.toString("base64");
     const dataUrl = `data:${file.type};base64,${base64}`;
 
-    // Save directly to the database based on purpose
+    // Ensure database is ready
     await ensureDatabase();
 
+    // Save to database based on purpose
     if (purpose === "site_logo" || purpose === "hero_image") {
-      // Save directly to settings table
       await prisma.setting.upsert({
         where: { key: purpose },
         update: { value: dataUrl },
         create: { key: purpose, value: dataUrl },
       });
-      // Return the API URL that serves this image (not the huge base64)
-      return NextResponse.json({
-        url: `/api/images/setting/${purpose}`,
-        saved: true,
+
+      // Verify the save actually worked
+      const verify = await prisma.setting.findUnique({
+        where: { key: purpose },
+        select: { value: true },
       });
-    } else if (purpose === "channel_thumbnail" && targetId) {
-      // Save to channel thumbnail
+      if (!verify || !verify.value.startsWith("data:")) {
+        return NextResponse.json(
+          { error: "Gagal menyimpan gambar ke database" },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({ url: `/api/images/setting/${purpose}`, saved: true });
+    }
+
+    if (purpose === "channel_thumbnail" && targetId) {
+      // Verify channel exists first
+      const channel = await prisma.channel.findUnique({
+        where: { id: targetId },
+        select: { id: true },
+      });
+      if (!channel) {
+        return NextResponse.json({ error: "Saluran tidak dijumpai" }, { status: 404 });
+      }
+
       await prisma.channel.update({
         where: { id: targetId },
         data: { thumbnail: dataUrl },
       });
-      return NextResponse.json({
-        url: `/api/images/channel/${targetId}`,
-        saved: true,
+
+      // Verify the save actually worked
+      const verify = await prisma.channel.findUnique({
+        where: { id: targetId },
+        select: { thumbnail: true },
       });
-    } else if (purpose === "replay_thumbnail" && targetId) {
-      // Save to replay thumbnail
+      if (!verify || !verify.thumbnail || !verify.thumbnail.startsWith("data:")) {
+        return NextResponse.json(
+          { error: "Gagal menyimpan gambar saluran ke database" },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({ url: `/api/images/channel/${targetId}`, saved: true });
+    }
+
+    if (purpose === "replay_thumbnail" && targetId) {
       await prisma.replay.update({
         where: { id: targetId },
         data: { thumbnail: dataUrl },
       });
-      return NextResponse.json({
-        url: dataUrl,
-        saved: true,
-      });
-    } else if (purpose === "profile_photo") {
-      // Save to admin profile photo
+      return NextResponse.json({ url: dataUrl, saved: true });
+    }
+
+    if (purpose === "profile_photo") {
       const userId = session.userId || session.sub;
       if (userId) {
         await prisma.user.update({
@@ -91,21 +113,16 @@ export async function POST(request: NextRequest) {
           data: { profilePhoto: dataUrl },
         });
       }
-      return NextResponse.json({
-        url: dataUrl,
-        saved: true,
-      });
+      return NextResponse.json({ url: dataUrl, saved: true });
     }
 
-    // Default: return data URL (for backward compatibility)
-    return NextResponse.json({
-      url: dataUrl,
-      saved: false,
-    });
+    // Default fallback
+    return NextResponse.json({ url: dataUrl, saved: false });
   } catch (error) {
-    console.error("[UPLOAD] Error:", error);
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    console.error("[UPLOAD] Error:", msg);
     return NextResponse.json(
-      { error: "Gagal memuat naik fail" },
+      { error: "Gagal memuat naik fail: " + msg },
       { status: 500 }
     );
   }

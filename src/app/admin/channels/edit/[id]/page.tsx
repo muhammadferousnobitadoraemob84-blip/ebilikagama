@@ -89,13 +89,26 @@ export default function EditChannel({ params }: { params: Promise<{ id: string }
       const data = await res.json();
       if (!res.ok) {
         setUploadError(data.error || "Gagal memuat naik gambar");
+      } else if (!data.saved) {
+        // Upload returned but didn't actually save to DB
+        setUploadError("Gagal menyimpan gambar ke database. Sila cuba lagi.");
       } else {
-        // Upload saved directly to DB — thumbnail is already updated
-        setThumbnail(data.url + "?t=" + Date.now());
+        // Verify the image endpoint actually serves the image
+        const imgUrl = data.url + "?t=" + Date.now();
+        try {
+          const imgCheck = await fetch(data.url, { method: "HEAD" });
+          if (!imgCheck.ok) {
+            setUploadError("Gambar dimuat naik tetapi tidak dapat diakses. Status: " + imgCheck.status);
+            return;
+          }
+        } catch {
+          // Image endpoint might not support HEAD — continue anyway
+        }
+        setThumbnail(imgUrl);
         setThumbnailSaved(true);
         setThumbnailCleared(false);
         setUploadSuccess("✓ Gambar saluran berjaya dimuat naik!");
-        setTimeout(() => setUploadSuccess(""), 3000);
+        setTimeout(() => setUploadSuccess(""), 5000);
       }
     } catch {
       setUploadError("Gagal memuat naik gambar. Sila cuba lagi.");
