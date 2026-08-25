@@ -13,6 +13,7 @@ export default function AdminSettings() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [uploadingField, setUploadingField] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState("");
   const logoInputRef = useRef<HTMLInputElement>(null);
   const heroInputRef = useRef<HTMLInputElement>(null);
 
@@ -31,6 +32,7 @@ export default function AdminSettings() {
     if (!file) return;
 
     setUploadingField(field);
+    setUploadError("");
     const formData = new FormData();
     formData.append("file", file);
 
@@ -39,9 +41,12 @@ export default function AdminSettings() {
       if (res.ok) {
         const data = await res.json();
         setSettings((prev) => ({ ...prev, [field]: data.url }));
+      } else {
+        const data = await res.json();
+        setUploadError(data.error || "Gagal memuat naik gambar");
       }
     } catch {
-      // silent
+      setUploadError("Gagal memuat naik gambar. Sila cuba lagi.");
     } finally {
       setUploadingField(null);
     }
@@ -65,6 +70,8 @@ export default function AdminSettings() {
         setError(data.error || "Gagal menyimpan tetapan");
       } else {
         setSaved(true);
+        // Notify Header and other components to refresh settings
+        window.dispatchEvent(new Event("settings-changed"));
         setTimeout(() => setSaved(false), 3000);
       }
     } catch {
@@ -159,6 +166,12 @@ export default function AdminSettings() {
         {error && (
           <div className="bg-red-600/10 border border-red-600/30 text-red-400 px-4 py-3 rounded-xl text-sm">
             {error}
+          </div>
+        )}
+
+        {uploadError && (
+          <div className="bg-red-600/10 border border-red-600/30 text-red-400 px-4 py-3 rounded-xl text-sm">
+            {uploadError}
           </div>
         )}
 

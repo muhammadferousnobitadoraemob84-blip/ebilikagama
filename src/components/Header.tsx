@@ -22,6 +22,12 @@ interface AdminProfile {
 let cachedSettings: Settings | null = null;
 let settingsFetchPromise: Promise<Settings> | null = null;
 
+// Clear settings cache — called after admin saves settings
+export function clearSettingsCache() {
+  cachedSettings = null;
+  settingsFetchPromise = null;
+}
+
 function getSettings(): Promise<Settings> {
   if (cachedSettings) return Promise.resolve(cachedSettings);
   if (settingsFetchPromise) return settingsFetchPromise;
@@ -68,6 +74,14 @@ export default function Header() {
     
     // Load admin profile (cached)
     getAdminProfile().then(setAdminProfile);
+
+    // Listen for settings-changed events (from admin panel)
+    const handleSettingsChanged = () => {
+      clearSettingsCache();
+      getSettings().then(setSettings);
+    };
+    window.addEventListener("settings-changed", handleSettingsChanged);
+    return () => window.removeEventListener("settings-changed", handleSettingsChanged);
   }, []);
 
   const siteName = settings.site_name || "eBilikAgamaTV";
