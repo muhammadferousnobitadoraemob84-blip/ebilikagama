@@ -35,11 +35,13 @@ export default function AdminSettings() {
     setUploadError("");
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("purpose", field); // Tell server to save directly to DB
 
     try {
       const res = await fetch("/api/upload", { method: "POST", body: formData });
       if (res.ok) {
         const data = await res.json();
+        // Server saved directly to DB and returned the API URL
         setSettings((prev) => ({ ...prev, [field]: data.url }));
       } else {
         const data = await res.json();
@@ -59,10 +61,25 @@ export default function AdminSettings() {
     setSaved(false);
 
     try {
+      // Filter out image fields that are already saved to DB by upload endpoint
+      const textSettings: Record<string, string> = {};
+      const IMAGE_FIELDS = new Set(["site_logo", "hero_image"]);
+      for (const [key, value] of Object.entries(settings)) {
+        if (IMAGE_FIELDS.has(key)) {
+          // Skip image fields — already saved to DB by upload endpoint
+          // But include them if they were manually cleared (empty string)
+          if (value === "") {
+            textSettings[key] = value;
+          }
+          continue;
+        }
+        textSettings[key] = value;
+      }
+
       const res = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings),
+        body: JSON.stringify(textSettings),
       });
 
       if (!res.ok) {
