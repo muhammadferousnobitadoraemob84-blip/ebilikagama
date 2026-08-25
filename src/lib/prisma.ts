@@ -22,6 +22,41 @@ export const prisma =
   new PrismaClient({
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
     errorFormat: "minimal",
+    // Connection pool settings for Neon serverless
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL,
+      },
+    },
   });
 
 globalForPrisma.prisma = prisma;
+
+/**
+ * Execute a database query with automatic retry logic.
+ * Handles Neon free-tier cold starts (first connection after sleep takes 2-5s).
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  delayMs = 1500
+): Promise<T> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      if (attempt < maxRetries) {
+        // Exponential backoff: 1.5s, 3s, 4.5s
+        const waitTime = delayMs * attempt;
+        console.log(`[RETRY] Attempt ${attempt}/${maxRetries} failed, retrying in ${waitTime}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, waitTime));
+      }
+    }
+  }
+  
+  throw lastError;
+}

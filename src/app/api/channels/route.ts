@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, withRetry } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { notifyChannelChange } from "@/lib/channel-events";
 import { ensureDatabase } from "@/lib/db-init";
@@ -29,23 +29,25 @@ export async function GET(request: NextRequest) {
       where.category = category;
     }
 
-    const channels = await prisma.channel.findMany({
-      where,
-      orderBy: { displayOrder: "asc" },
-      select: {
-        id: true,
-        name: true,
-        category: true,
-        twitchUsername: true,
-        thumbnail: true,
-        description: true,
-        liveStatus: true,
-        displayOrder: true,
-        active: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    const channels = await withRetry(() =>
+      prisma.channel.findMany({
+        where,
+        orderBy: { displayOrder: "asc" },
+        select: {
+          id: true,
+          name: true,
+          category: true,
+          twitchUsername: true,
+          thumbnail: true,
+          description: true,
+          liveStatus: true,
+          displayOrder: true,
+          active: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      })
+    );
 
     // For public API: replace base64 thumbnails with lightweight URLs
     if (raw !== "true") {

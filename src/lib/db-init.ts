@@ -16,9 +16,35 @@ function getPrisma(): PrismaClient {
     _prisma = new PrismaClient({
       log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
       errorFormat: "minimal",
+      datasources: {
+        db: {
+          url: process.env.DATABASE_URL,
+        },
+      },
     });
   }
   return _prisma;
+}
+
+/**
+ * Retry wrapper for database operations.
+ * Neon free tier cold starts can take 2-5 seconds.
+ */
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, baseDelayMs = 1000): Promise<T> {
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (attempt < maxRetries) {
+        const waitTime = baseDelayMs * attempt;
+        console.log(`[DB-INIT] Attempt ${attempt}/${maxRetries} failed, retrying in ${waitTime}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, waitTime));
+      }
+    }
+  }
+  throw lastError;
 }
 
 /**
@@ -37,127 +63,23 @@ export async function ensureDatabase(): Promise<boolean> {
 
   const client = getPrisma();
 
-  // Step 1: Check if tables already exist
+  // Step 1: Check if tables already exist (with retry)
   try {
     console.log("[DB-INIT] Checking database connection...");
-    await client.user.findFirst();
+    await withRetry(() => client.user.findFirst());
     console.log("[DB-INIT] Tables exist, running migrations...");
-    // Tables exist — run migrations then mark initialized
     await runMigrations(client);
     _initialized = true;
     console.log("[DB-INIT] Database ready.");
     return true;
   } catch (err) {
     console.error("[DB-INIT] Tables check failed:", err);
-    // Tables don't exist or connection failed — try to create
   }
 
-  // Step 2: Create tables using raw SQL (PostgreSQL)
+  // Step 2: Create tables using raw SQL (PostgreSQL) with retry
   try {
     console.log("[DB-INIT] Creating tables...");
-
-    // User table
-    await client.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "User" (
-        "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
-        "username" TEXT NOT NULL,
-        "fullName" TEXT,
-        "passwordHash" TEXT NOT NULL,
-        "profilePhoto" TEXT,
-        "role" TEXT NOT NULL DEFAULT 'admin',
-        "active" BOOLEAN NOT NULL DEFAULT true,
-        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" TIMESTAMP(3) NOT NULL,
-        CONSTRAINT "User_username_key" UNIQUE ("username")
-      );
-    `);
-
-    // Channel table
-    await client.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "Channel" (
-        "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
-        "name" TEXT NOT NULL,
-        "category" TEXT NOT NULL,
-        "twitchUsername" TEXT NOT NULL,
-        "thumbnail" TEXT,
-        "description" TEXT,
-        "liveStatus" TEXT NOT NULL DEFAULT 'automatic',
-        "displayOrder" INTEGER NOT NULL DEFAULT 0,
-        "active" BOOLEAN NOT NULL DEFAULT true,
-        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" TIMESTAMP(3) NOT NULL
-      );
-    `);
-
-    // Setting table
-    await client.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "Setting" (
-        "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
-        "key" TEXT NOT NULL,
-        "value" TEXT NOT NULL,
-        CONSTRAINT "Setting_key_key" UNIQUE ("key")
-      );
-    `);
-
-    // Program table
-    await client.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "Program" (
-        "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
-        "channelId" TEXT NOT NULL,
-        "title" TEXT NOT NULL,
-        "date" TEXT NOT NULL,
-        "startTime" TEXT NOT NULL,
-        "endTime" TEXT NOT NULL,
-        "description" TEXT,
-        "thumbnail" TEXT,
-        "status" TEXT NOT NULL DEFAULT 'scheduled',
-        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" TIMESTAMP(3) NOT NULL,
-        CONSTRAINT "Program_channelId_fkey" FOREIGN KEY ("channelId") REFERENCES "Channel"("id") ON DELETE CASCADE ON UPDATE CASCADE
-      );
-    `);
-
-    // Create index
-    try {
-      await client.$executeRawUnsafe(`
-        CREATE INDEX IF NOT EXISTS "Program_channelId_date_idx" ON "Program"("channelId", "date");
-      `);
-    } catch {
-      // Index might already exist
-    }
-
-    // Subscriber table (anonymous) - drop old table if exists and recreate
-    await client.$executeRawUnsafe(`DROP TABLE IF EXISTS "Subscriber" CASCADE;`);
-    await client.$executeRawUnsafe(`
-      CREATE TABLE "Subscriber" (
-        "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
-        "anonymousId" TEXT NOT NULL,
-        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "active" BOOLEAN NOT NULL DEFAULT true,
-        CONSTRAINT "Subscriber_anonymousId_key" UNIQUE ("anonymousId")
-      );
-    `);
-
-    // Replay table
-    await client.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "Replay" (
-        "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
-        "title" TEXT NOT NULL,
-        "description" TEXT,
-        "videoUrl" TEXT,
-        "googleDriveId" TEXT,
-        "googleDriveUrl" TEXT,
-        "thumbnail" TEXT,
-        "duration" INTEGER,
-        "fileSize" BIGINT,
-        "date" TEXT NOT NULL,
-        "published" BOOLEAN NOT NULL DEFAULT false,
-        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" TIMESTAMP(3) NOT NULL
-      );
-    `);
-
-    console.log("[DB-INIT] Tables created successfully.");
+    await withRetry(() => createTables(client));
 
     // Step 3: Seed data
     await seedData(client);
@@ -168,6 +90,111 @@ export async function ensureDatabase(): Promise<boolean> {
     console.error("[DB-INIT] Table creation failed:", err);
     return false;
   }
+}
+
+async function createTables(client: PrismaClient) {
+  // User table
+  await client.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "User" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+      "username" TEXT NOT NULL,
+      "fullName" TEXT,
+      "passwordHash" TEXT NOT NULL,
+      "profilePhoto" TEXT,
+      "role" TEXT NOT NULL DEFAULT 'admin',
+      "active" BOOLEAN NOT NULL DEFAULT true,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL,
+      CONSTRAINT "User_username_key" UNIQUE ("username")
+    );
+  `);
+
+  // Channel table
+  await client.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "Channel" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+      "name" TEXT NOT NULL,
+      "category" TEXT NOT NULL,
+      "twitchUsername" TEXT NOT NULL,
+      "thumbnail" TEXT,
+      "description" TEXT,
+      "liveStatus" TEXT NOT NULL DEFAULT 'automatic',
+      "displayOrder" INTEGER NOT NULL DEFAULT 0,
+      "active" BOOLEAN NOT NULL DEFAULT true,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL
+    );
+  `);
+
+  // Setting table
+  await client.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "Setting" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+      "key" TEXT NOT NULL,
+      "value" TEXT NOT NULL,
+      CONSTRAINT "Setting_key_key" UNIQUE ("key")
+    );
+  `);
+
+  // Program table
+  await client.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "Program" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+      "channelId" TEXT NOT NULL,
+      "title" TEXT NOT NULL,
+      "date" TEXT NOT NULL,
+      "startTime" TEXT NOT NULL,
+      "endTime" TEXT NOT NULL,
+      "description" TEXT,
+      "thumbnail" TEXT,
+      "status" TEXT NOT NULL DEFAULT 'scheduled',
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL,
+      CONSTRAINT "Program_channelId_fkey" FOREIGN KEY ("channelId") REFERENCES "Channel"("id") ON DELETE CASCADE ON UPDATE CASCADE
+    );
+  `);
+
+  // Create index
+  try {
+    await client.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "Program_channelId_date_idx" ON "Program"("channelId", "date");
+    `);
+  } catch {
+    // Index might already exist
+  }
+
+  // Subscriber table (anonymous)
+  await client.$executeRawUnsafe(`DROP TABLE IF EXISTS "Subscriber" CASCADE;`);
+  await client.$executeRawUnsafe(`
+    CREATE TABLE "Subscriber" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+      "anonymousId" TEXT NOT NULL,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "active" BOOLEAN NOT NULL DEFAULT true,
+      CONSTRAINT "Subscriber_anonymousId_key" UNIQUE ("anonymousId")
+    );
+  `);
+
+  // Replay table
+  await client.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "Replay" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+      "title" TEXT NOT NULL,
+      "description" TEXT,
+      "videoUrl" TEXT,
+      "googleDriveId" TEXT,
+      "googleDriveUrl" TEXT,
+      "thumbnail" TEXT,
+      "duration" INTEGER,
+      "fileSize" BIGINT,
+      "date" TEXT NOT NULL,
+      "published" BOOLEAN NOT NULL DEFAULT false,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL
+    );
+  `);
+
+  console.log("[DB-INIT] Tables created successfully.");
 }
 
 async function runMigrations(client: PrismaClient) {

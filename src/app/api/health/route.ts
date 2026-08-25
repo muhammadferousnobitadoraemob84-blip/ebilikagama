@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, withRetry } from "@/lib/prisma";
 import { ensureDatabase } from "@/lib/db-init";
 
 export const dynamic = "force-dynamic";
@@ -39,9 +39,9 @@ export async function GET() {
     status: process.env.NODE_ENV || "undefined",
   };
 
-  // Direct connection test (even if dbReady is false)
+  // Direct connection test with retry (handles Neon cold starts)
   try {
-    await prisma.$queryRaw`SELECT 1`;
+    await withRetry(() => prisma.$queryRaw`SELECT 1`);
     checks.direct_connection = { status: "connected" };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -50,11 +50,13 @@ export async function GET() {
 
   // Check if tables exist
   try {
-    const tables = await prisma.$queryRaw`
-      SELECT table_name FROM information_schema.tables 
-      WHERE table_schema = 'public' 
-      ORDER BY table_name
-    ` as { table_name: string }[];
+    const tables = await withRetry(() =>
+      prisma.$queryRaw`
+        SELECT table_name FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        ORDER BY table_name
+      `
+    ) as { table_name: string }[];
     checks.tables = { 
       status: tables.length > 0 ? 'exists' : 'empty',
       detail: tables.map(t => t.table_name).join(', ') || 'No tables found'
@@ -67,7 +69,7 @@ export async function GET() {
   if (dbReady) {
     // Check database connection
     try {
-      await prisma.$queryRaw`SELECT 1`;
+      await withRetry(() => prisma.$queryRaw`SELECT 1`);
       checks.database = { status: "connected" };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -76,7 +78,7 @@ export async function GET() {
 
     // Check User table
     try {
-      const userCount = await prisma.user.count();
+      const userCount = await withRetry(() => prisma.user.count());
       checks.users_table = { status: "accessible", detail: `${userCount} users` };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -85,7 +87,7 @@ export async function GET() {
 
     // Check owner account
     try {
-      const owner = await prisma.user.findFirst({ where: { role: "owner" } });
+      const owner = await withRetry(() => prisma.user.findFirst({ where: { role: "owner" } }));
       checks.owner_account = {
         status: owner ? "exists" : "MISSING",
         detail: owner ? `Username: ${owner.username}` : "No owner account found",
@@ -97,7 +99,7 @@ export async function GET() {
 
     // Check channels
     try {
-      const channelCount = await prisma.channel.count();
+      const channelCount = await withRetry(() => prisma.channel.count());
       checks.channels_table = { status: "accessible", detail: `${channelCount} channels` };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
