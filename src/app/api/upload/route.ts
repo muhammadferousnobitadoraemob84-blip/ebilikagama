@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Tidak dibenarkan" }, { status: 401 });
     }
 
-    console.log("[UPLOAD] Authenticated user:", session.userId || session.sub);
+    console.log("[UPLOAD] Authenticated user:", session.userId);
 
     const formData = await request.formData();
     const file = formData.get("file") as File;
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (purpose === "profile_photo") {
-      const userId = session.userId || session.sub;
+      const userId = session.userId;
       if (userId) {
         console.log("[UPLOAD] Saving profile photo for user:", userId);
         await withRetry(() =>
