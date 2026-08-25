@@ -71,8 +71,10 @@ export default function NewChannel() {
     if (!file) return;
 
     setUploading(true);
+    setError("");
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("purpose", "channel_thumbnail");
 
     try {
       const res = await fetch("/api/upload", {
@@ -80,19 +82,19 @@ export default function NewChannel() {
         body: formData,
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Gagal memuat naik fail");
-        setUploading(false);
-        return;
-      }
-
       const data = await res.json();
-      setThumbnail(data.url);
+      if (!res.ok) {
+        setError(data.error || "Gagal memuat naik fail");
+      } else {
+        // For new channels, save the base64 data URL locally since we don't have a channel ID yet
+        // It will be saved when the form is submitted
+        setThumbnail(data.url);
+      }
     } catch {
       setError("Gagal memuat naik fail");
     } finally {
       setUploading(false);
+      if (e.target) e.target.value = "";
     }
   };
 

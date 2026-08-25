@@ -30,11 +30,16 @@ export default function EditChannel({ params }: { params: Promise<{ id: string }
     liveStatus: "automatic",
   });
   const [thumbnail, setThumbnail] = useState<string>("");
-  const [originalThumbnail, setOriginalThumbnail] = useState<string>("");
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [uploadError, setUploadError] = useState("");
+  const [uploadSuccess, setUploadSuccess] = useState("");
+  // Track whether thumbnail was already saved to DB by upload endpoint
+  const [thumbnailSaved, setThumbnailSaved] = useState(false);
+  // Track if thumbnail was explicitly cleared
+  const [thumbnailCleared, setThumbnailCleared] = useState(false);
 
   useEffect(() => {
     fetch(`/api/channels/${id}`)
@@ -52,8 +57,8 @@ export default function EditChannel({ params }: { params: Promise<{ id: string }
           active: channel.active,
           liveStatus: channel.liveStatus,
         });
-        setThumbnail(channel.thumbnail || "");
-        setOriginalThumbnail(channel.thumbnail || "");
+        // Use API URL for display (not raw base64)
+        setThumbnail(channel.thumbnail ? `/api/images/channel/${id}` : "");
         setLoading(false);
       })
       .catch(() => {
@@ -67,8 +72,13 @@ export default function EditChannel({ params }: { params: Promise<{ id: string }
     if (!file) return;
 
     setUploading(true);
+    setUploadError("");
+    setUploadSuccess("");
+
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("purpose", "channel_thumbnail");
+    formData.append("targetId", id);
 
     try {
       const res = await fetch("/api/upload", {
@@ -76,25 +86,29 @@ export default function EditChannel({ params }: { params: Promise<{ id: string }
         body: formData,
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Gagal memuat naik fail");
-        setUploading(false);
-        return;
-      }
-
       const data = await res.json();
-      setThumbnail(data.url);
+      if (!res.ok) {
+        setUploadError(data.error || "Gagal memuat naik gambar");
+      } else {
+        // Upload saved directly to DB — thumbnail is already updated
+        setThumbnail(data.url + "?t=" + Date.now());
+        setThumbnailSaved(true);
+        setThumbnailCleared(false);
+        setUploadSuccess("✓ Gambar saluran berjaya dimuat naik!");
+        setTimeout(() => setUploadSuccess(""), 3000);
+      }
     } catch {
-      setError("Gagal memuat naik fail");
+      setUploadError("Gagal memuat naik gambar. Sila cuba lagi.");
     } finally {
       setUploading(false);
+      if (e.target) e.target.value = "";
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setUploadError("");
 
     if (!form.name || !form.twitchUsername) {
       setError("Nama dan username Twitch diperlukan");
@@ -104,13 +118,20 @@ export default function EditChannel({ params }: { params: Promise<{ id: string }
     setSaving(true);
 
     try {
+      // Build update payload — skip thumbnail if it was already saved by upload endpoint
+      const payload: Record<string, unknown> = { ...form };
+      if (thumbnailCleared) {
+        payload.thumbnail = null;
+      } else if (!thumbnailSaved) {
+        // Thumbnail wasn't changed via upload — don't send it (already in DB)
+        // Only send if user explicitly cleared it
+      }
+      // If thumbnailSaved, upload already saved it — don't include in PUT
+
       const res = await fetch(`/api/channels/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          thumbnail: thumbnail || null,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -155,6 +176,18 @@ export default function EditChannel({ params }: { params: Promise<{ id: string }
         {error && (
           <div className="bg-red-600/10 border border-red-600/30 text-red-400 px-4 py-3 rounded-xl text-sm">
             {error}
+          </div>
+        )}
+
+        {uploadError && (
+          <div className="bg-red-600/10 border border-red-600/30 text-red-400 px-4 py-3 rounded-xl text-sm">
+            {uploadError}
+          </div>
+        )}
+
+        {uploadSuccess && (
+          <div className="bg-green-600/10 border border-green-600/30 text-green-400 px-4 py-3 rounded-xl text-sm">
+            {uploadSuccess}
           </div>
         )}
 
@@ -213,15 +246,15 @@ export default function EditChannel({ params }: { params: Promise<{ id: string }
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp,image/gif"
                 onChange={handleFileUpload}
                 className="hidden"
               />
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => !uploading && fileInputRef.current?.click()}
                 disabled={uploading}
-                className="w-full border-2 border-dashed border-white/10 hover:border-red-500/50 rounded-xl p-6 text-center transition-colors"
+                className="w-full border-2 border-dashed border-white/10 hover:border-red-500/50 rounded-xl p-6 text-center transition-colors disabled:opacity-50"
               >
                 {uploading ? (
                   <div className="flex flex-col items-center gap-2">
@@ -240,22 +273,31 @@ export default function EditChannel({ params }: { params: Promise<{ id: string }
               </button>
             </div>
 
-            {thumbnail && (
+            {thumbnail && !thumbnailCleared && (
               <div className="w-32 flex-shrink-0">
                 <img
                   src={thumbnail}
                   alt="Preview"
-                  className="w-full aspect-video object-cover rounded-lg"
+                  className="w-full aspect-video object-cover rounded-lg border border-white/10"
+                  onError={(e) => {
+                    const img = e.currentTarget;
+                    if (!img.dataset.retried) {
+                      img.dataset.retried = "true";
+                      img.src = `/api/images/channel/${id}?t=${Date.now()}`;
+                    }
+                  }}
                 />
-                {thumbnail !== originalThumbnail && (
-                  <button
-                    type="button"
-                    onClick={() => setThumbnail(originalThumbnail)}
-                    className="w-full mt-2 text-gray-400 hover:text-white text-xs"
-                  >
-                    Kembali ke asal
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setThumbnail("");
+                    setThumbnailCleared(true);
+                    setThumbnailSaved(false);
+                  }}
+                  className="w-full mt-2 text-red-400 hover:text-red-300 text-xs"
+                >
+                  Padam
+                </button>
               </div>
             )}
           </div>
