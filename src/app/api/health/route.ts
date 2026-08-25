@@ -8,15 +8,15 @@ export async function GET() {
   const checks: Record<string, { status: string; detail?: string }> = {};
 
   // Auto-initialize if needed
-  let dbError = '';
+  let dbReady = false;
   try {
-    const dbReady = await ensureDatabase();
+    dbReady = await ensureDatabase();
     checks.auto_init = {
       status: dbReady ? "ready" : "FAILED",
       detail: dbReady ? "Database initialized" : "Could not initialize database",
     };
   } catch (e) {
-    dbError = e instanceof Error ? e.message : String(e);
+    const dbError = e instanceof Error ? e.message : String(e);
     checks.auto_init = {
       status: "FAILED",
       detail: `Exception: ${dbError}`,
