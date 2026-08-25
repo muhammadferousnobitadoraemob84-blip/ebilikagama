@@ -82,12 +82,22 @@ export default function NewChannel() {
         body: formData,
       });
 
+      // Safely parse JSON — server may return non-JSON on error
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        if (res.status === 413) {
+          setError("Fail terlalu besar. Saiz maksimum ialah 3.5MB.");
+        } else {
+          setError("Pelayan mengembalikan ralat (HTTP " + res.status + ").");
+        }
+        return;
+      }
+
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Gagal memuat naik fail");
       } else {
-        // For new channels, save the base64 data URL locally since we don't have a channel ID yet
-        // It will be saved when the form is submitted
+        // For new channels, save the data URL locally since we don't have a channel ID yet
         setThumbnail(data.url);
       }
     } catch {
@@ -290,7 +300,7 @@ export default function NewChannel() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                         <p className="text-gray-400 text-sm">Klik untuk memuat naik gambar</p>
-                        <p className="text-gray-600 text-xs">JPG, PNG, atau WebP (Maks 5MB)</p>
+                        <p className="text-gray-600 text-xs">JPG, PNG, atau WebP (Maks 3.5MB)</p>
                       </div>
                     )}
                   </button>

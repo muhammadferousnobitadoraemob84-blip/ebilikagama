@@ -140,6 +140,18 @@ export default function AdminSettings() {
 
       try {
         const res = await fetch("/api/upload", { method: "POST", body: formData });
+
+        // Safely parse JSON — server may return non-JSON on error (e.g. Vercel 413)
+        const contentType = res.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          if (res.status === 413) {
+            setUploadError("Fail terlalu besar. Saiz maksimum ialah 3.5MB.");
+          } else {
+            setUploadError("Pelayan mengembalikan ralat (HTTP " + res.status + ").");
+          }
+          return;
+        }
+
         const data = await res.json();
 
         if (res.ok && data.saved) {

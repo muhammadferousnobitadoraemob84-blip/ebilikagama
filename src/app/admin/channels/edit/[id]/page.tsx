@@ -86,17 +86,38 @@ export default function EditChannel({ params }: { params: Promise<{ id: string }
         body: formData,
       });
 
-      const data = await res.json();
+      // Safely parse JSON — server may return non-JSON on error (e.g. Vercel 413)
+      let data: Record<string, unknown> = {};
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        // Server returned non-JSON (HTML/text error page)
+        const rawText = await res.text().catch(() => "");
+        if (!res.ok) {
+          // Detect Vercel body size limit error
+          if (res.status === 413 || rawText.includes("payload") || rawText.includes("too large") || rawText.includes("limit")) {
+            setUploadError("Fail terlalu besar. Saiz maksimum ialah 3.5MB. Sila kecilkan imej dan cuba lagi.");
+          } else {
+            setUploadError("Pelayan mengembalikan ralat (HTTP " + res.status + "). Sila cuba lagi.");
+          }
+          return;
+        }
+        // If OK but not JSON, treat as unexpected
+        setUploadError("Sambungan bermasalah. Sila cuba lagi.");
+        return;
+      }
+
       if (!res.ok) {
-        setUploadError(data.error || "Gagal memuat naik gambar");
+        setUploadError((data.error as string) || "Gagal memuat naik gambar");
       } else if (!data.saved) {
         // Upload returned but didn't actually save to DB
         setUploadError("Gagal menyimpan gambar ke database. Sila cuba lagi.");
       } else {
         // Verify the image endpoint actually serves the image
-        const imgUrl = data.url + "?t=" + Date.now();
+        const imgUrl = (data.url as string) + "?t=" + Date.now();
         try {
-          const imgCheck = await fetch(data.url, { method: "HEAD" });
+          const imgCheck = await fetch(data.url as string, { method: "HEAD" });
           if (!imgCheck.ok) {
             setUploadError("Gambar dimuat naik tetapi tidak dapat diakses. Status: " + imgCheck.status);
             return;
@@ -281,7 +302,7 @@ export default function EditChannel({ params }: { params: Promise<{ id: string }
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                     <p className="text-gray-400 text-sm">Klik untuk menukar gambar</p>
-                    <p className="text-gray-600 text-xs">JPG, PNG, atau WebP (Maks 5MB)</p>
+                    <p className="text-gray-600 text-xs">JPG, PNG, atau WebP (Maks 3.5MB)</p>
                   </div>
                 )}
               </button>
