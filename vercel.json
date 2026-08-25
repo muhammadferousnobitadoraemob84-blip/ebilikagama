@@ -2,7 +2,7 @@
   "framework": "nextjs",
   "crons": [
     {
-      "path": "/api/cron/keep-alive",
+      "path": "/api/keepalive",
       "schedule": "*/5 * * * *"
     }
   ]
