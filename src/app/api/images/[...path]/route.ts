@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ensureDatabase } from "@/lib/db-init";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +16,6 @@ export async function GET(
     if (!type || !id) {
       return NextResponse.json({ error: "Invalid path" }, { status: 400 });
     }
-
-    await ensureDatabase();
 
     let base64Data: string | null = null;
 
@@ -47,12 +44,19 @@ export async function GET(
     }
 
     // Parse the data URI to get content type and binary data
-    const match = base64Data.match(/^data:(image\/[a-z]+);base64,(.+)$/);
-    if (!match) {
-      return NextResponse.json({ error: "Invalid image data" }, { status: 500 });
+    // Use indexOf for large strings instead of regex to avoid memory issues
+    const dataPrefix = ";base64,";
+    const prefixEnd = base64Data.indexOf(dataPrefix);
+    if (prefixEnd === -1) {
+      return NextResponse.json({ error: "Invalid image data format" }, { status: 500 });
     }
-
-    const [, contentType, base64] = match;
+    const contentType = base64Data.substring(5, prefixEnd); // Skip "data:"
+    const base64 = base64Data.substring(prefixEnd + dataPrefix.length);
+    
+    if (!contentType.startsWith("image/")) {
+      return NextResponse.json({ error: "Invalid image content type" }, { status: 500 });
+    }
+    
     const buffer = Buffer.from(base64, "base64");
 
     return new NextResponse(buffer, {

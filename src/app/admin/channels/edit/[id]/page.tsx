@@ -110,8 +110,9 @@ export default function EditChannel({ params }: { params: Promise<{ id: string }
         setUploadSuccess("✓ Gambar saluran berjaya dimuat naik!");
         setTimeout(() => setUploadSuccess(""), 5000);
       }
-    } catch {
-      setUploadError("Gagal memuat naik gambar. Sila cuba lagi.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Ralat tidak diketahui";
+      setUploadError("Gagal memuat naik gambar: " + msg + ". Sila cuba lagi.");
     } finally {
       setUploading(false);
       if (e.target) e.target.value = "";

@@ -24,7 +24,7 @@ model Channel {
   name            String
   category        String
   twitchUsername  String
-  thumbnail       String?
+  thumbnail       String?  @db.Text
   description     String?  @db.Text
   liveStatus      String   @default("automatic")
   displayOrder    Int      @default(0)

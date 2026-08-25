@@ -1,51 +1,6 @@
-import { PrismaClient } from "@prisma/client";
-
-// Force correct DATABASE_URL if Neon integration is overriding it
-const CORRECT_DB_HOST = "ep-nameless-flower-azdw4gyi-pooler.c-3.ap-southeast-1.aws.neon.tech";
-const CORRECT_DB_URL = `postgresql://neondb_owner:npg_skDMx4A5GQzV@${CORRECT_DB_HOST}/neondb?sslmode=require`;
-
-if (process.env.DATABASE_URL && !process.env.DATABASE_URL.includes(CORRECT_DB_HOST)) {
-  process.env.DATABASE_URL = CORRECT_DB_URL;
-}
+import { prisma, withRetry } from "@/lib/prisma";
 
 let _initialized = false;
-let _prisma: PrismaClient | null = null;
-
-function getPrisma(): PrismaClient {
-  if (!_prisma) {
-    _prisma = new PrismaClient({
-      log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
-      errorFormat: "minimal",
-      datasources: {
-        db: {
-          url: process.env.DATABASE_URL,
-        },
-      },
-    });
-  }
-  return _prisma;
-}
-
-/**
- * Retry wrapper for database operations.
- * Neon free tier cold starts can take 2-5 seconds.
- */
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, baseDelayMs = 1000): Promise<T> {
-  let lastError: Error | null = null;
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-      if (attempt < maxRetries) {
-        const waitTime = baseDelayMs * attempt;
-        console.log(`[DB-INIT] Attempt ${attempt}/${maxRetries} failed, retrying in ${waitTime}ms...`);
-        await new Promise((resolve) => setTimeout(resolve, waitTime));
-      }
-    }
-  }
-  throw lastError;
-}
 
 /**
  * Ensures the database tables exist.
@@ -61,14 +16,12 @@ export async function ensureDatabase(): Promise<boolean> {
     return false;
   }
 
-  const client = getPrisma();
-
   // Step 1: Check if tables already exist (with retry)
   try {
     console.log("[DB-INIT] Checking database connection...");
-    await withRetry(() => client.user.findFirst());
+    await withRetry(() => prisma.user.findFirst());
     console.log("[DB-INIT] Tables exist, running migrations...");
-    await runMigrations(client);
+    await runMigrations();
     _initialized = true;
     console.log("[DB-INIT] Database ready.");
     return true;
@@ -79,10 +32,10 @@ export async function ensureDatabase(): Promise<boolean> {
   // Step 2: Create tables using raw SQL (PostgreSQL) with retry
   try {
     console.log("[DB-INIT] Creating tables...");
-    await withRetry(() => createTables(client));
+    await withRetry(() => createTables());
 
     // Step 3: Seed data
-    await seedData(client);
+    await seedData();
 
     _initialized = true;
     return true;
@@ -92,9 +45,9 @@ export async function ensureDatabase(): Promise<boolean> {
   }
 }
 
-async function createTables(client: PrismaClient) {
+async function createTables() {
   // User table
-  await client.$executeRawUnsafe(`
+  await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "User" (
       "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
       "username" TEXT NOT NULL,
@@ -110,7 +63,7 @@ async function createTables(client: PrismaClient) {
   `);
 
   // Channel table
-  await client.$executeRawUnsafe(`
+  await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "Channel" (
       "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
       "name" TEXT NOT NULL,
@@ -127,7 +80,7 @@ async function createTables(client: PrismaClient) {
   `);
 
   // Setting table
-  await client.$executeRawUnsafe(`
+  await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "Setting" (
       "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
       "key" TEXT NOT NULL,
@@ -137,7 +90,7 @@ async function createTables(client: PrismaClient) {
   `);
 
   // Program table
-  await client.$executeRawUnsafe(`
+  await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "Program" (
       "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
       "channelId" TEXT NOT NULL,
@@ -156,17 +109,16 @@ async function createTables(client: PrismaClient) {
 
   // Create index
   try {
-    await client.$executeRawUnsafe(`
+    await prisma.$executeRawUnsafe(`
       CREATE INDEX IF NOT EXISTS "Program_channelId_date_idx" ON "Program"("channelId", "date");
     `);
   } catch {
     // Index might already exist
   }
 
-  // Subscriber table (anonymous)
-  await client.$executeRawUnsafe(`DROP TABLE IF EXISTS "Subscriber" CASCADE;`);
-  await client.$executeRawUnsafe(`
-    CREATE TABLE "Subscriber" (
+  // Subscriber table (anonymous) — IF NOT EXISTS only, never drop existing data
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "Subscriber" (
       "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
       "anonymousId" TEXT NOT NULL,
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -176,7 +128,7 @@ async function createTables(client: PrismaClient) {
   `);
 
   // Replay table
-  await client.$executeRawUnsafe(`
+  await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "Replay" (
       "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
       "title" TEXT NOT NULL,
@@ -197,10 +149,10 @@ async function createTables(client: PrismaClient) {
   console.log("[DB-INIT] Tables created successfully.");
 }
 
-async function runMigrations(client: PrismaClient) {
+async function runMigrations() {
   // Add profilePhoto column to User table if it doesn't exist
   try {
-    await client.$executeRawUnsafe(`
+    await prisma.$executeRawUnsafe(`
       ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "profilePhoto" TEXT;
     `);
   } catch {
@@ -210,7 +162,7 @@ async function runMigrations(client: PrismaClient) {
   // Check if Subscriber table has the correct schema
   // If it has 'email' column instead of 'anonymousId', drop and recreate
   try {
-    const hasEmailColumn = await client.$queryRaw`
+    const hasEmailColumn = await prisma.$queryRaw`
       SELECT EXISTS (
         SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'Subscriber' AND column_name = 'email'
@@ -220,7 +172,7 @@ async function runMigrations(client: PrismaClient) {
     const result = hasEmailColumn as { exists: boolean }[];
     if (result && result[0] && result[0].exists) {
       console.log("[DB-INIT] Subscriber table has old schema, recreating...");
-      await client.$executeRawUnsafe(`DROP TABLE IF EXISTS "Subscriber" CASCADE;`);
+      await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS "Subscriber" CASCADE;`);
     }
   } catch {
     // Table might not exist yet
@@ -228,7 +180,7 @@ async function runMigrations(client: PrismaClient) {
 
   // Create Subscriber table if it doesn't exist (new anonymous schema)
   try {
-    await client.$executeRawUnsafe(`
+    await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Subscriber" (
         "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
         "anonymousId" TEXT NOT NULL,
@@ -243,7 +195,7 @@ async function runMigrations(client: PrismaClient) {
 
   // Create Replay table if it doesn't exist
   try {
-    await client.$executeRawUnsafe(`
+    await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Replay" (
         "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
         "title" TEXT NOT NULL,
@@ -266,27 +218,27 @@ async function runMigrations(client: PrismaClient) {
 
   // Add Google Drive columns to Replay table if they don't exist
   try {
-    await client.$executeRawUnsafe(`ALTER TABLE "Replay" ADD COLUMN IF NOT EXISTS "googleDriveId" TEXT;`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Replay" ADD COLUMN IF NOT EXISTS "googleDriveId" TEXT;`);
   } catch {
     // Column might already exist
   }
   try {
-    await client.$executeRawUnsafe(`ALTER TABLE "Replay" ADD COLUMN IF NOT EXISTS "googleDriveUrl" TEXT;`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Replay" ADD COLUMN IF NOT EXISTS "googleDriveUrl" TEXT;`);
   } catch {
     // Column might already exist
   }
 }
 
-async function seedData(client: PrismaClient) {
+async function seedData() {
   console.log("[DB-INIT] Seeding data...");
 
   // Seed owner account
-  const existingOwner = await client.user.findFirst({ where: { role: "owner" } });
+  const existingOwner = await prisma.user.findFirst({ where: { role: "owner" } });
   if (!existingOwner) {
     // Use bcryptjs to hash password
     const bcrypt = await import("bcryptjs");
     const passwordHash = await bcrypt.hash("MuhammadFerous40*****", 10);
-    await client.user.create({
+    await prisma.user.create({
       data: {
         username: "muhammadferousmsa",
         fullName: "Muhammad Ferous",
@@ -312,9 +264,9 @@ async function seedData(client: PrismaClient) {
   ];
 
   for (const ch of channels) {
-    const existing = await client.channel.findFirst({ where: { name: ch.name } });
+    const existing = await prisma.channel.findFirst({ where: { name: ch.name } });
     if (!existing) {
-      await client.channel.create({ data: { ...ch, active: true, liveStatus: "automatic" } });
+      await prisma.channel.create({ data: { ...ch, active: true, liveStatus: "automatic" } });
     }
   }
   console.log("[DB-INIT] Channels seeded.");
@@ -337,20 +289,20 @@ async function seedData(client: PrismaClient) {
   ];
 
   for (const s of settings) {
-    const existing = await client.setting.findUnique({ where: { key: s.key } });
+    const existing = await prisma.setting.findUnique({ where: { key: s.key } });
     if (!existing) {
-      await client.setting.create({ data: s });
+      await prisma.setting.create({ data: s });
     }
   }
   console.log("[DB-INIT] Settings seeded.");
 
   // Seed sample programs for today
   const today = new Date().toISOString().split("T")[0];
-  const tv1 = await client.channel.findFirst({ where: { name: "TV1" } });
+  const tv1 = await prisma.channel.findFirst({ where: { name: "TV1" } });
   if (tv1) {
-    const count = await client.program.count({ where: { channelId: tv1.id, date: today } });
+    const count = await prisma.program.count({ where: { channelId: tv1.id, date: today } });
     if (count === 0) {
-      await client.program.createMany({
+      await prisma.program.createMany({
         data: [
           { channelId: tv1.id, title: "Berita Pagi", date: today, startTime: "06:00", endTime: "07:00", description: "Laporan berita pagi.", status: "finished" },
           { channelId: tv1.id, title: "Selamat Pagi Malaysia", date: today, startTime: "07:00", endTime: "09:00", description: "Program pagi interaktif.", status: "finished" },
