@@ -143,7 +143,40 @@ export async function POST(request: NextRequest) {
           data: { thumbnail: dataUrl },
         })
       );
-      return NextResponse.json({ url: `/api/images/channel/${targetId}`, saved: true });
+      return NextResponse.json({ url: `/api/images/replay/${targetId}`, saved: true });
+    }
+
+    if (purpose === "radio_thumbnail") {
+      if (!targetId) {
+        return NextResponse.json({ error: "ID radio diperlukan" }, { status: 400 });
+      }
+
+      console.log("[UPLOAD] Saving radio thumbnail for:", targetId);
+
+      const radio = await withRetry(() =>
+        prisma.radio.findUnique({ where: { id: targetId }, select: { id: true } })
+      );
+      if (!radio) {
+        return NextResponse.json({ error: "Radio tidak dijumpai" }, { status: 404 });
+      }
+
+      await withRetry(() =>
+        prisma.radio.update({ where: { id: targetId }, data: { thumbnail: dataUrl } })
+      );
+
+      const verify = await withRetry(() =>
+        prisma.radio.findUnique({ where: { id: targetId }, select: { thumbnail: true } })
+      );
+      if (!verify || !verify.thumbnail || !verify.thumbnail.startsWith("data:")) {
+        console.error("[UPLOAD] Radio thumbnail save verification failed for:", targetId);
+        return NextResponse.json(
+          { error: "Gagal menyimpan gambar radio ke database" },
+          { status: 500 }
+        );
+      }
+
+      console.log("[UPLOAD] Radio thumbnail saved and verified:", targetId);
+      return NextResponse.json({ url: `/api/images/radio/${targetId}`, saved: true });
     }
 
     if (purpose === "profile_photo") {

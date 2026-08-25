@@ -79,3 +79,16 @@ model Replay {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+
+model Radio {
+  id            String   @id @default(cuid())
+  name          String
+  description   String?  @db.Text
+  streamUrl     String   @db.Text
+  thumbnail     String?  @db.Text
+  category      String   @default("general")
+  enabled       Boolean  @default(true)
+  displayOrder  Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}

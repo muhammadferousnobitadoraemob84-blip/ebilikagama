@@ -125,6 +125,13 @@ export default function Header() {
               {t("nav_saluran_tv")}
             </Link>
             <Link
+              href="/radio"
+              className="text-gray-300 hover:text-white transition-colors text-sm font-medium"
+              prefetch={true}
+            >
+              {t("nav_radio")}
+            </Link>
+            <Link
               href="/#saluran-khas"
               className="text-gray-300 hover:text-white transition-colors text-sm font-medium"
               prefetch={true}
@@ -224,6 +231,14 @@ export default function Header() {
             prefetch={true}
           >
             {t("nav_saluran_tv")}
+          </Link>
+          <Link
+            href="/radio"
+            onClick={() => setMobileMenuOpen(false)}
+            className="text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium px-4 py-3 rounded-lg"
+            prefetch={true}
+          >
+            {t("nav_radio")}
           </Link>
           <Link
             href="/#saluran-khas"

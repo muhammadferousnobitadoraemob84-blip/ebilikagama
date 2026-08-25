@@ -146,6 +146,22 @@ async function createTables() {
     );
   `);
 
+  // Radio table
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "Radio" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+      "name" TEXT NOT NULL,
+      "description" TEXT,
+      "streamUrl" TEXT NOT NULL,
+      "thumbnail" TEXT,
+      "category" TEXT NOT NULL DEFAULT 'general',
+      "enabled" BOOLEAN NOT NULL DEFAULT true,
+      "displayOrder" INTEGER NOT NULL DEFAULT 0,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL
+    );
+  `);
+
   console.log("[DB-INIT] Tables created successfully.");
 }
 
@@ -208,6 +224,26 @@ async function runMigrations() {
         "fileSize" BIGINT,
         "date" TEXT NOT NULL,
         "published" BOOLEAN NOT NULL DEFAULT false,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL
+      );
+    `);
+  } catch {
+    // Table might already exist
+  }
+
+  // Radio table
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Radio" (
+        "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+        "name" TEXT NOT NULL,
+        "description" TEXT,
+        "streamUrl" TEXT NOT NULL,
+        "thumbnail" TEXT,
+        "category" TEXT NOT NULL DEFAULT 'general',
+        "enabled" BOOLEAN NOT NULL DEFAULT true,
+        "displayOrder" INTEGER NOT NULL DEFAULT 0,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP(3) NOT NULL
       );

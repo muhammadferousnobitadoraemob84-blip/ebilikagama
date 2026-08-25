@@ -25,6 +25,12 @@ export async function GET(
         select: { thumbnail: true },
       });
       base64Data = channel?.thumbnail || null;
+    } else if (type === "radio") {
+      const radio = await prisma.radio.findUnique({
+        where: { id },
+        select: { thumbnail: true },
+      });
+      base64Data = radio?.thumbnail || null;
     } else if (type === "setting") {
       const setting = await prisma.setting.findUnique({
         where: { key: id },
