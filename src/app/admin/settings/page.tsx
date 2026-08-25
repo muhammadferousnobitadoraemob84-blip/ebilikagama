@@ -1,9 +1,108 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 
 interface Settings {
   [key: string]: string;
+}
+
+// ImageUploadField defined OUTSIDE parent to prevent unmount/remount on every render
+function ImageUploadField({
+  field,
+  label,
+  description,
+  value,
+  uploadingField,
+  onUpload,
+  onClear,
+}: {
+  field: string;
+  label: string;
+  description?: string;
+  value: string;
+  uploadingField: string | null;
+  onUpload: (e: React.ChangeEvent<HTMLInputElement>, field: string) => void;
+  onClear: (field: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const isUploading = uploadingField === field;
+
+  return (
+    <div>
+      <label className="block text-gray-300 text-sm font-medium mb-2">
+        {label}
+      </label>
+      {description && (
+        <p className="text-gray-500 text-xs mb-2">{description}</p>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        onChange={(e) => onUpload(e, field)}
+        className="hidden"
+      />
+      <div className="flex items-start gap-4">
+        <div className="flex-1">
+          <button
+            type="button"
+            onClick={() => !isUploading && inputRef.current?.click()}
+            disabled={isUploading}
+            className="w-full border-2 border-dashed border-white/10 hover:border-red-500/50 rounded-xl p-4 text-center transition-colors disabled:opacity-50"
+          >
+            {isUploading ? (
+              <div className="flex items-center justify-center gap-2">
+                <div className="w-5 h-5 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+                <span className="text-gray-400 text-sm">Memuat naik...</span>
+              </div>
+            ) : (
+              <span className="text-gray-400 text-sm">
+                Klik untuk memuat naik gambar
+              </span>
+            )}
+          </button>
+        </div>
+        {value && (
+          <div className="w-32 flex-shrink-0 relative">
+            <img
+              src={value}
+              alt={label}
+              className="w-full aspect-video object-cover rounded-lg border border-white/10"
+              onError={(e) => {
+                // If image fails to load, try with cache bust
+                const img = e.currentTarget;
+                if (!img.dataset.retried) {
+                  img.dataset.retried = "true";
+                  img.src = `${value}?t=${Date.now()}`;
+                }
+              }}
+            />
+            {!isUploading && (
+              <button
+                type="button"
+                onClick={() => onClear(field)}
+                className="absolute -top-2 -right-2 w-6 h-6 bg-red-600 rounded-full flex items-center justify-center text-white hover:bg-red-500 transition-colors"
+              >
+                <svg
+                  className="w-3 h-3"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function AdminSettings() {
@@ -14,8 +113,7 @@ export default function AdminSettings() {
   const [error, setError] = useState("");
   const [uploadingField, setUploadingField] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState("");
-  const logoInputRef = useRef<HTMLInputElement>(null);
-  const heroInputRef = useRef<HTMLInputElement>(null);
+  const [uploadSuccess, setUploadSuccess] = useState("");
 
   useEffect(() => {
     fetch("/api/settings")
@@ -27,32 +125,46 @@ export default function AdminSettings() {
       .catch(() => setLoading(false));
   }, []);
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleImageUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
 
-    setUploadingField(field);
-    setUploadError("");
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("purpose", field); // Tell server to save directly to DB
+      setUploadingField(field);
+      setUploadError("");
+      setUploadSuccess("");
 
-    try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      if (res.ok) {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("purpose", field);
+
+      try {
+        const res = await fetch("/api/upload", { method: "POST", body: formData });
         const data = await res.json();
-        // Server saved directly to DB and returned the API URL
-        setSettings((prev) => ({ ...prev, [field]: data.url }));
-      } else {
-        const data = await res.json();
-        setUploadError(data.error || "Gagal memuat naik gambar");
+
+        if (res.ok && data.saved) {
+          // Server saved directly to DB
+          setSettings((prev) => ({ ...prev, [field]: data.url }));
+          const fieldLabel = field === "site_logo" ? "Logo Laman" : "Gambar Hero";
+          setUploadSuccess(`✓ ${fieldLabel} berjaya dimuat naik! Klik "Simpan Tetapan" untuk kekalkan.`);
+          setTimeout(() => setUploadSuccess(""), 5000);
+        } else {
+          setUploadError(data.error || "Gagal memuat naik gambar");
+        }
+      } catch {
+        setUploadError("Gagal memuat naik gambar. Sila cuba lagi.");
+      } finally {
+        setUploadingField(null);
+        // Reset file input so same file can be re-selected
+        if (e.target) e.target.value = "";
       }
-    } catch {
-      setUploadError("Gagal memuat naik gambar. Sila cuba lagi.");
-    } finally {
-      setUploadingField(null);
-    }
-  };
+    },
+    []
+  );
+
+  const handleClearImage = useCallback((field: string) => {
+    setSettings((prev) => ({ ...prev, [field]: "" }));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,13 +173,10 @@ export default function AdminSettings() {
     setSaved(false);
 
     try {
-      // Filter out image fields that are already saved to DB by upload endpoint
       const textSettings: Record<string, string> = {};
       const IMAGE_FIELDS = new Set(["site_logo", "hero_image"]);
       for (const [key, value] of Object.entries(settings)) {
         if (IMAGE_FIELDS.has(key)) {
-          // Skip image fields — already saved to DB by upload endpoint
-          // But include them if they were manually cleared (empty string)
           if (value === "") {
             textSettings[key] = value;
           }
@@ -87,7 +196,6 @@ export default function AdminSettings() {
         setError(data.error || "Gagal menyimpan tetapan");
       } else {
         setSaved(true);
-        // Notify Header and other components to refresh settings
         window.dispatchEvent(new Event("settings-changed"));
         setTimeout(() => setSaved(false), 3000);
       }
@@ -106,72 +214,6 @@ export default function AdminSettings() {
     );
   }
 
-  const ImageUploadField = ({
-    label,
-    field,
-    description,
-  }: {
-    label: string;
-    field: string;
-    description?: string;
-  }) => {
-    const inputRef = useRef<HTMLInputElement>(null);
-    return (
-      <div>
-        <label className="block text-gray-300 text-sm font-medium mb-2">
-          {label}
-        </label>
-        {description && (
-          <p className="text-gray-500 text-xs mb-2">{description}</p>
-        )}
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/*"
-          onChange={(e) => handleImageUpload(e, field)}
-          className="hidden"
-        />
-        <div className="flex items-start gap-4">
-          <div className="flex-1">
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              disabled={uploadingField === field}
-              className="w-full border-2 border-dashed border-white/10 hover:border-red-500/50 rounded-xl p-4 text-center transition-colors"
-            >
-              {uploadingField === field ? (
-                <div className="flex items-center justify-center gap-2">
-                  <div className="w-5 h-5 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
-                  <span className="text-gray-400 text-sm">Memuat naik...</span>
-                </div>
-              ) : (
-                <span className="text-gray-400 text-sm">Klik untuk memuat naik gambar</span>
-              )}
-            </button>
-          </div>
-          {settings[field] && (
-            <div className="w-32 flex-shrink-0 relative">
-              <img
-                src={settings[field]}
-                alt={label}
-                className="w-full aspect-video object-cover rounded-lg"
-              />
-              <button
-                type="button"
-                onClick={() => setSettings((prev) => ({ ...prev, [field]: "" }))}
-                className="absolute -top-2 -right-2 w-6 h-6 bg-red-600 rounded-full flex items-center justify-center text-white"
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div>
       <div className="mb-8">
@@ -189,6 +231,12 @@ export default function AdminSettings() {
         {uploadError && (
           <div className="bg-red-600/10 border border-red-600/30 text-red-400 px-4 py-3 rounded-xl text-sm">
             {uploadError}
+          </div>
+        )}
+
+        {uploadSuccess && (
+          <div className="bg-green-600/10 border border-green-600/30 text-green-400 px-4 py-3 rounded-xl text-sm">
+            {uploadSuccess}
           </div>
         )}
 
@@ -216,9 +264,13 @@ export default function AdminSettings() {
             </div>
 
             <ImageUploadField
-              label="Logo Laman"
               field="site_logo"
+              label="Logo Laman"
               description="Logo akan dipaparkan di bahagian header"
+              value={settings.site_logo || ""}
+              uploadingField={uploadingField}
+              onUpload={handleImageUpload}
+              onClear={handleClearImage}
             />
           </div>
         </div>
@@ -254,9 +306,13 @@ export default function AdminSettings() {
             </div>
 
             <ImageUploadField
-              label="Gambar Hero"
               field="hero_image"
+              label="Gambar Hero"
               description="Latar belakang bahagian hero"
+              value={settings.hero_image || ""}
+              uploadingField={uploadingField}
+              onUpload={handleImageUpload}
+              onClear={handleClearImage}
             />
           </div>
         </div>
@@ -267,7 +323,7 @@ export default function AdminSettings() {
           <div className="space-y-4">
             <div>
               <label className="block text-gray-300 text-sm font-medium mb-2">
-                Tajuk "Saluran TV"
+                Tajuk &quot;Saluran TV&quot;
               </label>
               <input
                 type="text"
@@ -280,7 +336,7 @@ export default function AdminSettings() {
 
             <div>
               <label className="block text-gray-300 text-sm font-medium mb-2">
-                Tajuk "Saluran Khas"
+                Tajuk &quot;Saluran Khas&quot;
               </label>
               <input
                 type="text"
