@@ -8,11 +8,20 @@ export async function GET() {
   const checks: Record<string, { status: string; detail?: string }> = {};
 
   // Auto-initialize if needed
-  const dbReady = await ensureDatabase();
-  checks.auto_init = {
-    status: dbReady ? "ready" : "FAILED",
-    detail: dbReady ? "Database initialized" : "Could not initialize database",
-  };
+  let dbError = '';
+  try {
+    const dbReady = await ensureDatabase();
+    checks.auto_init = {
+      status: dbReady ? "ready" : "FAILED",
+      detail: dbReady ? "Database initialized" : "Could not initialize database",
+    };
+  } catch (e) {
+    dbError = e instanceof Error ? e.message : String(e);
+    checks.auto_init = {
+      status: "FAILED",
+      detail: `Exception: ${dbError}`,
+    };
+  }
 
   // Check environment variables
   checks.database_url = {
@@ -29,6 +38,31 @@ export async function GET() {
   checks.node_env = {
     status: process.env.NODE_ENV || "undefined",
   };
+
+  // Direct connection test (even if dbReady is false)
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    checks.direct_connection = { status: "connected" };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    checks.direct_connection = { status: "FAILED", detail: msg };
+  }
+
+  // Check if tables exist
+  try {
+    const tables = await prisma.$queryRaw`
+      SELECT table_name FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      ORDER BY table_name
+    ` as { table_name: string }[];
+    checks.tables = { 
+      status: tables.length > 0 ? 'exists' : 'empty',
+      detail: tables.map(t => t.table_name).join(', ') || 'No tables found'
+    };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    checks.tables = { status: "FAILED", detail: msg };
+  }
 
   if (dbReady) {
     // Check database connection
