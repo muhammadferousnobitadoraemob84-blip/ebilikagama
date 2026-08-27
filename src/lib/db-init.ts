@@ -154,6 +154,7 @@ async function createTables() {
       "description" TEXT,
       "streamUrl" TEXT NOT NULL,
       "thumbnail" TEXT,
+      "twitchUsername" TEXT,
       "category" TEXT NOT NULL DEFAULT 'general',
       "enabled" BOOLEAN NOT NULL DEFAULT true,
       "displayOrder" INTEGER NOT NULL DEFAULT 0,
@@ -241,6 +242,7 @@ async function runMigrations() {
         "description" TEXT,
         "streamUrl" TEXT NOT NULL,
         "thumbnail" TEXT,
+        "twitchUsername" TEXT,
         "category" TEXT NOT NULL DEFAULT 'general',
         "enabled" BOOLEAN NOT NULL DEFAULT true,
         "displayOrder" INTEGER NOT NULL DEFAULT 0,
@@ -250,6 +252,13 @@ async function runMigrations() {
     `);
   } catch {
     // Table might already exist
+  }
+
+  // Add twitchUsername column to Radio table if it doesn't exist
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Radio" ADD COLUMN IF NOT EXISTS "twitchUsername" TEXT;`);
+  } catch {
+    // Column might already exist
   }
 
   // Add Google Drive columns to Replay table if they don't exist

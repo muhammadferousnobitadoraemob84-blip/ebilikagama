@@ -9,6 +9,7 @@ interface Radio {
   description: string | null;
   streamUrl: string;
   thumbnail: string | null;
+  twitchUsername: string | null;
   category: string;
   enabled: boolean;
   displayOrder: number;
@@ -23,6 +24,7 @@ export default function EditRadio({ params }: { params: Promise<{ id: string }> 
     name: "",
     streamUrl: "",
     description: "",
+    twitchUsername: "",
     category: "Radio Islamik",
     enabled: true,
     displayOrder: 0,
@@ -49,6 +51,7 @@ export default function EditRadio({ params }: { params: Promise<{ id: string }> 
           name: radio.name,
           streamUrl: radio.streamUrl,
           description: radio.description || "",
+          twitchUsername: radio.twitchUsername || "",
           category: radio.category,
           enabled: radio.enabled,
           displayOrder: radio.displayOrder,
@@ -189,6 +192,12 @@ export default function EditRadio({ params }: { params: Promise<{ id: string }> 
         </div>
 
         <div>
+          <label className="block text-gray-300 text-sm font-medium mb-2">Username Twitch</label>
+          <input type="text" value={form.twitchUsername} onChange={(e) => setForm({ ...form, twitchUsername: e.target.value })} className="admin-input" placeholder="Contoh: nama_channel_twitch" />
+          <p className="text-gray-500 text-xs mt-1">Username Twitch untuk status siaran (opsyenal). Tidak akan memaparkan pemain video.</p>
+        </div>
+
+        <div>
           <label className="block text-gray-300 text-sm font-medium mb-2">URL Siaran *</label>
           <input type="url" value={form.streamUrl} onChange={(e) => setForm({ ...form, streamUrl: e.target.value })} className="admin-input" required />
           <div className="flex gap-2 mt-2">
@@ -217,7 +226,7 @@ export default function EditRadio({ params }: { params: Promise<{ id: string }> 
                   <span className="text-gray-400 text-sm">Memuat naik...</span>
                 </div>
               ) : (
-                <span className="text-gray-400 text-sm">Klik untuk menukar gambar (JPG, PNG, WebP - Maks 4MB)</span>
+                <span className="text-gray-400 text-sm">Klik untuk menukar gambar (JPG, PNG, WebP - Maks 20MB)</span>
               )}
             </button>
             {thumbnail && !thumbnailCleared && (

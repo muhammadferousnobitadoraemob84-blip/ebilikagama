@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, description, streamUrl, thumbnail, category, enabled, displayOrder } = body;
+    const { name, description, streamUrl, thumbnail, twitchUsername, category, enabled, displayOrder } = body;
 
     if (!name || !streamUrl) {
       return NextResponse.json(
@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
         description: description || null,
         streamUrl,
         thumbnail: thumbnail || null,
+        twitchUsername: twitchUsername || null,
         category: category || "general",
         enabled: enabled !== false,
         displayOrder: displayOrder || 0,

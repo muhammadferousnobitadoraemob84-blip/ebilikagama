@@ -56,6 +56,20 @@ html {
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
+/* Slow spin for vinyl record animation */
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 4s linear infinite;
+}
+
 /* Card hover effects */
 .channel-card {
   transition: transform 0.3s ease, box-shadow 0.3s ease;

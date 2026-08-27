@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLanguage } from "@/components/LanguageProvider";
 import RadioPlayer, { type RadioStation } from "@/components/RadioPlayer";
 import RadioMiniPlayer from "@/components/RadioMiniPlayer";
@@ -16,7 +16,9 @@ export default function RadioPage() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [miniVolume, setMiniVolume] = useState(0.8);
 
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // ONLINE/OFFLINE status for each radio
+  const [onlineStatus, setOnlineStatus] = useState<Record<string, boolean>>({});
+  const statusIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     fetch("/api/radios")
@@ -30,6 +32,73 @@ export default function RadioPage() {
         setLoading(false);
       });
   }, []);
+
+  // Check stream reachability for each radio
+  const checkRadioStatus = useCallback(async (radio: RadioStation): Promise<boolean> => {
+    // If there's a twitchUsername, we could check Twitch API status
+    // For now, test stream URL reachability via a simple fetch
+    try {
+      // Try to check if the audio stream is reachable
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      await fetch(radio.streamUrl, {
+        method: "HEAD",
+        mode: "no-cors",
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      return true;
+    } catch {
+      // If fetch fails, try loading via Audio element
+      try {
+        const audio = new Audio();
+        audio.src = radio.streamUrl;
+        return await new Promise<boolean>((resolve) => {
+          const timeout = setTimeout(() => {
+            audio.src = "";
+            resolve(false);
+          }, 5000);
+          audio.oncanplay = () => {
+            clearTimeout(timeout);
+            audio.src = "";
+            resolve(true);
+          };
+          audio.onerror = () => {
+            clearTimeout(timeout);
+            resolve(false);
+          };
+          audio.load();
+        });
+      } catch {
+        return false;
+      }
+    }
+  }, []);
+
+  // Periodically check online status
+  useEffect(() => {
+    if (radios.length === 0) return;
+
+    const checkAll = async () => {
+      const results: Record<string, boolean> = {};
+      await Promise.all(
+        radios.map(async (radio) => {
+          results[radio.id] = await checkRadioStatus(radio);
+        })
+      );
+      setOnlineStatus(results);
+    };
+
+    // Initial check
+    checkAll();
+
+    // Check every 30 seconds
+    statusIntervalRef.current = setInterval(checkAll, 30000);
+
+    return () => {
+      if (statusIntervalRef.current) clearInterval(statusIntervalRef.current);
+    };
+  }, [radios, checkRadioStatus]);
 
   // Get unique categories
   const categories = ["all", ...new Set(radios.map((r) => r.category))];
@@ -52,10 +121,6 @@ export default function RadioPage() {
   const handleStop = useCallback(() => {
     setIsPlaying(false);
     setActiveStation(null);
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
-    }
   }, []);
 
   const handleMiniPlay = useCallback(() => {
@@ -76,12 +141,14 @@ export default function RadioPage() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-24">
         {/* Active Player */}
-        {activeStation && isPlaying && (
+        {activeStation && (
           <div className="mb-8">
             <RadioPlayer
               station={activeStation}
               isPlaying={isPlaying}
+              isOnline={onlineStatus[activeStation.id] ?? false}
               onPlay={handlePlay}
+              onPause={handleMiniPause}
               onStop={handleStop}
             />
           </div>
@@ -150,70 +217,96 @@ export default function RadioPage() {
 
         {/* Radio Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-          {filtered.map((radio) => (
-            <div
-              key={radio.id}
-              className={`bg-gray-900 border rounded-xl overflow-hidden transition-all cursor-pointer group ${
-                activeStation?.id === radio.id && isPlaying
-                  ? "border-red-500/50 ring-1 ring-red-500/20"
-                  : "border-white/5 hover:border-white/20"
-              }`}
-              onClick={() => handlePlay(radio)}
-            >
-              {/* Thumbnail */}
-              <div className="relative aspect-video overflow-hidden">
-                {radio.thumbnail ? (
-                  <img
-                    src={radio.thumbnail}
-                    alt={radio.name}
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  />
-                ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-red-900/30 to-gray-900 flex items-center justify-center">
-                    <svg className="w-12 h-12 text-red-600/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" />
-                    </svg>
-                  </div>
-                )}
+          {filtered.map((radio) => {
+            const isOnline = onlineStatus[radio.id] ?? false;
+            const isActive = activeStation?.id === radio.id && isPlaying;
 
-                {/* Play overlay */}
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <div className="w-14 h-14 rounded-full bg-red-600 flex items-center justify-center shadow-lg">
-                    <svg className="w-6 h-6 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Status badge */}
-                <div className="absolute top-2 left-2">
-                  {activeStation?.id === radio.id && isPlaying ? (
-                    <span className="bg-green-600 text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                      {t("radio_playing")}
-                    </span>
+            return (
+              <div
+                key={radio.id}
+                className={`bg-gray-900 border rounded-xl overflow-hidden transition-all cursor-pointer group ${
+                  isActive
+                    ? "border-red-500/50 ring-1 ring-red-500/20"
+                    : "border-white/5 hover:border-white/20"
+                }`}
+                onClick={() => handlePlay(radio)}
+              >
+                {/* Thumbnail / Vinyl Visual */}
+                <div className="relative aspect-video overflow-hidden">
+                  {radio.thumbnail ? (
+                    <img
+                      src={radio.thumbnail}
+                      alt={radio.name}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
                   ) : (
-                    <span className="bg-gray-600 text-white text-[10px] font-bold px-2 py-0.5 rounded">
-                      {radio.category}
-                    </span>
+                    <div className="w-full h-full bg-gradient-to-br from-red-900/30 to-gray-900 flex items-center justify-center">
+                      {/* Mini vinyl record */}
+                      <div className="relative w-20 h-20">
+                        <div className={`w-20 h-20 rounded-full bg-gradient-to-br from-gray-800 to-black border border-gray-700 ${
+                          isActive && isOnline ? "animate-spin-slow" : ""
+                        }`} style={{ animationDuration: "4s", animationTimingFunction: "linear", animationIterationCount: "infinite" }}>
+                          <div className="absolute inset-2 rounded-full border border-gray-700/30" />
+                          <div className="absolute inset-4 rounded-full border border-gray-700/20" />
+                        </div>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className={`w-8 h-8 rounded-full bg-gradient-to-br from-red-700 to-red-900 flex items-center justify-center ${
+                            isActive && isOnline ? "animate-spin-slow" : ""
+                          }`} style={{ animationDuration: "4s", animationTimingFunction: "linear", animationIterationCount: "infinite", animationDirection: "reverse" }}>
+                            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                            </svg>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   )}
+
+                  {/* Play overlay */}
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <div className="w-14 h-14 rounded-full bg-red-600 flex items-center justify-center shadow-lg">
+                      <svg className="w-6 h-6 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Status badge */}
+                  <div className="absolute top-2 left-2">
+                    {isActive ? (
+                      <span className="bg-green-600 text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                        {t("radio_playing")}
+                      </span>
+                    ) : isOnline ? (
+                      <span className="bg-green-600/80 text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 bg-white rounded-full" />
+                        ONLINE
+                      </span>
+                    ) : (
+                      <span className="bg-red-600/80 text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 bg-white rounded-full" />
+                        OFFLINE
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Info */}
+                <div className="p-3">
+                  <h3 className="text-white font-semibold text-sm truncate group-hover:text-red-400 transition-colors">
+                    {radio.name}
+                  </h3>
+                  {radio.description && (
+                    <p className="text-gray-500 text-xs mt-0.5 line-clamp-1">{radio.description}</p>
+                  )}
+                  <p className="text-red-400 text-xs mt-2 font-medium">
+                    {isActive ? `● ${t("radio_playing")}` : `▶ ${t("radio_listen")}`}
+                  </p>
                 </div>
               </div>
-
-              {/* Info */}
-              <div className="p-3">
-                <h3 className="text-white font-semibold text-sm truncate group-hover:text-red-400 transition-colors">
-                  {radio.name}
-                </h3>
-                {radio.description && (
-                  <p className="text-gray-500 text-xs mt-0.5 line-clamp-1">{radio.description}</p>
-                )}
-                <p className="text-red-400 text-xs mt-2 font-medium">
-                  {activeStation?.id === radio.id && isPlaying ? `● ${t("radio_playing")}` : `▶ ${t("radio_listen")}`}
-                </p>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -222,6 +315,7 @@ export default function RadioPage() {
         <RadioMiniPlayer
           station={activeStation}
           isPlaying={isPlaying}
+          isOnline={onlineStatus[activeStation.id] ?? false}
           onPlay={handleMiniPlay}
           onPause={handleMiniPause}
           onStop={handleStop}
@@ -229,9 +323,6 @@ export default function RadioPage() {
           onVolumeChange={setMiniVolume}
         />
       )}
-
-      {/* Hidden audio for mini player continuity */}
-      <audio ref={audioRef} preload="none" />
     </div>
   );
 }

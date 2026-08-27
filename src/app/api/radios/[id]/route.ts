@@ -50,7 +50,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { name, description, streamUrl, thumbnail, category, enabled, displayOrder } = body;
+    const { name, description, streamUrl, thumbnail, twitchUsername, category, enabled, displayOrder } = body;
 
     const existing = await prisma.radio.findUnique({ where: { id } });
     if (!existing) {
@@ -79,6 +79,7 @@ export async function PUT(
         ...(description !== undefined && { description }),
         ...(streamUrl !== undefined && { streamUrl }),
         ...(thumbnail !== undefined && { thumbnail }),
+        ...(twitchUsername !== undefined && { twitchUsername: twitchUsername || null }),
         ...(category !== undefined && { category }),
         ...(enabled !== undefined && { enabled }),
         ...(displayOrder !== undefined && { displayOrder }),

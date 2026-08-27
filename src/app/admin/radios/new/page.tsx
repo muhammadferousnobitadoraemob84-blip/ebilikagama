@@ -24,6 +24,7 @@ export default function NewRadio() {
     name: "",
     streamUrl: "",
     description: "",
+    twitchUsername: "",
     category: "Radio Islamik",
     enabled: true,
     displayOrder: 0,
@@ -294,6 +295,22 @@ export default function NewRadio() {
 
                 <div>
                   <label className="block text-gray-300 text-sm font-medium mb-2">
+                    Username Twitch
+                  </label>
+                  <input
+                    type="text"
+                    value={form.twitchUsername}
+                    onChange={(e) => setForm({ ...form, twitchUsername: e.target.value })}
+                    className="admin-input"
+                    placeholder="Contoh: nama_channel_twitch"
+                  />
+                  <p className="text-gray-500 text-xs mt-1">
+                    Username Twitch untuk status siaran (opsyenal). Tidak akan memaparkan pemain video.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-gray-300 text-sm font-medium mb-2">
                     URL Siaran *
                   </label>
                   <input
@@ -537,6 +554,12 @@ export default function NewRadio() {
                   <span className="text-gray-400 text-sm">Kategori</span>
                   <span className="text-white text-sm font-medium">{form.category}</span>
                 </div>
+                {form.twitchUsername && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-400 text-sm">Username Twitch</span>
+                    <span className="text-white text-sm font-medium">{form.twitchUsername}</span>
+                  </div>
+                )}
                 {form.description && (
                   <div className="flex justify-between">
                     <span className="text-gray-400 text-sm">Penerangan</span>

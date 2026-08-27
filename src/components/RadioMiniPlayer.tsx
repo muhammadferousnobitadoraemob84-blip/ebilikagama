@@ -12,6 +12,7 @@ interface RadioStation {
 interface RadioMiniPlayerProps {
   station: RadioStation;
   isPlaying: boolean;
+  isOnline: boolean;
   onPlay: () => void;
   onPause: () => void;
   onStop: () => void;
@@ -22,6 +23,7 @@ interface RadioMiniPlayerProps {
 export default function RadioMiniPlayer({
   station,
   isPlaying,
+  isOnline,
   onPlay,
   onPause,
   onStop,
@@ -33,32 +35,46 @@ export default function RadioMiniPlayer({
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-gray-900/95 backdrop-blur-md border-t border-white/10 shadow-2xl">
       <div className="max-w-7xl mx-auto px-4 py-2.5 flex items-center gap-3">
-        {/* Station icon */}
-        {station.thumbnail ? (
-          <img
-            src={station.thumbnail}
-            alt={station.name}
-            className="w-8 h-8 rounded object-cover flex-shrink-0"
-          />
-        ) : (
-          <div className="w-8 h-8 bg-gradient-to-br from-red-900 to-gray-800 rounded flex items-center justify-center flex-shrink-0">
-            <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" />
-            </svg>
-          </div>
-        )}
+        {/* Station icon / small vinyl */}
+        <div className="relative w-8 h-8 flex-shrink-0">
+          {station.thumbnail ? (
+            <img
+              src={station.thumbnail}
+              alt={station.name}
+              className="w-8 h-8 rounded-full object-cover"
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-red-900 to-gray-800 flex items-center justify-center">
+              <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+              </svg>
+            </div>
+          )}
+          {/* Pulsing indicator for playing */}
+          {isPlaying && (
+            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 rounded-full border border-gray-900 animate-pulse" />
+          )}
+        </div>
 
         {/* Station name + status */}
         <div className="flex-1 min-w-0">
           <p className="text-white text-sm font-medium truncate">{station.name}</p>
           <div className="flex items-center gap-1.5">
-            {isPlaying ? (
+            {isPlaying && isOnline ? (
               <span className="flex items-center gap-1">
                 <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
                 <span className="text-green-400 text-[10px] font-medium">{t("radio_playing")}</span>
               </span>
+            ) : isOnline ? (
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+                <span className="text-green-400 text-[10px] font-medium">{t("radio_online")}</span>
+              </span>
             ) : (
-              <span className="text-gray-500 text-[10px]">{t("radio_offline")}</span>
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
+                <span className="text-red-400 text-[10px] font-medium">{t("radio_offline")}</span>
+              </span>
             )}
           </div>
         </div>

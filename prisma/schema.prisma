@@ -86,6 +86,7 @@ model Radio {
   description   String?  @db.Text
   streamUrl     String   @db.Text
   thumbnail     String?  @db.Text
+  twitchUsername String?
   category      String   @default("general")
   enabled       Boolean  @default(true)
   displayOrder  Int      @default(0)
