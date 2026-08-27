@@ -5,9 +5,9 @@ import { prisma, withRetry } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30; // 30 seconds for file upload processing
 
-// Max file sizes — Vercel Hobby plan limits request body to ~4.5MB.
-// We use 3.5MB to stay safely under after multipart/form-data overhead.
-const MAX_IMAGE_SIZE = 3.5 * 1024 * 1024; // 3.5MB
+// Max file sizes — Vercel Blob handles large files (up to 20MB).
+// Legacy route stays as fallback; Vercel serverless limit is ~4.5MB.
+const MAX_IMAGE_SIZE = 4 * 1024 * 1024; // 4MB (safe under Vercel 4.5MB limit for legacy fallback)
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 export async function POST(request: NextRequest) {

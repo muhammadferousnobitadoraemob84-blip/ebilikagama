@@ -266,7 +266,7 @@ export default function NewRadio() {
                   <span className="text-gray-400 text-sm">Memuat naik...</span>
                 </div>
               ) : (
-                <span className="text-gray-400 text-sm">Klik untuk memuat naik gambar (JPG, PNG, WebP - Maks 3.5MB)</span>
+                <span className="text-gray-400 text-sm">Klik untuk memuat naik gambar (JPG, PNG, WebP - Maks 4MB)</span>
               )}
             </button>
             {thumbnail && (

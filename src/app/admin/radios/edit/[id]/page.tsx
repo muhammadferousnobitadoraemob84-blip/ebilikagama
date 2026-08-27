@@ -69,31 +69,17 @@ export default function EditRadio({ params }: { params: Promise<{ id: string }> 
     setUploading(true);
     setUploadError("");
 
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("purpose", "radio_thumbnail");
-    formData.append("targetId", id);
-
     try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      const contentType = res.headers.get("content-type") || "";
-      if (!contentType.includes("application/json")) {
-        if (res.status === 413) {
-          setUploadError("Fail terlalu besar. Saiz maksimum ialah 3.5MB.");
-        } else {
-          setUploadError("Pelayan mengembalikan ralat (HTTP " + res.status + ").");
-        }
-        return;
-      }
-      const data = await res.json();
-      if (!res.ok) {
-        setUploadError(data.error || "Gagal memuat naik gambar");
-      } else if (!data.saved) {
-        setUploadError("Gagal menyimpan gambar ke database.");
-      } else {
-        setThumbnail(data.url + "?t=" + Date.now());
+      const { uploadImage } = await import("@/lib/upload");
+      const result = await uploadImage(file, "radio_thumbnail", id);
+
+      if (result.saved) {
+        const imgUrl = result.url + "?t=" + Date.now();
+        setThumbnail(imgUrl);
         setThumbnailSaved(true);
         setThumbnailCleared(false);
+      } else {
+        setUploadError("Gagal menyimpan gambar ke database.");
       }
     } catch (err) {
       setUploadError("Gagal memuat naik: " + (err instanceof Error ? err.message : "Ralat"));
@@ -231,7 +217,7 @@ export default function EditRadio({ params }: { params: Promise<{ id: string }> 
                   <span className="text-gray-400 text-sm">Memuat naik...</span>
                 </div>
               ) : (
-                <span className="text-gray-400 text-sm">Klik untuk menukar gambar (JPG, PNG, WebP - Maks 3.5MB)</span>
+                <span className="text-gray-400 text-sm">Klik untuk menukar gambar (JPG, PNG, WebP - Maks 4MB)</span>
               )}
             </button>
             {thumbnail && !thumbnailCleared && (

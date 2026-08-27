@@ -134,40 +134,23 @@ export default function AdminSettings() {
       setUploadError("");
       setUploadSuccess("");
 
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("purpose", field);
-
       try {
-        const res = await fetch("/api/upload", { method: "POST", body: formData });
+        const { uploadImage } = await import("@/lib/upload");
+        const result = await uploadImage(file, field);
 
-        // Safely parse JSON — server may return non-JSON on error (e.g. Vercel 413)
-        const contentType = res.headers.get("content-type") || "";
-        if (!contentType.includes("application/json")) {
-          if (res.status === 413) {
-            setUploadError("Fail terlalu besar. Saiz maksimum ialah 3.5MB.");
-          } else {
-            setUploadError("Pelayan mengembalikan ralat (HTTP " + res.status + ").");
-          }
-          return;
-        }
-
-        const data = await res.json();
-
-        if (res.ok && data.saved) {
-          // Server saved directly to DB
-          setSettings((prev) => ({ ...prev, [field]: data.url }));
+        if (result.saved) {
+          const imgUrl = result.url;
+          setSettings((prev) => ({ ...prev, [field]: imgUrl }));
           const fieldLabel = field === "site_logo" ? "Logo Laman" : "Gambar Hero";
           setUploadSuccess(`✓ ${fieldLabel} berjaya dimuat naik! Klik "Simpan Tetapan" untuk kekalkan.`);
           setTimeout(() => setUploadSuccess(""), 5000);
         } else {
-          setUploadError(data.error || "Gagal memuat naik gambar");
+          setUploadError("Gagal menyimpan gambar ke database.");
         }
       } catch {
         setUploadError("Gagal memuat naik gambar. Sila cuba lagi.");
       } finally {
         setUploadingField(null);
-        // Reset file input so same file can be re-selected
         if (e.target) e.target.value = "";
       }
     },
