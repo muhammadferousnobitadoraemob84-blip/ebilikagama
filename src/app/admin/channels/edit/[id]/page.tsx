@@ -21,6 +21,9 @@ export default function EditChannel({ params }: { params: Promise<{ id: string }
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Store channel ID in state as backup — use it if use(params) is somehow empty
+  const [channelId, setChannelId] = useState("");
+
   const [form, setForm] = useState({
     name: "",
     category: "saluran-tv",
@@ -60,6 +63,7 @@ export default function EditChannel({ params }: { params: Promise<{ id: string }
         });
         // Use API URL for display (not raw base64)
         setThumbnail(channel.thumbnail ? `/api/images/channel/${id}` : "");
+        setChannelId(channel.id);
         setLoading(false);
       })
       .catch(() => {
@@ -86,7 +90,14 @@ export default function EditChannel({ params }: { params: Promise<{ id: string }
     }
 
     try {
-      const result = await uploadImage(file, "channel_thumbnail", id);
+      const effectiveId = channelId || id;
+      if (!effectiveId) {
+        setUploadError("ID saluran tidak ditemui. Sila muat semula halaman.");
+        setUploading(false);
+        if (e.target) e.target.value = "";
+        return;
+      }
+      const result = await uploadImage(file, "channel_thumbnail", effectiveId);
 
       if (result.saved) {
         const imgUrl = result.url + "?t=" + Date.now();

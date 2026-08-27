@@ -23,9 +23,9 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get("file") as File;
     const purpose = formData.get("purpose") as string;
-    const targetId = formData.get("targetId") as string;
+    const targetId = (formData.get("targetId") as string) || "";
 
-    console.log("[UPLOAD] Purpose:", purpose, "TargetId:", targetId, "File:", file?.name, "Size:", file?.size, "Type:", file?.type);
+    console.log("[UPLOAD v2] Purpose:", purpose, "TargetId:", targetId || "(empty)", "File:", file?.name, "Size:", file?.size, "Type:", file?.type);
 
     if (!file) {
       return NextResponse.json({ error: "Tiada fail dihantar" }, { status: 400 });

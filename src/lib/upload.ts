@@ -22,7 +22,8 @@ export async function uploadImage(
   const formData = new FormData();
   formData.append("file", file);
   formData.append("purpose", purpose);
-  if (targetId) formData.append("targetId", targetId);
+  // Always send targetId so server can validate — never silently omit it
+  formData.append("targetId", targetId || "");
 
   const res = await fetch("/api/upload", { method: "POST", body: formData });
 
