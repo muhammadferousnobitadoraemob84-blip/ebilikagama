@@ -34,12 +34,44 @@ export default function NewRadio() {
   const [thumbnailPreview, setThumbnailPreview] = useState("");
   const [uploadError, setUploadError] = useState("");
 
+  // Check stream state
+  const [checkingStream, setCheckingStream] = useState(false);
+  const [streamCheckResult, setStreamCheckResult] = useState<{
+    status: "live" | "offline" | "not_found" | "error";
+    message: string;
+    displayName?: string;
+  } | null>(null);
+
   // Save state
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState("");
   const [error, setError] = useState("");
 
   const canProceedStep1 = form.name.trim();
+
+  // --- Check Stream (Twitch username verification) ---
+  const handleCheckStream = async () => {
+    const username = form.twitchUsername.trim();
+    if (!username) {
+      setStreamCheckResult({ status: "error", message: "Sila masukkan nama pengguna Twitch terlebih dahulu." });
+      return;
+    }
+    setCheckingStream(true);
+    setStreamCheckResult(null);
+    try {
+      const res = await fetch("/api/radios/check-twitch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username }),
+      });
+      const data = await res.json();
+      setStreamCheckResult(data);
+    } catch {
+      setStreamCheckResult({ status: "error", message: "Gagal menyambung ke pelayan. Sila cuba lagi." });
+    } finally {
+      setCheckingStream(false);
+    }
+  };
 
   // --- Thumbnail Selection (local only — no API call) ---
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -259,6 +291,75 @@ export default function NewRadio() {
                   <p className="text-gray-500 text-xs mt-1">
                     Username Twitch untuk status siaran (opsyenal).
                   </p>
+                  {/* Check Stream Button */}
+                  <button
+                    type="button"
+                    onClick={handleCheckStream}
+                    disabled={checkingStream || !form.twitchUsername.trim()}
+                    className={`mt-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                      checkingStream || !form.twitchUsername.trim()
+                        ? "bg-gray-700 text-gray-500 cursor-not-allowed"
+                        : "bg-blue-600/10 text-blue-400 hover:bg-blue-600/20 border border-blue-500/30"
+                    }`}
+                  >
+                    {checkingStream ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                        Menyemak...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        Semak Siaran
+                      </>
+                    )}
+                  </button>
+                  {/* Check Stream Result */}
+                  {streamCheckResult && (
+                    <div className={`mt-3 px-4 py-3 rounded-lg text-sm flex items-start gap-2 ${
+                      streamCheckResult.status === "live"
+                        ? "bg-green-600/10 border border-green-600/30 text-green-400"
+                        : streamCheckResult.status === "offline"
+                        ? "bg-yellow-600/10 border border-yellow-600/30 text-yellow-400"
+                        : streamCheckResult.status === "not_found"
+                        ? "bg-red-600/10 border border-red-600/30 text-red-400"
+                        : "bg-gray-600/10 border border-gray-600/30 text-gray-400"
+                    }`}>
+                      <span className="flex-shrink-0 mt-0.5">
+                        {streamCheckResult.status === "live" && (
+                          <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        )}
+                        {streamCheckResult.status === "offline" && (
+                          <svg className="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="8" />
+                          </svg>
+                        )}
+                        {streamCheckResult.status === "not_found" && (
+                          <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        )}
+                        {streamCheckResult.status === "error" && (
+                          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                          </svg>
+                        )}
+                      </span>
+                      <div>
+                        <span className="font-medium">
+                          {streamCheckResult.status === "live" && "\u2713 LIVE"}
+                          {streamCheckResult.status === "offline" && "\u25cf OFFLINE"}
+                          {streamCheckResult.status === "not_found" && "\u2715 TIDAK DITEMUI"}
+                          {streamCheckResult.status === "error" && "\u26A0 RALAT"}
+                        </span>
+                        <p className="mt-0.5 opacity-80">{streamCheckResult.message}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -467,6 +568,25 @@ export default function NewRadio() {
                   <div className="flex justify-between">
                     <span className="text-gray-400 text-sm">Username Twitch</span>
                     <span className="text-white text-sm font-medium">{form.twitchUsername}</span>
+                  </div>
+                )}
+                {streamCheckResult && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-400 text-sm">Status Siaran</span>
+                    <span className={`text-sm font-medium flex items-center gap-1.5 ${
+                      streamCheckResult.status === "live"
+                        ? "text-green-400"
+                        : streamCheckResult.status === "offline"
+                        ? "text-yellow-400"
+                        : streamCheckResult.status === "not_found"
+                        ? "text-red-400"
+                        : "text-gray-400"
+                    }`}>
+                      {streamCheckResult.status === "live" && "\u2713 Saluran Twitch sedang live"}
+                      {streamCheckResult.status === "offline" && "\u25cf Saluran Twitch sedang offline"}
+                      {streamCheckResult.status === "not_found" && "\u2715 Saluran Twitch tidak ditemui"}
+                      {streamCheckResult.status === "error" && "\u26A0 Tidak dapat menyemak"}
+                    </span>
                   </div>
                 )}
                 {form.description && (
