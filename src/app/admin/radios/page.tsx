@@ -7,8 +7,8 @@ interface Radio {
   id: string;
   name: string;
   description: string | null;
-  streamUrl: string;
   thumbnail: string | null;
+  twitchUsername: string | null;
   category: string;
   enabled: boolean;
   displayOrder: number;
@@ -118,7 +118,7 @@ export default function AdminRadios() {
               {/* Info */}
               <div className="flex-1 min-w-0">
                 <h3 className="text-white font-semibold text-sm truncate">{radio.name}</h3>
-                <p className="text-gray-500 text-xs mt-0.5 truncate">{radio.streamUrl}</p>
+                <p className="text-gray-500 text-xs mt-0.5 truncate">{radio.twitchUsername ? `@${radio.twitchUsername}` : radio.description || ''}</p>
                 <div className="flex items-center gap-2 mt-1">
                   <span className="text-gray-600 text-[10px]">{radio.category}</span>
                   <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${

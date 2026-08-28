@@ -22,7 +22,6 @@ export default function NewRadio() {
   // Form data — persists across all steps
   const [form, setForm] = useState({
     name: "",
-    streamUrl: "",
     description: "",
     twitchUsername: "",
     category: "Radio Islamik",
@@ -35,49 +34,12 @@ export default function NewRadio() {
   const [thumbnailPreview, setThumbnailPreview] = useState("");
   const [uploadError, setUploadError] = useState("");
 
-  // Stream test state
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<"ok" | "fail" | null>(null);
-
   // Save state
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState("");
   const [error, setError] = useState("");
 
-  const canProceedStep1 = form.name.trim() && form.streamUrl.trim();
-
-  // --- Stream Test ---
-  const handleTestStream = async () => {
-    if (!form.streamUrl) return;
-    setTesting(true);
-    setTestResult(null);
-    try {
-      new URL(form.streamUrl);
-      const audio = new Audio();
-      audio.src = form.streamUrl;
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          audio.src = "";
-          reject(new Error("timeout"));
-        }, 10000);
-        audio.oncanplay = () => {
-          clearTimeout(timeout);
-          audio.src = "";
-          resolve();
-        };
-        audio.onerror = () => {
-          clearTimeout(timeout);
-          reject(new Error("Cannot play"));
-        };
-        audio.load();
-      });
-      setTestResult("ok");
-    } catch {
-      setTestResult("fail");
-    } finally {
-      setTesting(false);
-    }
-  };
+  const canProceedStep1 = form.name.trim();
 
   // --- Thumbnail Selection (local only — no API call) ---
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -109,16 +71,6 @@ export default function NewRadio() {
   const validateStep1 = (): boolean => {
     if (!form.name.trim()) {
       setError("Nama radio diperlukan");
-      return false;
-    }
-    if (!form.streamUrl.trim()) {
-      setError("URL Siaran diperlukan");
-      return false;
-    }
-    try {
-      new URL(form.streamUrl);
-    } catch {
-      setError("URL Siaran tidak sah. Sila masukkan URL yang lengkap.");
       return false;
     }
     setError("");
@@ -305,45 +257,8 @@ export default function NewRadio() {
                     placeholder="Contoh: nama_channel_twitch"
                   />
                   <p className="text-gray-500 text-xs mt-1">
-                    Username Twitch untuk status siaran (opsyenal). Tidak akan memaparkan pemain video.
+                    Username Twitch untuk status siaran (opsyenal).
                   </p>
-                </div>
-
-                <div>
-                  <label className="block text-gray-300 text-sm font-medium mb-2">
-                    URL Siaran *
-                  </label>
-                  <input
-                    type="url"
-                    value={form.streamUrl}
-                    onChange={(e) => setForm({ ...form, streamUrl: e.target.value })}
-                    className="admin-input"
-                    placeholder="https://example.com/stream.mp3"
-                    required
-                  />
-                  <div className="flex gap-2 mt-2">
-                    <button
-                      type="button"
-                      onClick={handleTestStream}
-                      disabled={testing || !form.streamUrl}
-                      className="admin-btn admin-btn-secondary text-xs flex items-center gap-1"
-                    >
-                      {testing ? (
-                        <>
-                          <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          Menyemak...
-                        </>
-                      ) : (
-                        "Semak Siaran"
-                      )}
-                    </button>
-                    {testResult === "ok" && (
-                      <span className="text-green-400 text-xs flex items-center gap-1">✓ Siaran boleh dimainkan</span>
-                    )}
-                    {testResult === "fail" && (
-                      <span className="text-red-400 text-xs flex items-center gap-1">✕ Siaran tidak dapat dicapai</span>
-                    )}
-                  </div>
                 </div>
 
                 <div>
@@ -545,12 +460,6 @@ export default function NewRadio() {
                   <span className="text-white text-sm font-medium">{form.name}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400 text-sm">URL Siaran</span>
-                  <span className="text-white text-sm font-medium break-all text-right max-w-[60%]">
-                    {form.streamUrl}
-                  </span>
-                </div>
-                <div className="flex justify-between">
                   <span className="text-gray-400 text-sm">Kategori</span>
                   <span className="text-white text-sm font-medium">{form.category}</span>
                 </div>
@@ -576,18 +485,6 @@ export default function NewRadio() {
                   <span className="text-gray-400 text-sm">Status</span>
                   <span className="text-white text-sm font-medium">
                     {form.enabled ? "Diaktifkan" : "Dinyahaktifkan"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400 text-sm">Semakan Siaran</span>
-                  <span className="text-sm font-medium">
-                    {testResult === "ok" ? (
-                      <span className="text-green-400">✓ Boleh dimainkan</span>
-                    ) : testResult === "fail" ? (
-                      <span className="text-red-400">✕ Tidak dapat dicapai</span>
-                    ) : (
-                      <span className="text-gray-500">Belum disemak</span>
-                    )}
                   </span>
                 </div>
               </div>
@@ -647,7 +544,7 @@ export default function NewRadio() {
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
-                    Simpan Radio
+                    Tambah Radio
                   </>
                 )}
               </button>

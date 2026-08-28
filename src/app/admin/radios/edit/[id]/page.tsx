@@ -7,7 +7,6 @@ interface Radio {
   id: string;
   name: string;
   description: string | null;
-  streamUrl: string;
   thumbnail: string | null;
   twitchUsername: string | null;
   category: string;
@@ -22,7 +21,6 @@ export default function EditRadio({ params }: { params: Promise<{ id: string }> 
 
   const [form, setForm] = useState({
     name: "",
-    streamUrl: "",
     description: "",
     twitchUsername: "",
     category: "Radio Islamik",
@@ -37,8 +35,6 @@ export default function EditRadio({ params }: { params: Promise<{ id: string }> 
   const [uploadError, setUploadError] = useState("");
   const [thumbnailSaved, setThumbnailSaved] = useState(false);
   const [thumbnailCleared, setThumbnailCleared] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<"ok" | "fail" | null>(null);
 
   useEffect(() => {
     fetch(`/api/radios/${id}`)
@@ -49,7 +45,6 @@ export default function EditRadio({ params }: { params: Promise<{ id: string }> 
       .then((radio: Radio) => {
         setForm({
           name: radio.name,
-          streamUrl: radio.streamUrl,
           description: radio.description || "",
           twitchUsername: radio.twitchUsername || "",
           category: radio.category,
@@ -92,35 +87,13 @@ export default function EditRadio({ params }: { params: Promise<{ id: string }> 
     }
   };
 
-  const handleTestStream = async () => {
-    if (!form.streamUrl) return;
-    setTesting(true);
-    setTestResult(null);
-    try {
-      new URL(form.streamUrl);
-      const audio = new Audio();
-      audio.src = form.streamUrl;
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => { audio.src = ""; reject(new Error("timeout")); }, 10000);
-        audio.oncanplay = () => { clearTimeout(timeout); audio.src = ""; resolve(); };
-        audio.onerror = () => { clearTimeout(timeout); reject(new Error("Cannot play")); };
-        audio.load();
-      });
-      setTestResult("ok");
-    } catch {
-      setTestResult("fail");
-    } finally {
-      setTesting(false);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setUploadError("");
 
-    if (!form.name || !form.streamUrl) {
-      setError("Nama dan URL Siaran diperlukan");
+    if (!form.name) {
+      setError("Nama radio diperlukan");
       return;
     }
 
@@ -194,19 +167,7 @@ export default function EditRadio({ params }: { params: Promise<{ id: string }> 
         <div>
           <label className="block text-gray-300 text-sm font-medium mb-2">Username Twitch</label>
           <input type="text" value={form.twitchUsername} onChange={(e) => setForm({ ...form, twitchUsername: e.target.value })} className="admin-input" placeholder="Contoh: nama_channel_twitch" />
-          <p className="text-gray-500 text-xs mt-1">Username Twitch untuk status siaran (opsyenal). Tidak akan memaparkan pemain video.</p>
-        </div>
-
-        <div>
-          <label className="block text-gray-300 text-sm font-medium mb-2">URL Siaran *</label>
-          <input type="url" value={form.streamUrl} onChange={(e) => setForm({ ...form, streamUrl: e.target.value })} className="admin-input" required />
-          <div className="flex gap-2 mt-2">
-            <button type="button" onClick={handleTestStream} disabled={testing || !form.streamUrl} className="admin-btn admin-btn-secondary text-xs flex items-center gap-1">
-              {testing ? (<><span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Menyemak...</>) : "Semak Siaran"}
-            </button>
-            {testResult === "ok" && <span className="text-green-400 text-xs flex items-center">✓ Siaran boleh dimainkan</span>}
-            {testResult === "fail" && <span className="text-red-400 text-xs flex items-center">✕ Siaran tidak dapat dicapai</span>}
-          </div>
+          <p className="text-gray-500 text-xs mt-1">Username Twitch untuk status siaran (opsyenal).</p>
         </div>
 
         <div>

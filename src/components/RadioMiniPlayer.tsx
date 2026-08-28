@@ -5,7 +5,6 @@ import { useLanguage } from "@/components/LanguageProvider";
 interface RadioStation {
   id: string;
   name: string;
-  streamUrl: string;
   thumbnail: string | null;
 }
 

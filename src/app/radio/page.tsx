@@ -16,7 +16,7 @@ export default function RadioPage() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [miniVolume, setMiniVolume] = useState(0.8);
 
-  // ONLINE/OFFLINE status for each radio
+  // ONLINE/OFFLINE status for each radio (Twitch-based)
   const [onlineStatus, setOnlineStatus] = useState<Record<string, boolean>>({});
   const statusIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -33,72 +33,38 @@ export default function RadioPage() {
       });
   }, []);
 
-  // Check stream reachability for each radio
-  const checkRadioStatus = useCallback(async (radio: RadioStation): Promise<boolean> => {
-    // If there's a twitchUsername, we could check Twitch API status
-    // For now, test stream URL reachability via a simple fetch
+  // Fetch Twitch-based online status for all radios
+  const fetchRadioStatus = useCallback(async () => {
     try {
-      // Try to check if the audio stream is reachable
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      await fetch(radio.streamUrl, {
-        method: "HEAD",
-        mode: "no-cors",
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      return true;
-    } catch {
-      // If fetch fails, try loading via Audio element
-      try {
-        const audio = new Audio();
-        audio.src = radio.streamUrl;
-        return await new Promise<boolean>((resolve) => {
-          const timeout = setTimeout(() => {
-            audio.src = "";
-            resolve(false);
-          }, 5000);
-          audio.oncanplay = () => {
-            clearTimeout(timeout);
-            audio.src = "";
-            resolve(true);
-          };
-          audio.onerror = () => {
-            clearTimeout(timeout);
-            resolve(false);
-          };
-          audio.load();
-        });
-      } catch {
-        return false;
+      const res = await fetch("/api/radios/status");
+      const data = await res.json();
+      if (data.radios) {
+        const statuses: Record<string, boolean> = {};
+        for (const r of data.radios) {
+          // "online" means Twitch stream is live
+          statuses[r.id] = r.status === "online";
+        }
+        setOnlineStatus(statuses);
       }
+    } catch {
+      // Status check failed — keep previous status
     }
   }, []);
 
-  // Periodically check online status
+  // Periodically check online status via Twitch API
   useEffect(() => {
     if (radios.length === 0) return;
 
-    const checkAll = async () => {
-      const results: Record<string, boolean> = {};
-      await Promise.all(
-        radios.map(async (radio) => {
-          results[radio.id] = await checkRadioStatus(radio);
-        })
-      );
-      setOnlineStatus(results);
-    };
-
     // Initial check
-    checkAll();
+    fetchRadioStatus();
 
     // Check every 30 seconds
-    statusIntervalRef.current = setInterval(checkAll, 30000);
+    statusIntervalRef.current = setInterval(fetchRadioStatus, 30000);
 
     return () => {
       if (statusIntervalRef.current) clearInterval(statusIntervalRef.current);
     };
-  }, [radios, checkRadioStatus]);
+  }, [radios, fetchRadioStatus]);
 
   // Get unique categories
   const categories = ["all", ...new Set(radios.map((r) => r.category))];
@@ -243,16 +209,26 @@ export default function RadioPage() {
                     <div className="w-full h-full bg-gradient-to-br from-red-900/30 to-gray-900 flex items-center justify-center">
                       {/* Mini vinyl record */}
                       <div className="relative w-20 h-20">
-                        <div className={`w-20 h-20 rounded-full bg-gradient-to-br from-gray-800 to-black border border-gray-700 ${
-                          isActive && isOnline ? "animate-spin-slow" : ""
-                        }`} style={{ animationDuration: "4s", animationTimingFunction: "linear", animationIterationCount: "infinite" }}>
+                        <div
+                          className="w-20 h-20 rounded-full bg-gradient-to-br from-gray-800 to-black border border-gray-700"
+                          style={{
+                            animation: isActive && isOnline
+                              ? "spin-slow 4s linear infinite"
+                              : "none",
+                          }}
+                        >
                           <div className="absolute inset-2 rounded-full border border-gray-700/30" />
                           <div className="absolute inset-4 rounded-full border border-gray-700/20" />
                         </div>
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <div className={`w-8 h-8 rounded-full bg-gradient-to-br from-red-700 to-red-900 flex items-center justify-center ${
-                            isActive && isOnline ? "animate-spin-slow" : ""
-                          }`} style={{ animationDuration: "4s", animationTimingFunction: "linear", animationIterationCount: "infinite", animationDirection: "reverse" }}>
+                          <div
+                            className="w-8 h-8 rounded-full bg-gradient-to-br from-red-700 to-red-900 flex items-center justify-center"
+                            style={{
+                              animation: isActive && isOnline
+                                ? "spin-slow 4s linear infinite reverse"
+                                : "none",
+                            }}
+                          >
                             <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
                               <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
                             </svg>

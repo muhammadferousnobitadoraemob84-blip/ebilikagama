@@ -112,7 +112,6 @@ const translations = {
     admin_radio_edit: "Edit Radio",
     admin_radio_delete: "Delete Radio",
     admin_radio_name: "Radio Name",
-    admin_radio_stream_url: "Stream URL",
     admin_radio_description: "Description",
     admin_radio_category: "Category",
     admin_radio_status: "Status",
@@ -120,10 +119,7 @@ const translations = {
     admin_radio_disabled: "Disabled",
     admin_radio_order: "Display Order",
     admin_radio_thumbnail: "Radio Thumbnail",
-    admin_radio_test: "Test Stream",
     admin_radio_confirm_delete: "Are you sure you want to delete this radio?",
-    admin_radio_stream_ok: "Stream can be played",
-    admin_radio_stream_fail: "Stream cannot be reached",
 
     // Footer
     copyright: "© 2026 eBilikAgamaTV. All rights reserved.",
@@ -228,7 +224,6 @@ const translations = {
     admin_radio_edit: "Sunting Radio",
     admin_radio_delete: "Padam Radio",
     admin_radio_name: "Nama Radio",
-    admin_radio_stream_url: "URL Siaran",
     admin_radio_description: "Penerangan",
     admin_radio_category: "Kategori",
     admin_radio_status: "Status",
@@ -236,10 +231,7 @@ const translations = {
     admin_radio_disabled: "Dinyahaktifkan",
     admin_radio_order: "Susunan Paparan",
     admin_radio_thumbnail: "Gambar Radio",
-    admin_radio_test: "Semak Siaran",
     admin_radio_confirm_delete: "Adakah anda pasti mahu memadam radio ini?",
-    admin_radio_stream_ok: "Siaran boleh dimainkan",
-    admin_radio_stream_fail: "Siaran tidak dapat dicapai",
 
     // Footer
     copyright: "© 2026 eBilikAgamaTV. Hak cipta terpelihara.",
@@ -344,7 +336,6 @@ const translations = {
     admin_radio_edit: "编辑广播",
     admin_radio_delete: "删除广播",
     admin_radio_name: "广播名称",
-    admin_radio_stream_url: "串流网址",
     admin_radio_description: "描述",
     admin_radio_category: "类别",
     admin_radio_status: "状态",
@@ -352,10 +343,7 @@ const translations = {
     admin_radio_disabled: "已禁用",
     admin_radio_order: "显示顺序",
     admin_radio_thumbnail: "广播缩略图",
-    admin_radio_test: "测试串流",
     admin_radio_confirm_delete: "确定要删除此广播吗？",
-    admin_radio_stream_ok: "串流可以播放",
-    admin_radio_stream_fail: "串流无法连接",
 
     // Footer
     copyright: "© 2026 eBilikAgamaTV. 版权所有。",

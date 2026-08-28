@@ -84,7 +84,6 @@ model Radio {
   id            String   @id @default(cuid())
   name          String
   description   String?  @db.Text
-  streamUrl     String   @db.Text
   thumbnail     String?  @db.Text
   twitchUsername String?
   category      String   @default("general")

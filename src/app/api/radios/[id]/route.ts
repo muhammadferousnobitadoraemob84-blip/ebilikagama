@@ -50,7 +50,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { name, description, streamUrl, thumbnail, twitchUsername, category, enabled, displayOrder } = body;
+    const { name, description, thumbnail, twitchUsername, category, enabled, displayOrder } = body;
 
     const existing = await prisma.radio.findUnique({ where: { id } });
     if (!existing) {
@@ -60,24 +60,11 @@ export async function PUT(
       );
     }
 
-    // Validate URL if provided
-    if (streamUrl) {
-      try {
-        new URL(streamUrl);
-      } catch {
-        return NextResponse.json(
-          { error: "URL Siaran tidak sah" },
-          { status: 400 }
-        );
-      }
-    }
-
     const radio = await prisma.radio.update({
       where: { id },
       data: {
         ...(name !== undefined && { name }),
         ...(description !== undefined && { description }),
-        ...(streamUrl !== undefined && { streamUrl }),
         ...(thumbnail !== undefined && { thumbnail }),
         ...(twitchUsername !== undefined && { twitchUsername: twitchUsername || null }),
         ...(category !== undefined && { category }),

@@ -45,21 +45,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, description, streamUrl, thumbnail, twitchUsername, category, enabled, displayOrder } = body;
+    const { name, description, thumbnail, twitchUsername, category, enabled, displayOrder } = body;
 
-    if (!name || !streamUrl) {
+    if (!name) {
       return NextResponse.json(
-        { error: "Nama dan URL Siaran diperlukan" },
-        { status: 400 }
-      );
-    }
-
-    // Validate URL format
-    try {
-      new URL(streamUrl);
-    } catch {
-      return NextResponse.json(
-        { error: "URL Siaran tidak sah" },
+        { error: "Nama radio diperlukan" },
         { status: 400 }
       );
     }
@@ -68,7 +58,6 @@ export async function POST(request: NextRequest) {
       data: {
         name,
         description: description || null,
-        streamUrl,
         thumbnail: thumbnail || null,
         twitchUsername: twitchUsername || null,
         category: category || "general",
