@@ -15,7 +15,7 @@ export interface RadioStation {
   [key: string]: unknown;
 }
 
-interface TwitchPlayer {
+interface TwitchPlayerInstance {
   play: () => void;
   pause: () => void;
   getMuted: () => boolean;
@@ -58,15 +58,19 @@ export default function RadioPlayer({
 }: RadioPlayerProps) {
   const { t } = useLanguage();
   const twitchContainerRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<TwitchPlayer | null>(null);
+  const playerRef = useRef<TwitchPlayerInstance | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
+  const [isActuallyPlaying, setIsActuallyPlaying] = useState(false);
   const [playbackError, setPlaybackError] = useState(false);
-  const isPlayingRef = useRef(isPlaying);
-  isPlayingRef.current = isPlaying;
 
-  const shouldRotate = isOnline && isPlaying && playerReady && !playbackError;
+  const shouldRotate = isOnline && isActuallyPlaying;
 
-  // Get the current domain for Twitch embed parent parameter
+  // Debug logging helper
+  const log = useCallback((...args: unknown[]) => {
+    console.log("[RadioPlayer]", ...args);
+  }, []);
+
+  // Get parent domain for Twitch embed
   const getParentDomain = useCallback(() => {
     if (typeof window === "undefined") return "localhost";
     return window.location.hostname;
@@ -75,22 +79,27 @@ export default function RadioPlayer({
   // Load Twitch Embed SDK
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (window.Twitch) return; // Already loaded
+    if (window.Twitch) {
+      log("Twitch SDK already loaded");
+      return;
+    }
 
+    log("Loading Twitch Embed SDK...");
     const script = document.createElement("script");
     script.src = "https://player.twitch.tv/js/embed/v1.js";
     script.async = true;
+    script.onload = () => log("Twitch SDK loaded successfully");
+    script.onerror = () => log("ERROR: Failed to load Twitch SDK");
     document.head.appendChild(script);
+  }, [log]);
 
-    return () => {
-      // Don't remove the script — other components might use it
-    };
-  }, []);
-
-  // Create/destroy Twitch embed when station changes or goes online
+  // Create/destroy Twitch embed
   useEffect(() => {
+    log("Effect triggered:", { isOnline, username: station.twitchUsername });
+
     // Cleanup previous player
     if (playerRef.current) {
+      log("Cleaning up previous player");
       try {
         playerRef.current.removeNode();
       } catch {
@@ -98,67 +107,106 @@ export default function RadioPlayer({
       }
       playerRef.current = null;
       setPlayerReady(false);
+      setIsActuallyPlaying(false);
       setPlaybackError(false);
     }
 
+    // Clear the container
+    if (twitchContainerRef.current) {
+      twitchContainerRef.current.innerHTML = "";
+    }
+
     if (!isOnline || !station.twitchUsername || !twitchContainerRef.current) {
+      log("Skipping player creation:", { isOnline, username: station.twitchUsername });
       return;
     }
 
-    // Wait for Twitch SDK to load
-    const waitForSDK = setInterval(() => {
-      if (window.Twitch?.Player) {
-        clearInterval(waitForSDK);
-        createPlayer();
-      }
-    }, 200);
+    const containerId = `twitch-embed-${station.id}`;
+    if (twitchContainerRef.current) {
+      twitchContainerRef.current.id = containerId;
+    }
 
-    // Timeout after 10 seconds
-    const timeout = setTimeout(() => {
-      clearInterval(waitForSDK);
-    }, 10000);
+    let destroyed = false;
 
     function createPlayer() {
-      if (!twitchContainerRef.current || playerRef.current) return;
+      if (destroyed || !twitchContainerRef.current || playerRef.current) return;
 
-      // Twitch Player expects a div ID string
-      const containerId = `twitch-embed-${station.id}`;
-      twitchContainerRef.current.id = containerId;
+      log("Creating Twitch player for:", station.twitchUsername, "parent:", getParentDomain());
 
       try {
         const player = new window.Twitch!.Player(containerId, {
           channel: station.twitchUsername,
           parent: getParentDomain(),
           autoplay: false,
-          muted: true, // Start muted — user unmutes via play button
-          height: 1,
-          width: 1,
+          muted: false,
+          height: 140,
+          width: 220,
         });
 
         player.addEventListener("ready", () => {
+          if (destroyed) return;
+          log("Twitch player READY");
           setPlayerReady(true);
           setPlaybackError(false);
         });
 
         player.addEventListener("playing", () => {
+          if (destroyed) return;
+          log("Twitch player PLAYING — actual audio active");
+          setIsActuallyPlaying(true);
           setPlaybackError(false);
+        });
+
+        player.addEventListener("pause", () => {
+          if (destroyed) return;
+          log("Twitch player PAUSED");
+          setIsActuallyPlaying(false);
         });
 
         player.addEventListener("ended", () => {
-          setPlaybackError(false);
+          if (destroyed) return;
+          log("Twitch player ENDED");
+          setIsActuallyPlaying(false);
         });
 
         player.addEventListener("offline", () => {
-          // Channel went offline
+          if (destroyed) return;
+          log("Twitch player OFFLINE");
+          setIsActuallyPlaying(false);
+        });
+
+        player.addEventListener("online", () => {
+          if (destroyed) return;
+          log("Twitch player ONLINE");
         });
 
         playerRef.current = player;
-      } catch {
+        log("Twitch player instance created");
+      } catch (err) {
+        log("ERROR creating Twitch player:", err);
         setPlaybackError(true);
       }
     }
 
+    // Wait for Twitch SDK to load
+    const waitForSDK = setInterval(() => {
+      if (window.Twitch?.Player) {
+        clearInterval(waitForSDK);
+        log("Twitch SDK available, creating player");
+        createPlayer();
+      }
+    }, 200);
+
+    const timeout = setTimeout(() => {
+      clearInterval(waitForSDK);
+      if (!playerRef.current) {
+        log("ERROR: Twitch SDK load timeout (10s)");
+        setPlaybackError(true);
+      }
+    }, 10000);
+
     return () => {
+      destroyed = true;
       clearInterval(waitForSDK);
       clearTimeout(timeout);
       if (playerRef.current) {
@@ -169,33 +217,44 @@ export default function RadioPlayer({
         }
         playerRef.current = null;
         setPlayerReady(false);
+        setIsActuallyPlaying(false);
       }
     };
-  }, [isOnline, station.twitchUsername, getParentDomain]);
+  }, [isOnline, station.twitchUsername, station.id, getParentDomain, log]);
 
-  // Handle play/pause via Twitch player API
+  // Handle play/pause — call actual Twitch player methods
   useEffect(() => {
     const player = playerRef.current;
-    if (!player || !playerReady) return;
+    if (!player || !playerReady) {
+      if (isPlaying && !playerReady) {
+        log("Play requested but player not ready yet");
+      }
+      return;
+    }
 
     try {
       if (isPlaying) {
+        log("Calling player.play() and unmute");
         player.setMuted(false);
+        player.setVolume(0.8);
         player.play();
       } else {
+        log("Calling player.pause()");
         player.pause();
       }
-    } catch {
+    } catch (err) {
+      log("ERROR controlling player:", err);
       setPlaybackError(true);
     }
-  }, [isPlaying, playerReady]);
+  }, [isPlaying, playerReady, log]);
 
   const handlePlayPause = () => {
     if (!isOnline) return;
 
     if (playbackError) {
-      // Retry — recreate player
+      log("Retrying playback");
       setPlaybackError(false);
+      // Force recreation by briefly toggling
       return;
     }
 
@@ -208,10 +267,17 @@ export default function RadioPlayer({
 
   return (
     <div className="bg-gray-900 border border-white/10 rounded-2xl overflow-hidden">
-      {/* Hidden Twitch embed container — compliant with Twitch ToS */}
-      <div className="relative w-0 h-0 overflow-hidden opacity-0 pointer-events-none">
-        <div ref={twitchContainerRef} id={`twitch-embed-${station.id}`} />
-      </div>
+      {/* Twitch Embed — VISIBLE at Twitch-compliant minimum dimensions */}
+      {isOnline && station.twitchUsername && (
+        <div className="flex justify-center bg-black py-2">
+          <div
+            ref={twitchContainerRef}
+            id={`twitch-embed-${station.id}`}
+            className="rounded-lg overflow-hidden"
+            style={{ width: 220, height: 140 }}
+          />
+        </div>
+      )}
 
       <div className="flex flex-col items-center p-6 sm:p-8">
         {/* Vinyl Record Visual */}
@@ -300,7 +366,7 @@ export default function RadioPlayer({
           </p>
         )}
 
-        {/* Playback blocked — show instruction */}
+        {/* Playback instruction */}
         {isOnline && !isPlaying && !playbackError && (
           <p className="text-gray-400 text-sm text-center mt-4 italic">
             Tekan Play untuk memulakan radio.
@@ -367,7 +433,6 @@ export default function RadioPlayer({
 
       {/* Controls */}
       <div className="bg-gray-800/50 px-6 py-4 flex items-center gap-4">
-        {/* Play/Pause — controls Twitch player */}
         <button
           onClick={handlePlayPause}
           disabled={!isOnline}
@@ -378,33 +443,24 @@ export default function RadioPlayer({
           }`}
         >
           {isPlaying ? (
-            <svg
-              className="w-6 h-6 text-white"
-              fill="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
             </svg>
           ) : (
-            <svg
-              className="w-6 h-6 text-white ml-0.5"
-              fill="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="w-6 h-6 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
               <path d="M8 5v14l11-7z" />
             </svg>
           )}
         </button>
 
-        {/* Player status */}
         <div className="flex items-center gap-2 ml-auto text-gray-500 text-xs">
-          {isPlaying && isOnline && playerReady && !playbackError && (
+          {isPlaying && isOnline && isActuallyPlaying && (
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
               {t("radio_playing")}
             </span>
           )}
-          {isPlaying && isOnline && !playerReady && !playbackError && (
+          {isPlaying && isOnline && !isActuallyPlaying && playerReady && (
             <span className="flex items-center gap-1.5">
               <span className="w-4 h-4 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
               Memuatkan...
