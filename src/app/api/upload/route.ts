@@ -10,6 +10,37 @@ export const maxDuration = 30; // 30 seconds for file upload processing
 const MAX_IMAGE_SIZE = 4 * 1024 * 1024; // 4MB (safe under Vercel 4.5MB limit for legacy fallback)
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
+// Extract image dimensions from buffer without any dependencies
+function getImageDimensions(buffer: Buffer): { width: number; height: number } | null {
+  try {
+    // PNG: signature(8) + IHDR chunk length(4) + 'IHDR'(4) + width(4) + height(4)
+    if (buffer.length > 24 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+      const width = buffer.readUInt32BE(16);
+      const height = buffer.readUInt32BE(20);
+      return { width, height };
+    }
+    // JPEG: find SOF marker
+    let i = 2;
+    while (i < buffer.length - 9) {
+      if (buffer[i] === 0xFF) {
+        const marker = buffer[i + 1];
+        if (marker === 0xC0 || marker === 0xC1 || marker === 0xC2) {
+          const height = buffer.readUInt16BE(i + 5);
+          const width = buffer.readUInt16BE(i + 7);
+          return { width, height };
+        }
+        const segmentLength = buffer.readUInt16BE(i + 2);
+        i += 2 + segmentLength;
+      } else {
+        i++;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getSession();
@@ -53,6 +84,20 @@ export async function POST(request: NextRequest) {
     const base64 = buffer.toString("base64");
     const dataUrl = `data:${file.type};base64,${base64}`;
     console.log("[UPLOAD] Base64 length:", base64.length);
+
+    // Validate minimum image dimensions to prevent corrupted/tiny images
+    const dims = getImageDimensions(buffer);
+    if (dims) {
+      const MIN_DIMENSION = 50;
+      if (dims.width < MIN_DIMENSION || dims.height < MIN_DIMENSION) {
+        console.error("[UPLOAD] Image too small:", dims.width, "x", dims.height);
+        return NextResponse.json(
+          { error: `Gambar terlalu kecil (${dims.width}x${dims.height}px). Saiz minimum ialah ${MIN_DIMENSION}x${MIN_DIMENSION}px.` },
+          { status: 400 }
+        );
+      }
+      console.log("[UPLOAD] Image dimensions:", dims.width, "x", dims.height);
+    }
 
     // Save to database based on purpose — with retry logic for Neon cold starts
     if (purpose === "site_logo" || purpose === "hero_image") {

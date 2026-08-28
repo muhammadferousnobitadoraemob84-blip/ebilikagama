@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useLanguage } from "@/components/LanguageProvider";
 
@@ -12,9 +13,15 @@ interface Channel {
   liveStatus: string;
 }
 
+// Minimum dimension for a thumbnail to be considered valid
+const MIN_THUMB_DIM = 50;
+
 export default function ChannelCard({ channel }: { channel: Channel }) {
   const { t } = useLanguage();
   const isLive = channel.liveStatus === "live";
+  const [imgFailed, setImgFailed] = useState(false);
+
+  const showFallback = !channel.thumbnail || imgFailed;
 
   return (
     <Link
@@ -23,11 +30,18 @@ export default function ChannelCard({ channel }: { channel: Channel }) {
     >
       {/* Thumbnail */}
       <div className="relative aspect-video overflow-hidden">
-        {channel.thumbnail ? (
+        {!showFallback ? (
           <img
-            src={channel.thumbnail}
+            src={channel.thumbnail!}
             alt={channel.name}
             className="w-full h-full object-cover transition-transform duration-500 sm:group-hover:scale-110"
+            onError={() => setImgFailed(true)}
+            onLoad={(e) => {
+              const img = e.currentTarget;
+              if (img.naturalWidth < MIN_THUMB_DIM || img.naturalHeight < MIN_THUMB_DIM) {
+                setImgFailed(true);
+              }
+            }}
           />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center">

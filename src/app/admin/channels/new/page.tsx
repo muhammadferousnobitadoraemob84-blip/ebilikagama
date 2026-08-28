@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import TwitchVerifyPreview from "@/components/TwitchVerifyPreview";
-import { uploadImage, validateImageFile } from "@/lib/upload";
+import { uploadImage, validateImageFile, validateImageDimensions } from "@/lib/upload";
 
 type Step = 1 | 2 | 3;
 
@@ -86,7 +86,7 @@ export default function NewChannel() {
   };
 
   // --- Thumbnail Selection (local only — no API call) ---
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadError("");
@@ -94,6 +94,14 @@ export default function NewChannel() {
     const validationError = validateImageFile(file, 20);
     if (validationError) {
       setUploadError(validationError);
+      if (e.target) e.target.value = "";
+      return;
+    }
+
+    // Validate image dimensions
+    const dimError = await validateImageDimensions(file);
+    if (dimError) {
+      setUploadError(dimError);
       if (e.target) e.target.value = "";
       return;
     }

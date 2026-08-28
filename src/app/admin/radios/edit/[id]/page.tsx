@@ -68,7 +68,26 @@ export default function EditRadio({ params }: { params: Promise<{ id: string }> 
     setUploadError("");
 
     try {
-      const { uploadImage } = await import("@/lib/upload");
+      const { uploadImage, validateImageFile, validateImageDimensions } = await import("@/lib/upload");
+
+      // Validate file
+      const fileErr = validateImageFile(file, 20);
+      if (fileErr) {
+        setUploadError(fileErr);
+        setUploading(false);
+        if (e.target) e.target.value = "";
+        return;
+      }
+
+      // Validate dimensions
+      const dimErr = await validateImageDimensions(file);
+      if (dimErr) {
+        setUploadError(dimErr);
+        setUploading(false);
+        if (e.target) e.target.value = "";
+        return;
+      }
+
       const result = await uploadImage(file, "radio_thumbnail", id);
 
       if (result.saved) {

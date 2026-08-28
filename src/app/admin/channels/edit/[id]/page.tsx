@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
-import { uploadImage, validateImageFile } from "@/lib/upload";
+import { uploadImage, validateImageFile, validateImageDimensions } from "@/lib/upload";
 
 interface Channel {
   id: string;
@@ -84,6 +84,15 @@ export default function EditChannel({ params }: { params: Promise<{ id: string }
     const validationError = validateImageFile(file, 4);
     if (validationError) {
       setUploadError(validationError);
+      setUploading(false);
+      if (e.target) e.target.value = "";
+      return;
+    }
+
+    // Validate image dimensions (must be at least 50x50 pixels)
+    const dimError = await validateImageDimensions(file);
+    if (dimError) {
+      setUploadError(dimError);
       setUploading(false);
       if (e.target) e.target.value = "";
       return;

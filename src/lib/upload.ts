@@ -65,3 +65,33 @@ export function validateImageFile(file: File, maxSizeMB: number = 4): string | n
   }
   return null;
 }
+
+const MIN_IMAGE_DIMENSION = 50;
+
+/**
+ * Validate image dimensions in the browser.
+ * Returns a Promise that resolves to null if valid, or an error message.
+ */
+export function validateImageDimensions(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        if (img.width < MIN_IMAGE_DIMENSION || img.height < MIN_IMAGE_DIMENSION) {
+          resolve(`Gambar terlalu kecil (${img.width}x${img.height}px). Saiz minimum ialah ${MIN_IMAGE_DIMENSION}x${MIN_IMAGE_DIMENSION}px.`);
+        } else {
+          resolve(null);
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve("Gagal membaca fail imej. Sila gunakan fail JPG, PNG, atau WebP yang sah.");
+      };
+      img.src = url;
+    } catch {
+      resolve("Gagal membaca fail imej.");
+    }
+  });
+}
