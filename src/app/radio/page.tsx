@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useLanguage } from "@/components/LanguageProvider";
 import RadioPlayer, { type RadioStation } from "@/components/RadioPlayer";
 import RadioMiniPlayer from "@/components/RadioMiniPlayer";
+import { useNowPlaying } from "@/lib/useNowPlaying";
 
 export default function RadioPage() {
   const { t } = useLanguage();
@@ -97,6 +98,14 @@ export default function RadioPage() {
     setIsPlaying(false);
   }, []);
 
+  // Now Playing — polls every 3 seconds while online + playing
+  const activeIsOnline = activeStation ? (onlineStatus[activeStation.id] ?? false) : false;
+  const nowPlaying = useNowPlaying(
+    activeStation?.twitchUsername ?? null,
+    activeIsOnline,
+    isPlaying
+  );
+
   return (
     <div className="min-h-screen bg-black">
       {/* Hero */}
@@ -112,7 +121,8 @@ export default function RadioPage() {
             <RadioPlayer
               station={activeStation}
               isPlaying={isPlaying}
-              isOnline={onlineStatus[activeStation.id] ?? false}
+              isOnline={activeIsOnline}
+              nowPlaying={nowPlaying}
               onPlay={handlePlay}
               onPause={handleMiniPause}
               onStop={handleStop}
@@ -291,7 +301,8 @@ export default function RadioPage() {
         <RadioMiniPlayer
           station={activeStation}
           isPlaying={isPlaying}
-          isOnline={onlineStatus[activeStation.id] ?? false}
+          isOnline={activeIsOnline}
+          nowPlaying={nowPlaying}
           onPlay={handleMiniPlay}
           onPause={handleMiniPause}
           onStop={handleStop}

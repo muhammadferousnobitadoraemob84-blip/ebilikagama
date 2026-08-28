@@ -1,6 +1,7 @@
 "use client";
 
 import { useLanguage } from "@/components/LanguageProvider";
+import type { NowPlayingData } from "@/lib/useNowPlaying";
 
 export interface RadioStation {
   id: string;
@@ -17,6 +18,7 @@ interface RadioPlayerProps {
   station: RadioStation;
   isPlaying: boolean;
   isOnline: boolean;
+  nowPlaying: NowPlayingData | null;
   onPlay: (station: RadioStation) => void;
   onPause: () => void;
   onStop: () => void;
@@ -26,13 +28,13 @@ export default function RadioPlayer({
   station,
   isPlaying,
   isOnline,
+  nowPlaying,
   onPlay,
   onPause,
   onStop,
 }: RadioPlayerProps) {
   const { t } = useLanguage();
 
-  // The record rotates when: online AND playing
   const shouldRotate = isOnline && isPlaying;
 
   const handlePlayPause = () => {
@@ -50,7 +52,7 @@ export default function RadioPlayer({
         <div className="relative w-48 h-48 sm:w-64 sm:h-64 mb-6">
           {/* Outer ring / grooves */}
           <div
-            className={`absolute inset-0 rounded-full bg-gradient-to-br from-gray-800 via-gray-900 to-black border-2 border-gray-700 shadow-2xl`}
+            className="absolute inset-0 rounded-full bg-gradient-to-br from-gray-800 via-gray-900 to-black border-2 border-gray-700 shadow-2xl"
             style={{
               animation: shouldRotate
                 ? "spin-slow 4s linear infinite"
@@ -71,7 +73,7 @@ export default function RadioPlayer({
           {/* Center label */}
           <div className="absolute inset-0 flex items-center justify-center">
             <div
-              className={`w-20 h-20 sm:w-28 sm:h-28 rounded-full bg-gradient-to-br from-red-700 via-red-800 to-red-900 border-2 border-red-600/50 flex items-center justify-center shadow-lg`}
+              className="w-20 h-20 sm:w-28 sm:h-28 rounded-full bg-gradient-to-br from-red-700 via-red-800 to-red-900 border-2 border-red-600/50 flex items-center justify-center shadow-lg"
               style={{
                 animation: shouldRotate
                   ? "spin-slow 4s linear infinite"
@@ -138,6 +140,50 @@ export default function RadioPlayer({
             RADIO IS OFFLINE RIGHT NOW. PLEASE COME BACK LATER.
           </p>
         )}
+
+        {/* Now Playing Section */}
+        {isOnline && (
+          <div className="mt-5 w-full max-w-sm text-center">
+            <p className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold mb-1.5">
+              Now Playing
+            </p>
+            {nowPlaying?.available && nowPlaying.song ? (
+              <div className="transition-opacity duration-500">
+                <p className="text-white text-base sm:text-lg font-semibold leading-tight">
+                  {nowPlaying.song}
+                </p>
+                {nowPlaying.artist && (
+                  <p className="text-gray-400 text-sm mt-0.5">
+                    {nowPlaying.artist}
+                  </p>
+                )}
+                {!nowPlaying.artist && nowPlaying.game && (
+                  <p className="text-gray-500 text-xs mt-0.5">
+                    {nowPlaying.game}
+                  </p>
+                )}
+              </div>
+            ) : nowPlaying === null ? (
+              <p className="text-gray-400 text-sm italic">Detecting song...</p>
+            ) : (
+              <p className="text-gray-500 text-sm italic">
+                Song information unavailable
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Offline Now Playing */}
+        {!isOnline && (
+          <div className="mt-4 w-full max-w-sm text-center">
+            <p className="text-[10px] uppercase tracking-widest text-gray-600 font-semibold mb-1">
+              Now Playing
+            </p>
+            <p className="text-gray-600 text-sm italic">
+              No song currently playing
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Controls */}
@@ -171,7 +217,7 @@ export default function RadioPlayer({
           )}
         </button>
 
-        {/* Volume placeholder — no audio to control */}
+        {/* Volume placeholder */}
         <div className="flex items-center gap-2 ml-auto text-gray-500 text-xs">
           {isPlaying && isOnline && (
             <span className="flex items-center gap-1.5">

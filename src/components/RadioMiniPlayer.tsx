@@ -1,6 +1,7 @@
 "use client";
 
 import { useLanguage } from "@/components/LanguageProvider";
+import type { NowPlayingData } from "@/lib/useNowPlaying";
 
 interface RadioStation {
   id: string;
@@ -12,6 +13,7 @@ interface RadioMiniPlayerProps {
   station: RadioStation;
   isPlaying: boolean;
   isOnline: boolean;
+  nowPlaying: NowPlayingData | null;
   onPlay: () => void;
   onPause: () => void;
   onStop: () => void;
@@ -23,6 +25,7 @@ export default function RadioMiniPlayer({
   station,
   isPlaying,
   isOnline,
+  nowPlaying,
   onPlay,
   onPause,
   onStop,
@@ -55,27 +58,34 @@ export default function RadioMiniPlayer({
           )}
         </div>
 
-        {/* Station name + status */}
+        {/* Station name + now playing info */}
         <div className="flex-1 min-w-0">
           <p className="text-white text-sm font-medium truncate">{station.name}</p>
-          <div className="flex items-center gap-1.5">
-            {isPlaying && isOnline ? (
-              <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                <span className="text-green-400 text-[10px] font-medium">{t("radio_playing")}</span>
-              </span>
-            ) : isOnline ? (
-              <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
-                <span className="text-green-400 text-[10px] font-medium">{t("radio_online")}</span>
-              </span>
-            ) : (
-              <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
-                <span className="text-red-400 text-[10px] font-medium">{t("radio_offline")}</span>
-              </span>
-            )}
-          </div>
+          {isPlaying && isOnline && nowPlaying?.available && nowPlaying.song ? (
+            <p className="text-gray-400 text-[10px] truncate">
+              {nowPlaying.song}
+              {nowPlaying.artist && ` — ${nowPlaying.artist}`}
+            </p>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              {isPlaying && isOnline ? (
+                <span className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                  <span className="text-green-400 text-[10px] font-medium">{t("radio_playing")}</span>
+                </span>
+              ) : isOnline ? (
+                <span className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+                  <span className="text-green-400 text-[10px] font-medium">{t("radio_online")}</span>
+                </span>
+              ) : (
+                <span className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
+                  <span className="text-red-400 text-[10px] font-medium">{t("radio_offline")}</span>
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Play/Pause */}
