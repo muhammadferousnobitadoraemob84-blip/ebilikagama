@@ -16,13 +16,13 @@ export async function GET(request: NextRequest) {
     if (all) {
       // Admin view - get all replays
       replays = await prisma.replay.findMany({
-        orderBy: { createdAt: "desc" },
+        orderBy: { date: "desc" },
       });
     } else {
       // Public view - get only published replays
       replays = await prisma.replay.findMany({
         where: { published: true },
-        orderBy: { createdAt: "desc" },
+        orderBy: { date: "desc" },
       });
     }
 

@@ -51,7 +51,13 @@ export default function LiveReplaySection() {
       const res = await fetch("/api/replays");
       if (res.ok) {
         const data = await res.json();
-        setReplays(data);
+        // Sort by date descending (newest first) as a safety net
+        const sorted = [...data].sort((a, b) => {
+          const dateA = new Date(a.date || 0).getTime();
+          const dateB = new Date(b.date || 0).getTime();
+          return dateB - dateA;
+        });
+        setReplays(sorted);
       }
     } catch {
       // Ignore error
