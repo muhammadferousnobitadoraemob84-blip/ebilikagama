@@ -62,6 +62,7 @@ export default function RadioPlayer({
   const [playerReady, setPlayerReady] = useState(false);
   const [isActuallyPlaying, setIsActuallyPlaying] = useState(false);
   const [playbackError, setPlaybackError] = useState(false);
+  const desiredPlayRef = useRef(false);
 
   const shouldRotate = isOnline && isActuallyPlaying;
 
@@ -222,18 +223,18 @@ export default function RadioPlayer({
     };
   }, [isOnline, station.twitchUsername, station.id, getParentDomain, log]);
 
-  // Handle play/pause — call actual Twitch player methods
+  // Sync desired playback state with Twitch player.
+  // Uses a ref so the effect re-runs when playerReady changes even if
+  // the desired state hasn't changed (handles the case where play was
+  // requested before the player finished loading).
   useEffect(() => {
     const player = playerRef.current;
-    if (!player || !playerReady) {
-      if (isPlaying && !playerReady) {
-        log("Play requested but player not ready yet");
-      }
-      return;
-    }
+    if (!player || !playerReady) return;
+
+    const wantPlay = desiredPlayRef.current;
 
     try {
-      if (isPlaying) {
+      if (wantPlay) {
         log("Calling player.play() and unmute");
         player.setMuted(false);
         player.setVolume(0.8);
@@ -246,7 +247,12 @@ export default function RadioPlayer({
       log("ERROR controlling player:", err);
       setPlaybackError(true);
     }
-  }, [isPlaying, playerReady, log]);
+  }, [playerReady, log]);
+
+  // Sync desiredPlayRef when the parent isPlaying prop changes
+  useEffect(() => {
+    desiredPlayRef.current = isPlaying;
+  }, [isPlaying]);
 
   const handlePlayPause = () => {
     if (!isOnline) return;
@@ -254,8 +260,6 @@ export default function RadioPlayer({
     if (playbackError) {
       log("Retrying playback");
       setPlaybackError(false);
-      // Force recreation by briefly toggling
-      return;
     }
 
     if (isPlaying) {
@@ -442,7 +446,7 @@ export default function RadioPlayer({
               : "bg-gray-700 cursor-not-allowed"
           }`}
         >
-          {isPlaying ? (
+          {isActuallyPlaying ? (
             <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
             </svg>
