@@ -336,6 +336,7 @@ async function seedData() {
     { key: "social_twitter", value: "" },
     { key: "social_youtube", value: "" },
     { key: "social_instagram", value: "" },
+    { key: "social_tiktok", value: "" },
   ];
 
   for (const s of settings) {

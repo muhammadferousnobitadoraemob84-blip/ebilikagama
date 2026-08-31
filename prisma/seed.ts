@@ -92,6 +92,7 @@ async function main() {
     { key: "social_twitter", value: "" },
     { key: "social_youtube", value: "" },
     { key: "social_instagram", value: "" },
+    { key: "social_tiktok", value: "" },
   ];
 
   for (const setting of defaultSettings) {

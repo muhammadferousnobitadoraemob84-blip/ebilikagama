@@ -385,6 +385,7 @@ export default function AdminSettings() {
               { key: "social_twitter", label: "Twitter / X URL" },
               { key: "social_youtube", label: "YouTube URL" },
               { key: "social_instagram", label: "Instagram URL" },
+              { key: "social_tiktok", label: "TikTok URL" },
             ].map((social) => (
               <div key={social.key}>
                 <label className="block text-gray-300 text-sm font-medium mb-2">
@@ -393,10 +394,24 @@ export default function AdminSettings() {
                 <input
                   type="url"
                   value={settings[social.key] || ""}
-                  onChange={(e) => setSettings({ ...settings, [social.key]: e.target.value })}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    // Basic validation: must be empty or a valid URL
+                    if (val && !val.startsWith("http") && val.length > 0) return;
+                    setSettings({ ...settings, [social.key]: val });
+                  }}
                   className="admin-input"
-                  placeholder={`https://www.${social.key.replace("social_", "")}.com/...`}
+                  placeholder={social.key === "social_tiktok"
+                    ? "https://www.tiktok.com/@username"
+                    : `https://www.${social.key.replace("social_", "")}.com/...`}
                 />
+                {settings[social.key] && settings[social.key] !== "" && (
+                  <p className="text-gray-500 text-xs mt-1.5">
+                    <a href={settings[social.key]} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
+                      Buka pautan
+                    </a>
+                  </p>
+                )}
               </div>
             ))}
           </div>
