@@ -78,53 +78,50 @@ export default function ReplayPage() {
 
   return (
     <div className="min-h-screen bg-black text-white">
-      {/* Header */}
-      <div className="bg-gray-900 border-b border-gray-800 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-3 sm:py-4 flex items-center gap-3 sm:gap-4">
-          <Link
-            href="/"
-            className="text-gray-400 hover:text-white transition-colors flex-shrink-0"
-          >
-            <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </Link>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-lg sm:text-xl font-bold truncate">{replay.title}</h1>
-            <p className="text-gray-400 text-xs sm:text-sm">{replay.date}</p>
-          </div>
+      {/* Back Button — same as Channel page */}
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-3 sm:pt-6">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1.5 sm:gap-2 text-gray-400 hover:text-white transition-colors text-xs sm:text-sm font-medium"
+        >
+          <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          {t("back")}
+        </Link>
+      </div>
+
+      {/* Video Player — same sizing as Channel page */}
+      <div className="max-w-7xl mx-auto px-0 sm:px-6 lg:px-8 pt-2 sm:pt-4">
+        <div className="sm:px-0">
+          {replay.googleDriveId ? (
+            <div className="relative w-full" style={{ aspectRatio: "16 / 9" }}>
+              <iframe
+                src={getGoogleDriveEmbedUrl(replay.googleDriveId)}
+                className="absolute inset-0 w-full h-full border-0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                title={replay.title}
+              />
+            </div>
+          ) : (
+            <div className="relative w-full" style={{ aspectRatio: "16 / 9" }}>
+              <div className="absolute inset-0 bg-gray-900 flex items-center justify-center rounded-xl overflow-hidden">
+                <div className="text-center px-4">
+                  <svg className="w-12 h-12 sm:w-16 sm:h-16 text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-gray-400 text-sm sm:text-base">{t("replay_video_unavailable")}</p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Video Player - Full width, no black bars */}
-      <div className="w-full bg-black">
-        {replay.googleDriveId ? (
-          <div className="relative w-full" style={{ aspectRatio: "16 / 9" }}>
-            <iframe
-              src={getGoogleDriveEmbedUrl(replay.googleDriveId)}
-              className="absolute inset-0 w-full h-full border-0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-              title={replay.title}
-            />
-          </div>
-        ) : (
-          <div className="relative w-full" style={{ aspectRatio: "16 / 9" }}>
-            <div className="absolute inset-0 bg-gray-900 flex items-center justify-center">
-              <div className="text-center px-4">
-                <svg className="w-12 h-12 sm:w-16 sm:h-16 text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p className="text-gray-400 text-sm sm:text-base">{t("replay_video_unavailable")}</p>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
       {/* Video Info */}
-      <div className="max-w-6xl mx-auto px-4 py-4 sm:py-6">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
         <h2 className="text-xl sm:text-2xl font-bold mb-2">{replay.title}</h2>
         <p className="text-gray-400 text-sm sm:text-base mb-4">{replay.date}</p>
         
