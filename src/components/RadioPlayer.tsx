@@ -359,7 +359,7 @@ export default function RadioPlayer({
         {/* No Twitch username */}
         {!station.twitchUsername && (
           <p className="text-gray-400 text-sm text-center mt-4">
-            Tiada username Twitch dikonfigurasikan untuk radio ini.
+            {t("radio_no_twitch")}
           </p>
         )}
 
@@ -373,19 +373,19 @@ export default function RadioPlayer({
         {/* Playback instruction */}
         {isOnline && !isPlaying && !playbackError && (
           <p className="text-gray-400 text-sm text-center mt-4 italic">
-            Tekan Play untuk memulakan radio.
+            {t("radio_press_play")}
           </p>
         )}
 
         {/* Playback error */}
         {playbackError && isOnline && (
           <p className="text-red-400 text-sm text-center mt-4">
-            Radio tidak dapat dimainkan buat masa ini.
+            {t("radio_playback_error")}
             <button
               onClick={handlePlayPause}
               className="ml-2 underline hover:text-red-300"
             >
-              Cuba lagi
+              {t("radio_try_play")}
             </button>
           </p>
         )}
@@ -394,7 +394,7 @@ export default function RadioPlayer({
         {isOnline && (
           <div className="mt-5 w-full max-w-sm text-center">
             <p className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold mb-1.5">
-              Now Playing
+              {t("radio_now_playing")}
             </p>
             {nowPlaying?.available && nowPlaying.song ? (
               <div className="transition-opacity duration-500">
@@ -413,10 +413,10 @@ export default function RadioPlayer({
                 )}
               </div>
             ) : nowPlaying === null ? (
-              <p className="text-gray-400 text-sm italic">Detecting song...</p>
+              <p className="text-gray-400 text-sm italic">{t("radio_detecting_song")}</p>
             ) : (
               <p className="text-gray-500 text-sm italic">
-                Song information unavailable
+                {t("radio_song_unavailable")}
               </p>
             )}
           </div>
@@ -426,10 +426,10 @@ export default function RadioPlayer({
         {!isOnline && (
           <div className="mt-4 w-full max-w-sm text-center">
             <p className="text-[10px] uppercase tracking-widest text-gray-600 font-semibold mb-1">
-              Now Playing
+              {t("radio_now_playing")}
             </p>
             <p className="text-gray-600 text-sm italic">
-              No song currently playing
+              {t("radio_no_song")}
             </p>
           </div>
         )}
@@ -467,7 +467,7 @@ export default function RadioPlayer({
           {isPlaying && isOnline && !isActuallyPlaying && playerReady && (
             <span className="flex items-center gap-1.5">
               <span className="w-4 h-4 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
-              Memuatkan...
+              {t("radio_loading")}
             </span>
           )}
         </div>

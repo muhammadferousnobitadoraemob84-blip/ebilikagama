@@ -29,7 +29,7 @@ export default function RadioPage() {
         setLoading(false);
       })
       .catch(() => {
-        setError("Gagal memuatkan radio");
+        setError(t("load_channels_error"));
         setLoading(false);
       });
   }, []);

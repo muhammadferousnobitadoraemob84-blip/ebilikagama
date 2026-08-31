@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLanguage } from "@/components/LanguageProvider";
 
 interface Channel {
   id: string;
@@ -21,6 +22,7 @@ interface Stats {
 }
 
 export default function AdminDashboard() {
+  const { t } = useLanguage();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [stats, setStats] = useState<Stats>({
     total: 0,
@@ -61,7 +63,7 @@ export default function AdminDashboard() {
 
   const statCards = [
     {
-      label: "Jumlah Saluran",
+      label: t("admin_total_channels"),
       value: stats.total,
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -71,7 +73,7 @@ export default function AdminDashboard() {
       color: "from-blue-500 to-blue-600",
     },
     {
-      label: "Saluran TV",
+      label: t("admin_tv_channels"),
       value: stats.saluranTV,
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -81,7 +83,7 @@ export default function AdminDashboard() {
       color: "from-green-500 to-green-600",
     },
     {
-      label: "Saluran Khas",
+      label: t("admin_special_channels"),
       value: stats.saluranKhas,
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -91,7 +93,7 @@ export default function AdminDashboard() {
       color: "from-purple-500 to-purple-600",
     },
     {
-      label: "Sedang LIVE",
+      label: t("admin_live_count"),
       value: stats.live,
       icon: (
         <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
@@ -101,7 +103,7 @@ export default function AdminDashboard() {
       color: "from-red-500 to-red-600",
     },
     {
-      label: "Offline",
+      label: t("admin_offline_count"),
       value: stats.offline,
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -112,7 +114,7 @@ export default function AdminDashboard() {
       color: "from-gray-500 to-gray-600",
     },
     {
-      label: "Aktif",
+      label: t("admin_active_count"),
       value: stats.active,
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -127,8 +129,8 @@ export default function AdminDashboard() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-white text-2xl font-bold">Dashboard</h1>
-          <p className="text-gray-400 mt-1">Ringkasan kandungan laman</p>
+          <h1 className="text-white text-2xl font-bold">{t("admin_dashboard")}</h1>
+          <p className="text-gray-400 mt-1">{t("admin_dashboard_desc")}</p>
         </div>
         <Link
           href="/admin/channels/new"
@@ -137,7 +139,7 @@ export default function AdminDashboard() {
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Tambah Saluran
+          {t("admin_add_channel")}
         </Link>
       </div>
 
@@ -168,10 +170,10 @@ export default function AdminDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-white font-semibold group-hover:text-red-400 transition-colors">
-                Pengurusan Saluran
+                {t("admin_channel_management")}
               </h3>
               <p className="text-gray-400 text-sm mt-1">
-                Tambah, sunting, padam, dan susun saluran
+                {t("admin_manage_channels")}
               </p>
             </div>
             <svg className="w-5 h-5 text-gray-500 group-hover:text-red-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -187,10 +189,10 @@ export default function AdminDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-white font-semibold group-hover:text-red-400 transition-colors">
-                Tetapan Laman
+                {t("admin_site_settings")}
               </h3>
               <p className="text-gray-400 text-sm mt-1">
-                Logo, hero, tajuk, footer, media sosial
+                {t("admin_site_settings_desc")}
               </p>
             </div>
             <svg className="w-5 h-5 text-gray-500 group-hover:text-red-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">

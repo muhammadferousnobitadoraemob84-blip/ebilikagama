@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { useLanguage } from "@/components/LanguageProvider";
 
 interface Channel {
   id: string;
@@ -21,6 +22,7 @@ interface Toast {
 }
 
 export default function AdminChannels() {
+  const { t } = useLanguage();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "saluran-tv" | "saluran-khas">("all");
@@ -42,7 +44,7 @@ export default function AdminChannels() {
       const data = await res.json();
       setChannels(data.sort((a: Channel, b: Channel) => a.displayOrder - b.displayOrder));
     } catch {
-      showToast("error", "Gagal memuatkan senarai saluran");
+      showToast("error", t("admin_channel_list_failed"));
     } finally {
       setLoading(false);
     }
@@ -82,22 +84,21 @@ export default function AdminChannels() {
       }
 
       if (!res.ok) {
-        showToast("error", data.error || "Saluran gagal dipadam. Sila cuba lagi.");
+        showToast("error", data.error || t("admin_channel_delete_failed"));
         setDeleting(false);
         return;
       }
 
-      // Remove from local state
       setChannels((prev) => prev.filter((c) => c.id !== deleteModal));
       setDeleteModal(null);
       setDeleteModalName("");
       setDeleteWarning(null);
       const msg = data.programsDeleted > 0
-        ? `Saluran berjaya dipadam bersama ${data.programsDeleted} program jadual.`
-        : "Saluran berjaya dipadam.";
+        ? t("admin_channel_deleted_with_programs").replace("{count}", String(data.programsDeleted))
+        : t("admin_channel_deleted");
       showToast("success", msg);
     } catch {
-      showToast("error", "Saluran gagal dipadam. Sila cuba lagi.");
+      showToast("error", t("admin_channel_delete_failed"));
     } finally {
       setDeleting(false);
     }
@@ -114,13 +115,13 @@ export default function AdminChannels() {
         setChannels((prev) =>
           prev.map((c) => (c.id === channel.id ? { ...c, active: !c.active } : c))
         );
-        showToast("success", channel.active ? "Saluran dinonaktifkan." : "Saluran diaktifkan.");
+        showToast("success", channel.active ? t("admin_channel_deactivated") : t("admin_channel_activated"));
       } else {
         const data = await res.json();
-        showToast("error", data.error || "Gagal mengubah status saluran.");
+        showToast("error", data.error || t("admin_channel_status_failed"));
       }
     } catch {
-      showToast("error", "Gagal mengubah status saluran.");
+      showToast("error", t("admin_channel_status_failed"));
     }
   };
 
@@ -210,8 +211,8 @@ export default function AdminChannels() {
 
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-white text-2xl font-bold">Pengurusan Saluran</h1>
-          <p className="text-gray-400 mt-1">Urus semua saluran televisyen</p>
+          <h1 className="text-white text-2xl font-bold">{t("admin_channel_management")}</h1>
+          <p className="text-gray-400 mt-1">{t("admin_manage_channels")}</p>
         </div>
         <Link
           href="/admin/channels/new"
@@ -220,16 +221,16 @@ export default function AdminChannels() {
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Tambah Saluran
+          {t("admin_add_channel")}
         </Link>
       </div>
 
       {/* Filter Tabs */}
       <div className="flex gap-2 mb-6">
         {[
-          { value: "all" as const, label: "Semua" },
-          { value: "saluran-tv" as const, label: "Saluran TV" },
-          { value: "saluran-khas" as const, label: "Saluran Khas" },
+          { value: "all" as const, label: t("admin_all") },
+          { value: "saluran-tv" as const, label: t("admin_tv_channels") },
+          { value: "saluran-khas" as const, label: t("admin_special_channels") },
         ].map((tab) => (
           <button
             key={tab.value}
@@ -248,7 +249,7 @@ export default function AdminChannels() {
       {/* Channel List */}
       {filteredChannels.length === 0 ? (
         <div className="text-center py-20 admin-card">
-          <p className="text-gray-400 text-lg mb-4">Tiada saluran ditemui</p>
+          <p className="text-gray-400 text-lg mb-4">{t("admin_channels_found")}</p>
           <Link
             href="/admin/channels/new"
             className="inline-flex items-center gap-2 admin-btn admin-btn-primary"
@@ -256,7 +257,7 @@ export default function AdminChannels() {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            Tambah Saluran Pertama
+            {t("admin_add_first_channel")}
           </Link>
         </div>
       ) : (
@@ -297,7 +298,7 @@ export default function AdminChannels() {
                   )}
                   {!channel.active && (
                     <span className="bg-gray-600 text-gray-300 text-xs font-medium px-2 py-0.5 rounded">
-                      DINONAKTIFKAN
+                      {t("admin_inactive")}
                     </span>
                   )}
                 </div>
@@ -306,10 +307,10 @@ export default function AdminChannels() {
                 </p>
                 <div className="flex items-center gap-3 mt-1">
                   <span className="text-gray-500 text-xs">
-                    {channel.category === "saluran-tv" ? "Saluran TV" : "Saluran Khas"}
+                    {channel.category === "saluran-tv" ? t("admin_tv_channels") : t("admin_special_channels")}
                   </span>
                   <span className="text-gray-600 text-xs">•</span>
-                  <span className="text-gray-500 text-xs">Susunan: {channel.displayOrder}</span>
+                  <span className="text-gray-500 text-xs">{t("admin_radio_order")}: {channel.displayOrder}</span>
                 </div>
               </div>
 
@@ -321,7 +322,7 @@ export default function AdminChannels() {
                     onClick={() => handleMoveUp(channel)}
                     disabled={idx === 0 || filteredChannels[idx - 1]?.category !== channel.category}
                     className="text-gray-500 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed p-1"
-                    title="Gerak ke atas"
+                    title="↑"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
@@ -331,7 +332,7 @@ export default function AdminChannels() {
                     onClick={() => handleMoveDown(channel)}
                     disabled={idx === filteredChannels.length - 1 || filteredChannels[idx + 1]?.category !== channel.category}
                     className="text-gray-500 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed p-1"
-                    title="Gerak ke bawah"
+                    title="↓"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -347,9 +348,9 @@ export default function AdminChannels() {
                       ? "bg-green-600/20 text-green-400 hover:bg-green-600/30"
                       : "bg-gray-600/20 text-gray-400 hover:bg-gray-600/30"
                   }`}
-                  title={channel.active ? "Nonaktifkan" : "Aktifkan"}
+                  title={channel.active ? t("admin_channel_deactivated") : t("admin_channel_activated")}
                 >
-                  {channel.active ? "Aktif" : "Mati"}
+                  {channel.active ? t("admin_active_count") : t("admin_offline_count")}
                 </button>
 
                 {/* Edit */}
@@ -357,7 +358,7 @@ export default function AdminChannels() {
                   href={`/admin/channels/edit/${channel.id}`}
                   className="px-3 py-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 rounded-lg text-xs font-medium transition-colors"
                 >
-                  Sunting
+                  {t("admin_radio_edit")}
                 </Link>
 
                 {/* Delete */}
@@ -365,7 +366,7 @@ export default function AdminChannels() {
                   onClick={() => openDeleteModal(channel.id, channel.name)}
                   className="px-3 py-1.5 bg-red-600/20 text-red-400 hover:bg-red-600/30 rounded-lg text-xs font-medium transition-colors"
                 >
-                  Padam
+                  {t("admin_delete")}
                 </button>
               </div>
             </div>
@@ -383,13 +384,13 @@ export default function AdminChannels() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
                 </svg>
               </div>
-              <h3 className="text-white font-semibold text-lg">Padam Saluran</h3>
+              <h3 className="text-white font-semibold text-lg">{t("admin_delete_channel")}</h3>
             </div>
             <p className="text-gray-400 mb-2">
-              Adakah anda pasti mahu memadamkan saluran ini?
+              {t("admin_delete_channel_confirm")}
             </p>
             <p className="text-gray-500 text-sm mb-6">
-              &quot;{deleteModalName}&quot; — Tindakan ini tidak boleh dibatalkan.
+              &quot;{deleteModalName}&quot; — {t("admin_delete_channel_warning")}
             </p>
             <div className="flex gap-3 justify-end">
               <button
@@ -397,7 +398,7 @@ export default function AdminChannels() {
                 className="admin-btn admin-btn-secondary"
                 disabled={deleting}
               >
-                Batal
+                {t("admin_cancel")}
               </button>
               <button
                 onClick={() => handleDelete(false)}
@@ -407,10 +408,10 @@ export default function AdminChannels() {
                 {deleting ? (
                   <>
                     <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    Memadam...
+                    {t("admin_deleting")}
                   </>
                 ) : (
-                  "Padam"
+                  t("admin_delete")
                 )}
               </button>
             </div>
@@ -428,13 +429,15 @@ export default function AdminChannels() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
                 </svg>
               </div>
-              <h3 className="text-white font-semibold text-lg">Amaran Jadual Siaran</h3>
+              <h3 className="text-white font-semibold text-lg">{t("admin_delete_channel_schedule_warning")}</h3>
             </div>
             <p className="text-gray-300 mb-2">
-              Saluran <strong>&quot;{deleteWarning.channelName}&quot;</strong> mempunyai <strong>{deleteWarning.programCount} program</strong> jadual yang berkaitan.
+              {t("admin_delete_channel_scheduled_warning")
+                .replace("{name}", deleteWarning.channelName)
+                .replace("{count}", String(deleteWarning.programCount))}
             </p>
             <p className="text-gray-400 text-sm mb-6">
-              Semua program jadual untuk saluran ini akan turut dipadamkan. Adakah anda pasti?
+              {t("admin_delete_channel_schedule_warning")}
             </p>
             <div className="flex gap-3 justify-end">
               <button
@@ -442,7 +445,7 @@ export default function AdminChannels() {
                 className="admin-btn admin-btn-secondary"
                 disabled={deleting}
               >
-                Batal
+                {t("admin_cancel")}
               </button>
               <button
                 onClick={() => handleDelete(true)}
@@ -452,10 +455,10 @@ export default function AdminChannels() {
                 {deleting ? (
                   <>
                     <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    Memadam...
+                    {t("admin_deleting")}
                   </>
                 ) : (
-                  "Padam Saluran & Jadual"
+                  t("admin_delete_channel_and_schedule")
                 )}
               </button>
             </div>

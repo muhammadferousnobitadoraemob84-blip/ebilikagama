@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useCallback } from "react";
+import { useLanguage } from "@/components/LanguageProvider";
 
 interface AuthUser {
   username: string;
@@ -19,6 +20,7 @@ export default function AdminLayout({
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { t } = useLanguage();
 
   const checkAuth = useCallback(async () => {
     if (pathname === "/admin/login") {
@@ -62,7 +64,7 @@ export default function AdminLayout({
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-400 text-sm">Memeriksa pengesahan...</p>
+          <p className="text-gray-400 text-sm">{t("admin_checking_auth")}</p>
         </div>
       </div>
     );
@@ -80,7 +82,7 @@ export default function AdminLayout({
     },
     {
       href: "/admin/channels",
-      label: "Pengurusan Saluran",
+      label: t("admin_channel_management"),
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
@@ -89,7 +91,7 @@ export default function AdminLayout({
     },
     {
       href: "/admin/schedule",
-      label: "Jadual Siaran",
+      label: t("admin_schedule"),
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -98,7 +100,7 @@ export default function AdminLayout({
     },
     {
       href: "/admin/radios",
-      label: "Pengurusan Radio",
+      label: t("admin_radio"),
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" />
@@ -107,7 +109,7 @@ export default function AdminLayout({
     },
     {
       href: "/admin/replays",
-      label: "Live Replay",
+      label: t("admin_live_replay"),
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
@@ -117,7 +119,7 @@ export default function AdminLayout({
     },
     {
       href: "/admin/settings",
-      label: "Tetapan Laman",
+      label: t("admin_site_settings"),
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -127,7 +129,7 @@ export default function AdminLayout({
     },
     {
       href: "/admin/account",
-      label: "Tetapan Akaun",
+      label: t("admin_account_settings"),
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -139,7 +141,7 @@ export default function AdminLayout({
       ? [
           {
             href: "/admin/admins",
-            label: "Pengurusan Admin",
+            label: t("admin_manage_admins"),
             icon: (
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -190,13 +192,13 @@ export default function AdminLayout({
                 href="/"
                 className="text-gray-400 hover:text-white text-xs sm:text-sm transition-colors hidden sm:inline"
               >
-                Lihat Laman →
+                {t("admin_view_site")}
               </Link>
               <button
                 onClick={handleLogout}
                 className="bg-white/10 hover:bg-white/20 text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors"
               >
-                Keluar
+                {t("admin_logout")}
               </button>
             </div>
           </div>

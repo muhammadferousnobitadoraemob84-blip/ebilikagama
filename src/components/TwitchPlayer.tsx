@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useLanguage } from "@/components/LanguageProvider";
 
 interface TwitchPlayerProps {
   channel: string;
@@ -13,6 +14,7 @@ export default function TwitchPlayer({
   width = "100%",
   height = "100%",
 }: TwitchPlayerProps) {
+  const { t } = useLanguage();
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [hasError, setHasError] = useState(false);
@@ -92,11 +94,10 @@ export default function TwitchPlayer({
           />
         </svg>
         <p className="text-gray-400 text-lg font-medium mb-2">
-          Siaran tidak tersedia
+          {t("twitch_stream_unavailable")}
         </p>
         <p className="text-gray-500 text-sm text-center max-w-md px-4">
-          Saluran ini mungkin sedang tidak bersiaran atau mengalami gangguan.
-          Sila cuba lagi sebentar lagi.
+          {t("twitch_stream_error_desc")}
         </p>
       </div>
     );
@@ -108,7 +109,7 @@ export default function TwitchPlayer({
         <div className="absolute inset-0 bg-gray-900 rounded-xl flex items-center justify-center z-10">
           <div className="flex flex-col items-center gap-3">
             <div className="w-10 h-10 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
-            <p className="text-gray-400 text-sm">Memuatkan siaran...</p>
+            <p className="text-gray-400 text-sm">{t("twitch_loading_stream")}</p>
           </div>
         </div>
       )}

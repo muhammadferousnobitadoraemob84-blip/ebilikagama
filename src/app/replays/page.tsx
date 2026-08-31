@@ -18,10 +18,7 @@ function formatDuration(seconds: number | null): string {
   if (!seconds) return "";
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
+  if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes} min`;
 }
 
@@ -37,7 +34,7 @@ function formatDate(dateStr: string, language: string): string {
   }
 }
 
-export default function LiveReplaySection() {
+export default function ReplaysPage() {
   const { t, language } = useLanguage();
   const [replays, setReplays] = useState<Replay[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,8 +48,7 @@ export default function LiveReplaySection() {
       const res = await fetch("/api/replays");
       if (res.ok) {
         const data = await res.json();
-        // Sort by date descending (newest first) as a safety net
-        const sorted = [...data].sort((a, b) => {
+        const sorted = [...data].sort((a: Replay, b: Replay) => {
           const dateA = new Date(a.date || 0).getTime();
           const dateB = new Date(b.date || 0).getTime();
           return dateB - dateA;
@@ -66,44 +62,45 @@ export default function LiveReplaySection() {
     }
   };
 
-  // Don't show section if no replays and not loading
-  if (!loading && replays.length === 0) {
-    return null;
-  }
-
   return (
-    <section className="py-12 sm:py-16 bg-black">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Section Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <h2 className="text-white text-xl sm:text-2xl font-bold">
-              {t("live_replay_title")}
-            </h2>
+    <div className="min-h-screen bg-black text-white">
+      {/* Header */}
+      <div className="bg-gray-900 border-b border-gray-800 sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-4 py-3 sm:py-4 flex items-center gap-3 sm:gap-4">
+          <Link
+            href="/"
+            className="text-gray-400 hover:text-white transition-colors flex-shrink-0"
+          >
+            <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </Link>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-lg sm:text-xl font-bold">{t("live_replay_title")}</h1>
+            <p className="text-gray-400 text-xs sm:text-sm">{t("live_replay_description")}</p>
           </div>
-          <p className="text-gray-400 text-sm sm:text-base">
-            {t("live_replay_description")}
-          </p>
         </div>
+      </div>
 
-        {/* Loading State */}
+      <div className="max-w-6xl mx-auto px-4 py-6 sm:py-8">
+        {/* Loading */}
         {loading && (
-          <div className="flex justify-center py-12">
+          <div className="flex justify-center py-16">
             <div className="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
           </div>
         )}
 
-        {/* Replays Grid — show max 6 on homepage */}
+        {/* Empty State */}
+        {!loading && replays.length === 0 && (
+          <div className="text-center py-16">
+            <p className="text-gray-500 text-lg">{t("replay_not_found")}</p>
+          </div>
+        )}
+
+        {/* Replays Grid */}
         {!loading && replays.length > 0 && (
-          <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {replays.slice(0, 6).map((replay) => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {replays.map((replay) => (
               <Link
                 key={replay.id}
                 href={`/replay/${replay.id}`}
@@ -125,7 +122,7 @@ export default function LiveReplaySection() {
                       </svg>
                     </div>
                   )}
-                  
+
                   {/* Play Button Overlay */}
                   <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
                     <div className="w-14 h-14 bg-red-600 rounded-full flex items-center justify-center">
@@ -165,21 +162,8 @@ export default function LiveReplaySection() {
               </Link>
             ))}
           </div>
-
-          {/* See More button */}
-          {replays.length > 6 && (
-            <div className="flex justify-center mt-8">
-              <Link
-                href="/replays"
-                className="bg-gray-800 hover:bg-gray-700 text-white px-6 py-3 rounded-xl font-medium text-sm transition-colors border border-white/10 hover:border-red-500/50"
-              >
-                {t("see_more")} →
-              </Link>
-            </div>
-          )}
-          </>
         )}
       </div>
-    </section>
+    </div>
   );
 }

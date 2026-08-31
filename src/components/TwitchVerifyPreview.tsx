@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useLanguage } from "@/components/LanguageProvider";
 
 interface TwitchVerifyPreviewProps {
   username: string;
@@ -13,6 +14,7 @@ export default function TwitchVerifyPreview({
   onVerified,
   verifiedUsername,
 }: TwitchVerifyPreviewProps) {
+  const { t } = useLanguage();
   const containerRef = useRef<HTMLDivElement>(null);
   const [verifying, setVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState<{
@@ -67,7 +69,7 @@ export default function TwitchVerifyPreview({
       setEmbedLoading(false);
       setVerifyResult({
         status: "found",
-        message: "Siaran berjaya disahkan dan boleh dimainkan.",
+        message: t("tv_channel_verified_ok"),
         displayName: pendingEmbed.displayName,
       });
       verifiedCallbackRef.current(true);
@@ -80,7 +82,7 @@ export default function TwitchVerifyPreview({
       setEmbedLoading(false);
       setVerifyResult({
         status: "error",
-        message: "Saluran Twitch ditemui tetapi siaran tidak dapat dimuatkan.",
+        message: t("tv_channel_found_but_error"),
       });
       verifiedCallbackRef.current(true);
     };
@@ -94,7 +96,7 @@ export default function TwitchVerifyPreview({
         setEmbedLoading(false);
         setVerifyResult({
           status: "offline",
-          message: "Saluran Twitch ditemui tetapi sedang OFFLINE.",
+          message: t("tv_channel_found_offline"),
           displayName: pendingEmbed.displayName,
         });
         verifiedCallbackRef.current(true);
@@ -130,7 +132,7 @@ export default function TwitchVerifyPreview({
       if (!data.exists) {
         setVerifyResult({
           status: "not_found",
-          message: data.message || "Saluran Twitch tidak ditemui.",
+          message: data.message || t("tv_channel_not_found"),
         });
         verifiedCallbackRef.current(false);
         setVerifying(false);
@@ -141,7 +143,7 @@ export default function TwitchVerifyPreview({
       // Mark as verifying — the useEffect will create the embed
       setVerifyResult({
         status: "found",
-        message: "Saluran Twitch ditemui. Memuatkan paparan...",
+        message: t("tv_channel_found_loading"),
         displayName: data.displayName || username.trim(),
       });
       setPendingEmbed({
@@ -151,7 +153,7 @@ export default function TwitchVerifyPreview({
     } catch {
       setVerifyResult({
         status: "error",
-        message: "Ralat semasa menyemak saluran. Sila cuba lagi.",
+        message: t("tv_verify_error"),
       });
       verifiedCallbackRef.current(false);
     } finally {
@@ -174,14 +176,14 @@ export default function TwitchVerifyPreview({
         {verifying ? (
           <>
             <span className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-            Menyemak saluran...
+            {t("tv_checking_channel")}
           </>
         ) : (
           <>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
-            Semak Siaran
+            {t("tv_check_channel")}
           </>
         )}
       </button>
@@ -255,7 +257,7 @@ export default function TwitchVerifyPreview({
                   <div className="absolute inset-0 bg-gray-900 rounded-xl flex items-center justify-center z-10">
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                      <p className="text-gray-400 text-sm">Memuatkan paparan semak...</p>
+                      <p className="text-gray-400 text-sm">{t("tv_embed_loading")}</p>
                     </div>
                   </div>
                 )}
@@ -265,9 +267,7 @@ export default function TwitchVerifyPreview({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
                     </svg>
                     <p className="text-gray-400 text-sm text-center">
-                      Paparan embed tidak dapat dimuatkan.
-                      <br />
-                      Sila semak username dan sambungan internet.
+                      {t("tv_embed_error")}
                     </p>
                   </div>
                 )}
@@ -280,10 +280,10 @@ export default function TwitchVerifyPreview({
           {verifyResult.status === "offline" && (
             <div className="bg-yellow-600/5 border border-yellow-600/20 rounded-xl p-4 text-sm">
               <p className="text-yellow-400 font-medium mb-1">
-                ⚠️ Saluran Twitch ditemui tetapi sedang OFFLINE.
+                {t("tv_offline_warning")}
               </p>
               <p className="text-gray-400 text-xs">
-                Pastikan username Twitch ini ialah saluran rasmi Bilik Agama sebelum menyimpan.
+                {t("tv_offline_warning_desc")}
               </p>
             </div>
           )}
@@ -292,10 +292,10 @@ export default function TwitchVerifyPreview({
           {verifyResult.status === "error" && (
             <div className="bg-yellow-600/5 border border-yellow-600/20 rounded-xl p-4 text-sm">
               <p className="text-yellow-400 font-medium mb-1">
-                ⚠️ Saluran Twitch ditemui tetapi siaran tidak dapat dimuatkan.
+                {t("tv_embed_warning")}
               </p>
               <p className="text-gray-400 text-xs">
-                Sila semak: username Twitch, ketersediaan strim, tetapan embed, dan sambungan internet.
+                {t("tv_embed_warning_desc")}
               </p>
             </div>
           )}
