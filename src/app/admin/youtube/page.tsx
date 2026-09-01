@@ -29,6 +29,9 @@ interface YouTubeStatus {
   connected: boolean;
   channelName: string | null;
   channelId: string | null;
+  error?: string | null;
+  errorDetails?: string | null;
+  verified?: boolean;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -170,7 +173,16 @@ export default function YouTubeScheduledStreamsPage() {
       window.history.replaceState({}, "", "/admin/youtube");
     } else if (ytResult === "error") {
       const message = params.get("message") || "Authorization failed";
-      showToast("error", message);
+      const details = params.get("details") || "";
+      showToast("error", decodeURIComponent(message));
+      // Store the detailed error in state so the UI can display it
+      setYtStatus({
+        connected: false,
+        channelName: null,
+        channelId: null,
+        error: decodeURIComponent(message),
+        errorDetails: details ? decodeURIComponent(details) : null,
+      });
       window.history.replaceState({}, "", "/admin/youtube");
     }
   }, [fetchYouTubeStatus, fetchStreams]);
@@ -327,8 +339,19 @@ export default function YouTubeScheduledStreamsPage() {
               {ytStatus?.connected && ytStatus.channelName && (
                 <p className="text-gray-400 text-sm mt-0.5">{ytStatus.channelName}</p>
               )}
-              {!ytStatus?.connected && (
+              {!ytStatus?.connected && !ytStatus?.error && (
                 <p className="text-gray-500 text-sm mt-0.5">Connect to import your scheduled livestreams</p>
+              )}
+              {!ytStatus?.connected && ytStatus?.error && (
+                <div className="mt-2">
+                  <p className="text-red-400 text-sm font-medium">⚠ {ytStatus.error}</p>
+                  {ytStatus.errorDetails && (
+                    <details className="mt-1">
+                      <summary className="text-gray-500 text-xs cursor-pointer hover:text-gray-400">Technical details</summary>
+                      <pre className="text-gray-500 text-xs mt-1 whitespace-pre-wrap break-words bg-gray-800/50 rounded-lg p-2 max-h-32 overflow-y-auto">{ytStatus.errorDetails}</pre>
+                    </details>
+                  )}
+                </div>
               )}
             </div>
           </div>

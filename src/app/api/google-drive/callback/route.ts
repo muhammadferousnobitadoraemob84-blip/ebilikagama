@@ -62,18 +62,13 @@ export async function GET(request: NextRequest) {
 
       if (!tokens.access_token) {
         return NextResponse.redirect(
-          new URL("/admin/youtube?yt=error&message=Failed to get access token", request.url)
+          new URL("/admin/youtube?yt=error&message=Failed+to+get+access+token+from+Google", request.url)
         );
       }
 
-      const channelInfo = await getYouTubeChannelInfo(tokens.access_token);
+      console.log("[GOOGLE-CALLBACK] YouTube token exchange successful. Saving tokens...");
 
-      if (!channelInfo.connected) {
-        return NextResponse.redirect(
-          new URL("/admin/youtube?yt=error&message=Failed to verify YouTube connection", request.url)
-        );
-      }
-
+      // ALWAYS save tokens first — OAuth succeeded even if channel verification fails
       await prisma.setting.upsert({
         where: { key: "youtube_access_token" },
         update: { value: tokens.access_token },
@@ -87,6 +82,30 @@ export async function GET(request: NextRequest) {
           create: { key: "youtube_refresh_token", value: tokens.refresh_token },
         });
       }
+
+      // Now verify the YouTube channel
+      const channelInfo = await getYouTubeChannelInfo(tokens.access_token);
+
+      if (!channelInfo.connected) {
+        // Tokens are saved, but channel verification failed.
+        // Save as connected=false and pass the specific error message.
+        // The admin can retry after fixing the issue (e.g., enable YouTube Data API).
+        await prisma.setting.upsert({
+          where: { key: "youtube_connected" },
+          update: { value: "error" },
+          create: { key: "youtube_connected", value: "error" },
+        });
+
+        const errorMsg = encodeURIComponent(channelInfo.error || "Failed to verify YouTube connection");
+        const errorDetails = encodeURIComponent(channelInfo.errorDetails || "");
+        console.error("[GOOGLE-CALLBACK] YouTube channel verification failed:", channelInfo.error, channelInfo.errorDetails);
+
+        return NextResponse.redirect(
+          new URL(`/admin/youtube?yt=error&message=${errorMsg}&details=${errorDetails}`, request.url)
+        );
+      }
+
+      console.log("[GOOGLE-CALLBACK] YouTube channel verified:", channelInfo.channelName);
 
       await prisma.setting.upsert({
         where: { key: "youtube_connected" },
