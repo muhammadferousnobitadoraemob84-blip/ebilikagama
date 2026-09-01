@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const state = Buffer.from(JSON.stringify({ adminToken: token })).toString("base64");
+    const state = Buffer.from(JSON.stringify({ type: "youtube", adminToken: token })).toString("base64");
     const authUrl = getYouTubeAuthUrl(undefined, state);
 
     return NextResponse.json({ authUrl });

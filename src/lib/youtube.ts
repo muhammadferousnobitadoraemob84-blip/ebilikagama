@@ -24,8 +24,14 @@ export function getYouTubeRedirectUri(): string {
   if (process.env.YOUTUBE_REDIRECT_URI) {
     return process.env.YOUTUBE_REDIRECT_URI;
   }
-  // Hardcoded production URL — must match Google Cloud Console configuration
-  return "https://ebilikagamabeta.vercel.app/api/youtube/callback";
+  // IMPORTANT: We use the Google Drive callback URL because that redirect URI
+  // is already registered in Google Cloud Console. Both services use the same
+  // GOOGLE_CLIENT_ID, so this avoids redirect_uri_mismatch errors.
+  // The state parameter distinguishes YouTube vs Google Drive flows.
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : "https://ebilikagamabeta.vercel.app";
+  return `${baseUrl}/api/google-drive/callback`;
 }
 
 /**

@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { exchangeCodeForTokens, verifyGoogleDriveConnection } from "@/lib/google-drive";
+import { exchangeYouTubeCodeForTokens, getYouTubeChannelInfo } from "@/lib/youtube";
 import { prisma } from "@/lib/prisma";
 import { ensureDatabase } from "@/lib/db-init";
 
 export const dynamic = "force-dynamic";
 
 // GET - OAuth callback from Google
+// Handles BOTH Google Drive AND YouTube flows (same registered redirect URI)
+// Distinguished by the state parameter
 export async function GET(request: NextRequest) {
   try {
     await ensureDatabase();
@@ -15,21 +18,101 @@ export async function GET(request: NextRequest) {
     const state = searchParams.get("state");
     const error = searchParams.get("error");
 
+    // Decode state to determine which flow this is
+    let flowType = "drive";
+    try {
+      if (state) {
+        const decoded = JSON.parse(Buffer.from(state, "base64").toString());
+        if (decoded.type === "youtube") flowType = "youtube";
+      }
+    } catch {
+      // Default to drive flow
+    }
+
     // Handle OAuth errors
     if (error) {
-      console.error("[GOOGLE-DRIVE-CALLBACK] OAuth error:", error);
+      console.error("[GOOGLE-CALLBACK] OAuth error:", error);
+      if (flowType === "youtube") {
+        return NextResponse.redirect(
+          new URL("/admin/youtube?yt=error&message=Authorization denied", request.url)
+        );
+      }
       return NextResponse.redirect(
         new URL("/admin/settings?drive=error&message=Authorization denied", request.url)
       );
     }
 
     if (!code) {
+      if (flowType === "youtube") {
+        return NextResponse.redirect(
+          new URL("/admin/youtube?yt=error&message=No authorization code", request.url)
+        );
+      }
       return NextResponse.redirect(
         new URL("/admin/settings?drive=error&message=No authorization code", request.url)
       );
     }
 
-    // Exchange code for tokens - pass request URL for redirect URI
+    // ── YouTube Flow ──
+    if (flowType === "youtube") {
+      console.log("[GOOGLE-CALLBACK] YouTube flow detected");
+
+      const tokens = await exchangeYouTubeCodeForTokens(code);
+
+      if (!tokens.access_token) {
+        return NextResponse.redirect(
+          new URL("/admin/youtube?yt=error&message=Failed to get access token", request.url)
+        );
+      }
+
+      const channelInfo = await getYouTubeChannelInfo(tokens.access_token);
+
+      if (!channelInfo.connected) {
+        return NextResponse.redirect(
+          new URL("/admin/youtube?yt=error&message=Failed to verify YouTube connection", request.url)
+        );
+      }
+
+      await prisma.setting.upsert({
+        where: { key: "youtube_access_token" },
+        update: { value: tokens.access_token },
+        create: { key: "youtube_access_token", value: tokens.access_token },
+      });
+
+      if (tokens.refresh_token) {
+        await prisma.setting.upsert({
+          where: { key: "youtube_refresh_token" },
+          update: { value: tokens.refresh_token },
+          create: { key: "youtube_refresh_token", value: tokens.refresh_token },
+        });
+      }
+
+      await prisma.setting.upsert({
+        where: { key: "youtube_connected" },
+        update: { value: "true" },
+        create: { key: "youtube_connected", value: "true" },
+      });
+
+      await prisma.setting.upsert({
+        where: { key: "youtube_channel_name" },
+        update: { value: channelInfo.channelName || "" },
+        create: { key: "youtube_channel_name", value: channelInfo.channelName || "" },
+      });
+
+      await prisma.setting.upsert({
+        where: { key: "youtube_channel_id" },
+        update: { value: channelInfo.channelId || "" },
+        create: { key: "youtube_channel_id", value: channelInfo.channelId || "" },
+      });
+
+      return NextResponse.redirect(
+        new URL("/admin/youtube?yt=success", request.url)
+      );
+    }
+
+    // ── Google Drive Flow (original) ──
+    console.log("[GOOGLE-CALLBACK] Google Drive flow detected");
+
     const requestUrl = request.url;
     const tokens = await exchangeCodeForTokens(code, requestUrl);
 
@@ -39,7 +122,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Verify connection and get user email
     const connection = await verifyGoogleDriveConnection(tokens.access_token);
 
     if (!connection.connected) {
@@ -48,7 +130,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Save tokens to database
     await prisma.setting.upsert({
       where: { key: "google_drive_access_token" },
       update: { value: tokens.access_token },
@@ -75,12 +156,26 @@ export async function GET(request: NextRequest) {
       create: { key: "google_drive_email", value: connection.email || "" },
     });
 
-    // Redirect to settings with success
     return NextResponse.redirect(
       new URL("/admin/settings?drive=success", request.url)
     );
   } catch (error) {
-    console.error("[GOOGLE-DRIVE-CALLBACK] Error:", error);
+    console.error("[GOOGLE-CALLBACK] Error:", error);
+    // Determine redirect based on state
+    try {
+      const { searchParams } = new URL(request.url);
+      const state = searchParams.get("state");
+      if (state) {
+        const decoded = JSON.parse(Buffer.from(state, "base64").toString());
+        if (decoded.type === "youtube") {
+          return NextResponse.redirect(
+            new URL("/admin/youtube?yt=error&message=Server error", request.url)
+          );
+        }
+      }
+    } catch {
+      // Fall through
+    }
     return NextResponse.redirect(
       new URL("/admin/settings?drive=error&message=Server error", request.url)
     );

@@ -33,10 +33,9 @@ export async function GET(request: NextRequest) {
         ? "YOUTUBE_REDIRECT_URI env var"
         : "hardcoded fallback",
       instructions: {
-        step1: `Ensure this exact redirect URI is registered in Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID → Authorized redirect URIs:`,
-        redirectUriToRegister: redirectUri,
-        step2: `Google Cloud Console URL: https://console.cloud.google.com/apis/credentials`,
-        step3: `Click your OAuth client → Edit → Add the redirect URI above → Save`,
+        note: `YouTube OAuth now shares the same redirect URI as Google Drive (${redirectUri}). No additional Google Cloud Console configuration needed if Google Drive OAuth is already working.`,
+        flow: `Auth URL → Google → callback → /api/google-drive/callback (state param routes to YouTube flow)`,
+        googleCloudConsole: `https://console.cloud.google.com/apis/credentials`,
       },
     });
   } catch {
