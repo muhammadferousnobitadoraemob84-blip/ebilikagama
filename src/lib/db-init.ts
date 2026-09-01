@@ -277,6 +277,13 @@ async function runMigrations() {
   } catch {
     // Column might already exist
   }
+
+  // Add YouTube broadcast ID column to Program table for YouTube scheduled streams integration
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Program" ADD COLUMN IF NOT EXISTS "youtubeBroadcastId" TEXT;`);
+  } catch {
+    // Column might already exist
+  }
 }
 
 async function seedData() {
