@@ -57,7 +57,8 @@ export async function GET(request: NextRequest) {
     if (flowType === "youtube") {
       console.log("[GOOGLE-CALLBACK] YouTube flow detected");
 
-      const tokens = await exchangeYouTubeCodeForTokens(code);
+      // Pass request.url so redirect_uri matches the auth URL exactly
+      const tokens = await exchangeYouTubeCodeForTokens(code, request.url);
 
       if (!tokens.access_token) {
         return NextResponse.redirect(

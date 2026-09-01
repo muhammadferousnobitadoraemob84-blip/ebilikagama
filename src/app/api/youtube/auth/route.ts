@@ -18,7 +18,9 @@ export async function GET(request: NextRequest) {
     }
 
     const state = Buffer.from(JSON.stringify({ type: "youtube", adminToken: token })).toString("base64");
-    const authUrl = getYouTubeAuthUrl(undefined, state);
+    // Pass request.url so getRedirectUri can derive the correct production host
+    // This is the EXACT same pattern used by the Google Drive auth route
+    const authUrl = getYouTubeAuthUrl(request.url, state);
 
     return NextResponse.json({ authUrl });
   } catch (error) {

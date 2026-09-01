@@ -1,6 +1,8 @@
 // YouTube integration using direct HTTP calls (YouTube Data API v3)
 // No external npm package required
 
+import { getRedirectUri } from "@/lib/google-drive";
+
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 
@@ -12,33 +14,23 @@ const YOUTUBE_SCOPES = "https://www.googleapis.com/auth/youtube.readonly";
 /**
  * Get redirect URI for YouTube OAuth.
  *
- * IMPORTANT: This must be EXACTLY the same string in both:
- * 1. The authorization URL sent to Google
- * 2. The token exchange request sent to Google
- * 3. The authorized redirect URI registered in Google Cloud Console
+ * CRITICAL: This reuses the EXACT same function as Google Drive OAuth.
+ * Both services use the same GOOGLE_CLIENT_ID registered in Google Cloud Console,
+ * so the redirect URI MUST be identical. This prevents redirect_uri_mismatch.
  *
- * We use only env var or hardcoded production URL — never request.url
- * because serverless function invocations can produce different hosts.
+ * @param requestUrl - The full request URL from the serverless function (request.url).
+ *   This is essential because getRedirectUri derives the host from it.
+ *   If omitted, falls back to GOOGLE_REDIRECT_URI env var or hardcoded production URL.
  */
-export function getYouTubeRedirectUri(): string {
-  if (process.env.YOUTUBE_REDIRECT_URI) {
-    return process.env.YOUTUBE_REDIRECT_URI;
-  }
-  // IMPORTANT: We use the Google Drive callback URL because that redirect URI
-  // is already registered in Google Cloud Console. Both services use the same
-  // GOOGLE_CLIENT_ID, so this avoids redirect_uri_mismatch errors.
-  // The state parameter distinguishes YouTube vs Google Drive flows.
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "https://ebilikagamabeta.vercel.app";
-  return `${baseUrl}/api/google-drive/callback`;
+export function getYouTubeRedirectUri(requestUrl?: string): string {
+  return getRedirectUri(requestUrl);
 }
 
 /**
  * Generate YouTube OAuth authorization URL
  */
 export function getYouTubeAuthUrl(requestUrl?: string, state?: string): string {
-  const redirectUri = getYouTubeRedirectUri();
+  const redirectUri = getYouTubeRedirectUri(requestUrl);
   console.log("[YOUTUBE-AUTH] Using redirect_uri:", redirectUri);
 
   const params = new URLSearchParams({
@@ -58,7 +50,7 @@ export function getYouTubeAuthUrl(requestUrl?: string, state?: string): string {
  * Exchange authorization code for tokens
  */
 export async function exchangeYouTubeCodeForTokens(code: string, requestUrl?: string) {
-  const redirectUri = getYouTubeRedirectUri();
+  const redirectUri = getYouTubeRedirectUri(requestUrl);
   console.log("[YOUTUBE-CALLBACK] Using redirect_uri:", redirectUri);
 
   const response = await fetch("https://oauth2.googleapis.com/token", {

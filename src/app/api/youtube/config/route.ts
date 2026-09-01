@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getYouTubeRedirectUri } from "@/lib/youtube";
+import { getRedirectUri } from "@/lib/google-drive";
 import { verifyToken } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +18,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const redirectUri = getYouTubeRedirectUri();
+    // Use request.url to derive the redirect URI the same way the auth route does
+    const redirectUri = getYouTubeRedirectUri(request.url);
+    const driveRedirectUri = getRedirectUri(request.url);
     const hasClientId = !!process.env.GOOGLE_CLIENT_ID;
     const hasClientSecret = !!process.env.GOOGLE_CLIENT_SECRET;
     const clientIdPrefix = process.env.GOOGLE_CLIENT_ID
@@ -29,13 +32,18 @@ export async function GET(request: NextRequest) {
       clientId: clientIdPrefix,
       clientSecretSet: hasClientSecret,
       redirectUri,
-      redirectUriSource: process.env.YOUTUBE_REDIRECT_URI
-        ? "YOUTUBE_REDIRECT_URI env var"
-        : "hardcoded fallback",
+      driveRedirectUri,
+      urisMatch: redirectUri === driveRedirectUri,
+      redirectUriSource: process.env.GOOGLE_REDIRECT_URI
+        ? "GOOGLE_REDIRECT_URI env var"
+        : `derived from request host: ${new URL(request.url).host}`,
       instructions: {
-        note: `YouTube OAuth now shares the same redirect URI as Google Drive (${redirectUri}). No additional Google Cloud Console configuration needed if Google Drive OAuth is already working.`,
-        flow: `Auth URL → Google → callback → /api/google-drive/callback (state param routes to YouTube flow)`,
+        note: `YouTube OAuth and Google Drive OAuth now share the EXACT same redirect URI function. Both use getRedirectUri() from google-drive.ts.`,
+        youtubeRedirectUri: redirectUri,
+        driveRedirectUri: driveRedirectUri,
+        match: redirectUri === driveRedirectUri ? "MATCH - URIs are identical" : "MISMATCH - URIs differ!",
         googleCloudConsole: `https://console.cloud.google.com/apis/credentials`,
+        step: `Ensure this redirect URI is registered as an Authorized redirect URI in Google Cloud Console for the OAuth client`,
       },
     });
   } catch {
