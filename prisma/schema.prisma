@@ -50,11 +50,14 @@ model Program {
   endTime     String   // HH:mm format (24h)
   description String? @db.Text
   thumbnail   String?  @db.Text
-  status      String   @default("scheduled") // scheduled, live, finished
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  status            String   @default("scheduled") // scheduled, live, finished
+  youtubeBroadcastId String?  @db.Text // YouTube broadcast/video ID for imported streams
+  youtubeUrl        String?  @db.Text // YouTube URL for imported streams
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@index([channelId, date])
+  @@unique([youtubeBroadcastId], name: "idx_youtube_broadcast")
 }
 
 model Subscriber {
