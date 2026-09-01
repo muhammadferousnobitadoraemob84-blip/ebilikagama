@@ -27,8 +27,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Exchange code for tokens
-    const tokens = await exchangeYouTubeCodeForTokens(code, request.url);
+    // Exchange code for tokens (redirect_uri is deterministic, not from request.url)
+    const tokens = await exchangeYouTubeCodeForTokens(code);
 
     if (!tokens.access_token) {
       return NextResponse.redirect(

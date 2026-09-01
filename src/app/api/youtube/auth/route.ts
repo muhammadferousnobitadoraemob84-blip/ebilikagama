@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     }
 
     const state = Buffer.from(JSON.stringify({ adminToken: token })).toString("base64");
-    const authUrl = getYouTubeAuthUrl(request.url, state);
+    const authUrl = getYouTubeAuthUrl(undefined, state);
 
     return NextResponse.json({ authUrl });
   } catch (error) {

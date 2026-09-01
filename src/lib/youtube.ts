@@ -10,16 +10,21 @@ const YOUTUBE_API = "https://www.googleapis.com/youtube/v3";
 const YOUTUBE_SCOPES = "https://www.googleapis.com/auth/youtube.readonly";
 
 /**
- * Get redirect URI for YouTube OAuth
+ * Get redirect URI for YouTube OAuth.
+ *
+ * IMPORTANT: This must be EXACTLY the same string in both:
+ * 1. The authorization URL sent to Google
+ * 2. The token exchange request sent to Google
+ * 3. The authorized redirect URI registered in Google Cloud Console
+ *
+ * We use only env var or hardcoded production URL — never request.url
+ * because serverless function invocations can produce different hosts.
  */
-export function getYouTubeRedirectUri(requestUrl?: string): string {
+export function getYouTubeRedirectUri(): string {
   if (process.env.YOUTUBE_REDIRECT_URI) {
     return process.env.YOUTUBE_REDIRECT_URI;
   }
-  if (requestUrl) {
-    const url = new URL(requestUrl);
-    return `${url.protocol}//${url.host}/api/youtube/callback`;
-  }
+  // Hardcoded production URL — must match Google Cloud Console configuration
   return "https://ebilikagamabeta.vercel.app/api/youtube/callback";
 }
 
@@ -27,7 +32,8 @@ export function getYouTubeRedirectUri(requestUrl?: string): string {
  * Generate YouTube OAuth authorization URL
  */
 export function getYouTubeAuthUrl(requestUrl?: string, state?: string): string {
-  const redirectUri = getYouTubeRedirectUri(requestUrl);
+  const redirectUri = getYouTubeRedirectUri();
+  console.log("[YOUTUBE-AUTH] Using redirect_uri:", redirectUri);
 
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
@@ -46,7 +52,8 @@ export function getYouTubeAuthUrl(requestUrl?: string, state?: string): string {
  * Exchange authorization code for tokens
  */
 export async function exchangeYouTubeCodeForTokens(code: string, requestUrl?: string) {
-  const redirectUri = getYouTubeRedirectUri(requestUrl);
+  const redirectUri = getYouTubeRedirectUri();
+  console.log("[YOUTUBE-CALLBACK] Using redirect_uri:", redirectUri);
 
   const response = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
