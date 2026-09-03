@@ -1,52 +1,23 @@
 export default function HomeLoading() {
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-      {/* Background with blur */}
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-xl" />
+      {/* Full-screen dark overlay */}
+      <div className="absolute inset-0 bg-black" />
 
-      {/* Glassmorphic card */}
-      <div className="relative z-10 flex flex-col items-center gap-5 px-10 py-10 sm:px-14 sm:py-12 rounded-3xl border border-white/10 bg-white/5 backdrop-blur-2xl shadow-2xl shadow-black/40 max-w-xs sm:max-w-sm w-[85vw]">
-        {/* Animated ring */}
-        <div className="relative w-16 h-16 sm:w-20 sm:h-20">
-          <svg className="w-full h-full -rotate-90 animate-spin" viewBox="0 0 80 80">
-            <circle
-              cx="40"
-              cy="40"
-              r="36"
-              fill="none"
-              stroke="rgba(255,255,255,0.06)"
-              strokeWidth="4"
-            />
-            <circle
-              cx="40"
-              cy="40"
-              r="36"
-              fill="none"
-              stroke="url(#spinner-gradient)"
-              strokeWidth="4"
-              strokeLinecap="round"
-              strokeDasharray="180 46"
-            />
-            <defs>
-              <linearGradient id="spinner-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#ef4444" />
-                <stop offset="100%" stopColor="#dc2626" />
-              </linearGradient>
-            </defs>
-          </svg>
+      {/* Pill-shaped loader container */}
+      <div className="relative z-10 flex items-center gap-4 px-7 py-3.5 sm:px-9 sm:py-4 rounded-full bg-[#141414] border border-white/[0.06]">
+        {/* 6-bar equalizer */}
+        <div className="flex items-end gap-[3px] h-[22px]">
+          <div className="w-[3px] rounded-full eq-bar" style={{ backgroundColor: "#ffffff", animationDelay: "0ms", animationDuration: "0.8s" }} />
+          <div className="w-[3px] rounded-full eq-bar" style={{ backgroundColor: "#d4d4d4", animationDelay: "0.15s", animationDuration: "0.65s" }} />
+          <div className="w-[3px] rounded-full eq-bar" style={{ backgroundColor: "#a3a3a3", animationDelay: "0.05s", animationDuration: "0.9s" }} />
+          <div className="w-[3px] rounded-full eq-bar" style={{ backgroundColor: "#d4d4d4", animationDelay: "0.2s", animationDuration: "0.7s" }} />
+          <div className="w-[3px] rounded-full eq-bar" style={{ backgroundColor: "#8a8a8a", animationDelay: "0.1s", animationDuration: "0.85s" }} />
+          <div className="w-[3px] rounded-full eq-bar" style={{ backgroundColor: "#ffffff", animationDelay: "0.25s", animationDuration: "0.75s" }} />
         </div>
-
-        {/* Loading text */}
-        <div className="text-center">
-          <p className="text-white/90 text-sm sm:text-base font-semibold tracking-wide">
-            Loading...
-          </p>
-        </div>
-
-        {/* Subtle progress bar (indeterminate) */}
-        <div className="w-full h-1 rounded-full bg-white/10 overflow-hidden">
-          <div className="h-full rounded-full bg-gradient-to-r from-red-500 to-red-600 animate-loading-bar" />
-        </div>
+        <span className="text-[#b0b0b0] text-[13px] sm:text-sm font-medium tracking-wide select-none">
+          Loading...
+        </span>
       </div>
     </div>
   );

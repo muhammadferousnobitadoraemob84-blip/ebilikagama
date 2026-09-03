@@ -70,24 +70,19 @@ html {
   animation: spin-slow 4s linear infinite;
 }
 
-/* Loading bar animation */
-@keyframes loading-bar {
-  0% {
-    width: 0%;
-    margin-left: 0%;
-  }
-  50% {
-    width: 60%;
-    margin-left: 20%;
-  }
-  100% {
-    width: 0%;
-    margin-left: 100%;
-  }
+/* Equalizer bar animation */
+.eq-bar {
+  height: 6px;
+  animation: eq-wave ease-in-out infinite alternate;
 }
 
-.animate-loading-bar {
-  animation: loading-bar 1.5s ease-in-out infinite;
+@keyframes eq-wave {
+  0% {
+    height: 4px;
+  }
+  100% {
+    height: 22px;
+  }
 }
 
 /* Card hover effects */
