@@ -53,6 +53,17 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
       <head>
         <link rel="apple-touch-icon" href="/icon-192.png" />
+        {/* DNS prefetch for external services */}
+        <link rel="dns-prefetch" href="https://static.twitchcdn.net" />
+        <link rel="dns-prefetch" href="https://client-core.afkstatic.com" />
+        <link rel="preconnect" href="https://static.twitchcdn.net" crossOrigin="anonymous" />
+        {/* Preload critical font files for faster first paint */}
+        <link
+          rel="preload"
+          href="/api/images/setting/site_logo"
+          as="image"
+          fetchPriority="high"
+        />
       </head>
       <body className="min-h-full flex flex-col bg-black text-white">
         <LanguageProvider>

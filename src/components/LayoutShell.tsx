@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import PageLoader from "@/components/PageLoader";
 
 export default function LayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -18,9 +19,10 @@ export default function LayoutShell({ children }: { children: React.ReactNode })
     return <>{children}</>;
   }
 
-  // Public pages get full chrome
+  // Public pages get full chrome + loading overlay
   return (
     <>
+      <PageLoader />
       <Header />
       <main className="flex-1">{children}</main>
       <Footer />

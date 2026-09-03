@@ -24,7 +24,41 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // Cache channel API with short stale-while-revalidate
+        source: "/api/channels",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, s-maxage=10, stale-while-revalidate=30",
+          },
+        ],
+      },
+      {
+        // Cache replay API
+        source: "/api/replays",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, s-maxage=30, stale-while-revalidate=60",
+          },
+        ],
+      },
+      {
+        // Cache settings API
+        source: "/api/settings",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, s-maxage=60, stale-while-revalidate=300",
+          },
+        ],
+      },
     ];
+  },
+  // Optimize images
+  images: {
+    formats: ["image/avif", "image/webp"],
   },
 };
 

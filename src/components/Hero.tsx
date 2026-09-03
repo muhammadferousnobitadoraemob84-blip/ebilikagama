@@ -31,6 +31,8 @@ export default function Hero({ settings = {}, translations }: HeroProps) {
             src={settings.hero_image}
             alt=""
             className="w-full h-full object-cover"
+            fetchPriority="high"
+            decoding="async"
           />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-gray-950 via-gray-900 to-red-950/30" />
