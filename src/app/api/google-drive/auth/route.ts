@@ -4,19 +4,20 @@ import { verifyToken } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// GET - Get Google Drive authorization URL
+// GET - Redirect to Google OAuth consent screen
 export async function GET(request: NextRequest) {
   try {
     // Verify admin authentication
     const token = request.cookies.get("admin-token")?.value;
     if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      // Not authenticated — redirect to admin login
+      return NextResponse.redirect(new URL("/admin/login", request.url));
     }
 
     try {
       await verifyToken(token);
     } catch {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.redirect(new URL("/admin/login", request.url));
     }
 
     // Generate state token (includes admin token hash for callback)
@@ -28,12 +29,14 @@ export async function GET(request: NextRequest) {
     const requestUrl = request.url;
     const authUrl = getAuthUrl(requestUrl, state);
 
-    return NextResponse.json({ authUrl });
+    // Perform HTTP redirect to Google OAuth consent screen
+    // DO NOT return JSON — the browser navigates here directly
+    return NextResponse.redirect(authUrl);
   } catch (error) {
     console.error("[GOOGLE-DRIVE-AUTH] Error:", error);
-    return NextResponse.json(
-      { error: "Failed to generate authorization URL" },
-      { status: 500 }
+    // On error, redirect back to Quran Audio admin with error
+    return NextResponse.redirect(
+      new URL("/admin/quran-audio?drive_error=auth_failed", request.url)
     );
   }
 }
