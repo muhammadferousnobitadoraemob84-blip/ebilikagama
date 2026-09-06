@@ -100,7 +100,8 @@ model QuranAudio {
   id              String   @id @default(cuid())
   surahName       String
   surahNumber     Int
-  ayahNumber      Int
+  ayahNumber      Int      @default(1)
+  audioType       String   @default("ayah") // "ayah" or "full_surah"
   reciterName     String
   fileName        String
   fileSize        BigInt?

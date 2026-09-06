@@ -317,6 +317,13 @@ async function runMigrations() {
     // Table might already exist
   }
 
+  // Add audioType column to QuranAudio table if it doesn't exist
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "QuranAudio" ADD COLUMN IF NOT EXISTS "audioType" TEXT NOT NULL DEFAULT 'ayah';`);
+  } catch {
+    // Column might already exist
+  }
+
   // Create indexes for QuranAudio table
   try {
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "QuranAudio_surahNumber_ayahNumber_idx" ON "QuranAudio"("surahNumber", "ayahNumber");`);
