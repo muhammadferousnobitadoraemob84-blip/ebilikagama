@@ -284,6 +284,50 @@ async function runMigrations() {
   } catch {
     // Column might already exist
   }
+
+  // Add YouTube URL column to Program table
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Program" ADD COLUMN IF NOT EXISTS "youtubeUrl" TEXT;`);
+  } catch {
+    // Column might already exist
+  }
+
+  // Create QuranAudio table if it doesn't exist
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "QuranAudio" (
+        "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+        "surahName" TEXT NOT NULL,
+        "surahNumber" INTEGER NOT NULL,
+        "ayahNumber" INTEGER NOT NULL,
+        "reciterName" TEXT NOT NULL,
+        "fileName" TEXT NOT NULL,
+        "fileSize" BIGINT,
+        "duration" INTEGER,
+        "googleDriveId" TEXT NOT NULL,
+        "googleDriveUrl" TEXT,
+        "status" TEXT NOT NULL DEFAULT 'active',
+        "uploadedBy" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "QuranAudio_surahNumber_ayahNumber_reciterName_key" UNIQUE ("surahNumber", "ayahNumber", "reciterName")
+      );
+    `);
+  } catch {
+    // Table might already exist
+  }
+
+  // Create indexes for QuranAudio table
+  try {
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "QuranAudio_surahNumber_ayahNumber_idx" ON "QuranAudio"("surahNumber", "ayahNumber");`);
+  } catch {
+    // Index might already exist
+  }
+  try {
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "QuranAudio_reciterName_idx" ON "QuranAudio"("reciterName");`);
+  } catch {
+    // Index might already exist
+  }
 }
 
 async function seedData() {

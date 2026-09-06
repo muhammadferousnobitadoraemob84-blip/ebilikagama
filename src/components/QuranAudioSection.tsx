@@ -26,6 +26,15 @@ interface Verse {
   text_imlaei_simple?: string;
 }
 
+interface UploadedAudio {
+  id: string;
+  surahName: string;
+  surahNumber: number;
+  ayahNumber: number;
+  reciterName: string;
+  duration: number | null;
+}
+
 // ── API helpers ──
 const QURAN_API = "https://api.quran.com/api/v4";
 
@@ -40,7 +49,7 @@ function getSurahPad(n: number): string {
   return String(n).padStart(3, "0");
 }
 
-function getAudioUrl(reciterId: number, verseKey: string): string {
+function getAudioUrlExternal(reciterId: number, verseKey: string): string {
   const [surahStr, ayahStr] = verseKey.split(":");
   const surah = parseInt(surahStr, 10);
   const ayah = parseInt(ayahStr, 10);
@@ -48,7 +57,6 @@ function getAudioUrl(reciterId: number, verseKey: string): string {
   const ayahPad = String(ayah).padStart(3, "0");
 
   // Use qdc (Quran Development Center) CDN — reliable per-ayah audio
-  // Reciter 1 = Alafasy (Mishary), Reciter 2 = Minshawy (Murattal), etc.
   return `https://download.quran.com.au/audio/ayah/${reciterId}/${surahPad}${ayahPad}.mp3`;
 }
 
@@ -76,6 +84,10 @@ export default function QuranAudioSection() {
   const [isMuted, setIsMuted] = useState(false);
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
 
+  // Uploaded audio entries from database
+  const [uploadedAudios, setUploadedAudios] = useState<UploadedAudio[]>([]);
+  const uploadedMapRef = useRef<Map<string, string>>(new Map()); // key: "surah:ayah:reciter" → entryId
+
   // Refs
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const autoPlayRef = useRef(false);
@@ -83,16 +95,17 @@ export default function QuranAudioSection() {
   const surahCacheRef = useRef<Map<number, Surah[]>>(new Map());
   const sessionReciterRef = useRef<number>(1);
 
-  // ── Load surahs + reciters once ──
+  // ── Load surahs + reciters + uploaded audio entries once ──
   useEffect(() => {
     let cancelled = false;
     async function init() {
       try {
-        const [chapterRes, reciterRes] = await Promise.all([
+        const [chapterRes, reciterRes, uploadedRes] = await Promise.all([
           fetchJson<{ chapters: Surah[] }>(`${QURAN_API}/chapters?language=en`),
           fetchJson<{ recitations: Reciter[] }>(
             `${QURAN_API}/resources/recitations?language=en`
           ),
+          fetch("/api/quran-audio/public").then((r) => r.ok ? r.json() : []),
         ]);
         if (!cancelled) {
           setSurahs(chapterRes.chapters || []);
@@ -104,11 +117,20 @@ export default function QuranAudioSection() {
               r.language_name?.toLowerCase() === "arabic"
           );
           if (availableReciters.length === 0) {
-            // Fallback: use first 20 reciters
             setReciters((reciterRes.recitations || []).slice(0, 20));
           } else {
             setReciters(availableReciters);
           }
+          // Load uploaded audio entries
+          const uploaded: UploadedAudio[] = uploadedRes || [];
+          setUploadedAudios(uploaded);
+          // Build lookup map: key = "surah:ayah:reciterName" → entryId
+          const map = new Map<string, string>();
+          for (const entry of uploaded) {
+            const key = `${entry.surahNumber}:${entry.ayahNumber}:${entry.reciterName}`;
+            map.set(key, entry.id);
+          }
+          uploadedMapRef.current = map;
         }
       } catch {
         if (!cancelled) setError("quran_error");
@@ -223,12 +245,30 @@ export default function QuranAudioSection() {
     return audioRef.current;
   }, [surahs, selectedSurah]);
 
+  // ── Get audio URL (prefer uploaded files, fallback to external) ──
+  const getAudioUrlForVerse = useCallback(
+    (surahId: number, ayah: number, reciterId: number): string => {
+      // Check if we have an uploaded file for this verse
+      // Reciter ID maps to reciter names — check the map
+      const reciterName = reciters.find((r) => r.id === reciterId)?.name || "";
+      if (reciterName) {
+        const key = `${surahId}:${ayah}:${reciterName}`;
+        const entryId = uploadedMapRef.current.get(key);
+        if (entryId) {
+          return `/api/quran-audio/stream?id=${entryId}`;
+        }
+      }
+      // Fallback to external CDN
+      return getAudioUrlExternal(reciterId, `${surahId}:${ayah}`);
+    },
+    [reciters]
+  );
+
   // ── Play a verse ──
   const playVerse = useCallback(
     async (surahId: number, ayah: number, reciterId: number) => {
       const audio = getAudio();
-      const verseKey = `${surahId}:${ayah}`;
-      const url = getAudioUrl(reciterId, verseKey);
+      const url = getAudioUrlForVerse(surahId, ayah, reciterId);
 
       setIsLoading(true);
       setError("");
@@ -245,15 +285,14 @@ export default function QuranAudioSection() {
         setIsLoading(false);
       }
     },
-    [getAudio]
+    [getAudio, getAudioUrlForVerse]
   );
 
   // ── Handle ayah change ──
   useEffect(() => {
     if (autoPlayRef.current && isPlaying) {
       const audio = getAudio();
-      const verseKey = `${selectedSurah}:${currentAyah}`;
-      const url = getAudioUrl(selectedReciter, verseKey);
+      const url = getAudioUrlForVerse(selectedSurah, currentAyah, selectedReciter);
 
       setIsLoading(true);
       autoPlayRef.current = true;
@@ -271,13 +310,12 @@ export default function QuranAudioSection() {
       // Just prepare the URL
       autoPlayRef.current = false;
     }
-  }, [currentAyah, isPlaying, getAudio, selectedReciter, selectedSurah]);
+  }, [currentAyah, isPlaying, getAudio, selectedReciter, selectedSurah, getAudioUrlForVerse]);
 
   // ── Play/Pause toggle ──
   const togglePlayPause = useCallback(async () => {
     const audio = getAudio();
-    const verseKey = `${selectedSurah}:${currentAyah}`;
-    const url = getAudioUrl(selectedReciter, verseKey);
+    const url = getAudioUrlForVerse(selectedSurah, currentAyah, selectedReciter);
 
     if (audio.src !== url && !isPlaying) {
       // New verse — start playing
@@ -296,7 +334,7 @@ export default function QuranAudioSection() {
       audio.pause();
       setIsPlaying(false);
     }
-  }, [getAudio, selectedSurah, currentAyah, selectedReciter, isPlaying, playVerse]);
+  }, [getAudio, selectedSurah, currentAyah, selectedReciter, isPlaying, playVerse, getAudioUrlForVerse]);
 
   // ── Previous / Next ayah ──
   const goPrev = useCallback(() => {

@@ -95,3 +95,24 @@ model Radio {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
+
+model QuranAudio {
+  id              String   @id @default(cuid())
+  surahName       String
+  surahNumber     Int
+  ayahNumber      Int
+  reciterName     String
+  fileName        String
+  fileSize        BigInt?
+  duration        Int?     // Duration in seconds
+  googleDriveId   String
+  googleDriveUrl  String?
+  status          String   @default("active")
+  uploadedBy      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([surahNumber, ayahNumber, reciterName])
+  @@index([surahNumber, ayahNumber])
+  @@index([reciterName])
+}

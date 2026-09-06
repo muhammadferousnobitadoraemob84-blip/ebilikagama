@@ -29,6 +29,10 @@ const SCOPES = "https://www.googleapis.com/auth/drive.file https://www.googleapi
 // https://drive.google.com/drive/folders/1YRUK9XzaE53553_nOltMw66HWK8j5-Z_
 export const REPLAY_FOLDER_ID = "1YRUK9XzaE53553_nOltMw66HWK8j5-Z_";
 
+// User's Google Drive folder for Quran Audio files
+// Configured via environment variable or hardcoded folder ID
+export const QURAN_AUDIO_FOLDER_ID = process.env.GOOGLE_DRIVE_QURAN_FOLDER_ID || "1YRUK9XzaE53553_nOltMw66HWK8j5-Z_";
+
 /**
  * Get authorization URL for Google Drive connection
  */
@@ -352,4 +356,60 @@ export async function getGoogleDriveFileInfo(
   }
 
   return response.json();
+}
+
+/**
+ * Get a valid Google Drive access token.
+ * Reads from DB, refreshes if expired, returns { accessToken }.
+ * Returns null if Google Drive is not connected.
+ */
+export async function getValidDriveToken(): Promise<{ accessToken: string } | null> {
+  const { prisma } = await import("@/lib/prisma");
+
+  const tokenRecord = await prisma.setting.findUnique({
+    where: { key: "google_drive_access_token" },
+  });
+
+  if (!tokenRecord?.value) {
+    return null;
+  }
+
+  const refreshTokenRecord = await prisma.setting.findUnique({
+    where: { key: "google_drive_refresh_token" },
+  });
+
+  const accessToken = tokenRecord.value;
+  const refreshToken = refreshTokenRecord?.value;
+
+  // Try using the access token first
+  try {
+    const testResponse = await fetch(
+      "https://www.googleapis.com/drive/v3/about?fields=user",
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (testResponse.ok) {
+      return { accessToken };
+    }
+  } catch {
+    // Token might be expired
+  }
+
+  // Token expired — try refreshing
+  if (refreshToken) {
+    try {
+      const refreshed = await refreshAccessToken(refreshToken);
+      if (refreshed.access_token) {
+        await prisma.setting.upsert({
+          where: { key: "google_drive_access_token" },
+          update: { value: refreshed.access_token },
+          create: { key: "google_drive_access_token", value: refreshed.access_token },
+        });
+        return { accessToken: refreshed.access_token };
+      }
+    } catch (error) {
+      console.error("[GOOGLE-DRIVE] Token refresh failed:", error);
+    }
+  }
+
+  return null;
 }

@@ -175,6 +175,7 @@ const translations = {
     admin_youtube_quota_error: "YouTube API quota exceeded. Please try again later.",
     admin_youtube_fetch_error: "Failed to fetch scheduled streams. Please try again.",
     admin_youtube_already_assigned: "This stream is already assigned to {channel}.",
+    admin_quran_audio: "Quran Audio",
 
     // Radio
     radio_title: "Radio eBilikAgama",
@@ -427,6 +428,7 @@ const translations = {
     admin_youtube_quota_error: "Kuota API YouTube telah habis. Sila cuba lagi kemudian.",
     admin_youtube_fetch_error: "Gagal mengambil siaran berjadual. Sila cuba lagi.",
     admin_youtube_already_assigned: "Siaran ini sudah ditugaskan ke {channel}.",
+    admin_quran_audio: "Audio Al-Quran",
 
     // Radio
     radio_title: "Radio eBilikAgama",
@@ -679,6 +681,7 @@ const translations = {
     admin_youtube_quota_error: "YouTube API 配额已用完。请稍后再试。",
     admin_youtube_fetch_error: "获取预定直播失败。请重试。",
     admin_youtube_already_assigned: "此直播已分配给 {channel}。",
+    admin_quran_audio: "古兰经音频管理",
 
     // Radio
     radio_title: "eBilikAgama 广播",
