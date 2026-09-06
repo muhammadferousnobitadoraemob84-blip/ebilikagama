@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useLanguage } from "@/components/LanguageProvider";
+import BulkQuranUpload from "@/components/BulkQuranUpload";
 
 interface QuranAudioEntry {
   id: string;
@@ -234,6 +235,9 @@ export default function QuranAudioPage() {
   // Filter state
   const [filterSurah, setFilterSurah] = useState<number | "">("");
   const [filterReciter, setFilterReciter] = useState("");
+
+  // Upload mode state
+  const [uploadMode, setUploadMode] = useState<"single" | "bulk">("single");
 
   // Delete state
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -746,8 +750,40 @@ export default function QuranAudioPage() {
         </div>
       )}
 
-      {/* Upload Section (only when folder is selected) */}
+      {/* Upload Mode Toggle (only when folder is selected) */}
       {hasFolder && (
+        <>
+          {/* Mode Toggle */}
+          <div className="flex gap-2 mb-6">
+            <button
+              onClick={() => setUploadMode("single")}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                uploadMode === "single"
+                  ? "bg-emerald-600 text-white"
+                  : "bg-gray-800 text-gray-400 border border-white/10 hover:text-white"
+              }`}
+            >
+              Single Upload
+            </button>
+            <button
+              onClick={() => setUploadMode("bulk")}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                uploadMode === "bulk"
+                  ? "bg-emerald-600 text-white"
+                  : "bg-gray-800 text-gray-400 border border-white/10 hover:text-white"
+              }`}
+            >
+              Bulk Upload
+            </button>
+          </div>
+
+          {/* Bulk Upload */}
+          {uploadMode === "bulk" && (
+            <BulkQuranUpload onUploadComplete={fetchEntries} />
+          )}
+
+          {/* Single Upload Section */}
+          {uploadMode === "single" && (
         <div className="bg-gray-900 rounded-xl border border-white/10 p-6 mb-8">
           <h2 className="text-white text-lg font-semibold mb-4 flex items-center gap-2">
             <svg className="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -852,6 +888,8 @@ export default function QuranAudioPage() {
             )}
           </div>
         </div>
+      )}
+        </>
       )}
 
       {/* Audio Entries List */}
