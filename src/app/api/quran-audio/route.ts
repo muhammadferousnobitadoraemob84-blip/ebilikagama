@@ -5,7 +5,6 @@ import {
   getValidDriveToken,
   uploadToGoogleDrive,
   deleteFromGoogleDrive,
-  QURAN_AUDIO_FOLDER_ID,
 } from "@/lib/google-drive";
 
 export const dynamic = "force-dynamic";
@@ -129,6 +128,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Get the selected Google Drive folder from DB
+    const folderRecord = await withRetry(() =>
+      prisma.setting.findUnique({ where: { key: "quran_audio_folder_id" } })
+    );
+    const folderId = folderRecord?.value;
+    if (!folderId) {
+      return NextResponse.json(
+        { error: "No Google Drive folder configured. Please select a folder in the Quran Audio settings first." },
+        { status: 400 }
+      );
+    }
+
     // Upload to Google Drive
     const fileName = `quran_${surahNumber}_${ayahNumber}_${reciterName.replace(/\s+/g, "_")}.${file.name.split(".").pop() || "mp3"}`;
     const bytes = await file.arrayBuffer();
@@ -140,7 +151,7 @@ export async function POST(request: NextRequest) {
       file.type || "audio/mpeg",
       file.size,
       buffer,
-      QURAN_AUDIO_FOLDER_ID
+      folderId
     );
 
     // Save metadata to database

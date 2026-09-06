@@ -262,6 +262,23 @@ const translations = {
     quran_unmute: "Unmute",
     quran_arabic_bismillah: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
 
+    // Quran Audio Admin - Google Drive
+    quran_drive_connect: "Connect Google Drive",
+    quran_drive_connected: "Google Drive Connected",
+    quran_drive_not_connected: "Google Drive Not Connected",
+    quran_drive_connect_desc: "Connect your Google account to store Quran audio files.",
+    quran_drive_disconnect: "Disconnect",
+    quran_drive_change_folder: "Change Folder",
+    quran_drive_select_folder: "Choose Google Drive Folder",
+    quran_drive_select_folder_desc: "Select the Google Drive folder where uploaded Quran audio tracks will be stored.",
+    quran_drive_my_drive: "My Drive",
+    quran_drive_search_folders: "Search folders...",
+    quran_drive_confirm_folder: "Confirm Folder",
+    quran_drive_selected_folder: "Selected folder",
+    quran_drive_folder_saved: "Folder saved successfully.",
+    quran_drive_no_folder: "No folder selected. Please select a folder before uploading.",
+    quran_drive_connect_first: "Please connect Google Drive first.",
+
     // Footer
     copyright: "© 2026 eBilikAgamaTV. All rights reserved.",
     contact_us: "Contact Us",
@@ -515,6 +532,23 @@ const translations = {
     quran_unmute: "Bunyikan",
     quran_arabic_bismillah: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
 
+    // Quran Audio Admin - Google Drive
+    quran_drive_connect: "Sambung Google Drive",
+    quran_drive_connected: "Google Drive Disambung",
+    quran_drive_not_connected: "Google Drive Tidak Disambung",
+    quran_drive_connect_desc: "Sambung akaun Google anda untuk menyimpan fail audio Al-Quran.",
+    quran_drive_disconnect: "Putuskan Sambungan",
+    quran_drive_change_folder: "Tukar Folder",
+    quran_drive_select_folder: "Pilih Folder Google Drive",
+    quran_drive_select_folder_desc: "Pilih folder Google Drive di mana trek audio Al-Quran yang dimuat naik akan disimpan.",
+    quran_drive_my_drive: "Drive Saya",
+    quran_drive_search_folders: "Cari folder...",
+    quran_drive_confirm_folder: "Sahkan Folder",
+    quran_drive_selected_folder: "Folder dipilih",
+    quran_drive_folder_saved: "Folder berjaya disimpan.",
+    quran_drive_no_folder: "Tiada folder dipilih. Sila pilih folder sebelum memuat naik.",
+    quran_drive_connect_first: "Sila sambung Google Drive terlebih dahulu.",
+
     // Footer
     copyright: "© 2026 eBilikAgamaTV. Hak cipta terpelihara.",
     contact_us: "Hubungi Kami",
@@ -767,6 +801,23 @@ const translations = {
     quran_mute: "静音",
     quran_unmute: "取消静音",
     quran_arabic_bismillah: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+
+    // Quran Audio Admin - Google Drive
+    quran_drive_connect: "连接 Google Drive",
+    quran_drive_connected: "Google Drive 已连接",
+    quran_drive_not_connected: "Google Drive 未连接",
+    quran_drive_connect_desc: "连接您的Google账户以存储古兰经音频文件。",
+    quran_drive_disconnect: "断开连接",
+    quran_drive_change_folder: "更改文件夹",
+    quran_drive_select_folder: "选择 Google Drive 文件夹",
+    quran_drive_select_folder_desc: "选择上传的古兰经音频文件将存储的 Google Drive 文件夹。",
+    quran_drive_my_drive: "我的云端硬盘",
+    quran_drive_search_folders: "搜索文件夹...",
+    quran_drive_confirm_folder: "确认文件夹",
+    quran_drive_selected_folder: "已选文件夹",
+    quran_drive_folder_saved: "文件夹保存成功。",
+    quran_drive_no_folder: "未选择文件夹。请在上传前选择一个文件夹。",
+    quran_drive_connect_first: "请先连接 Google Drive。",
 
     // Footer
     copyright: "© 2026 eBilikAgamaTV. 版权所有。",
