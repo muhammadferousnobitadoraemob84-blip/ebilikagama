@@ -260,3 +260,46 @@ html {
     scroll-snap-align: start;
   }
 }
+
+/* Quran audio progress bar */
+.quran-progress {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: #374151;
+  border-radius: 9999px;
+  outline: none;
+  cursor: pointer;
+}
+
+.quran-progress::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #10b981;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 0 4px rgba(0,0,0,0.4);
+}
+
+.quran-progress::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: #10b981;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 0 4px rgba(0,0,0,0.4);
+}
+
+.quran-progress:hover::-webkit-slider-thumb {
+  background: #34d399;
+  transform: scale(1.15);
+}
+
+.quran-progress:hover::-moz-range-thumb {
+  background: #34d399;
+  transform: scale(1.15);
+}

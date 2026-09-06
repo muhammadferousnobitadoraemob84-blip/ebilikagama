@@ -5,6 +5,7 @@ import { useLanguage } from "@/components/LanguageProvider";
 import Hero from "@/components/Hero";
 import ChannelSection from "@/components/ChannelSection";
 import LiveReplaySection from "@/components/LiveReplaySection";
+import QuranAudioSection from "@/components/QuranAudioSection";
 import SubscribeSection from "@/components/SubscribeSection";
 
 interface Channel {
@@ -223,6 +224,9 @@ export default function HomePageClient({
 
       {/* Live Replay Section */}
       <LiveReplaySection />
+
+      {/* Quran Audio Section */}
+      <QuranAudioSection />
 
       {/* Subscribe Section */}
       <SubscribeSection />
