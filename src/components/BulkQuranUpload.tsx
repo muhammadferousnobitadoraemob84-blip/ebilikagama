@@ -145,7 +145,83 @@ export default function BulkQuranUpload({ onUploadComplete }: { onUploadComplete
     }
   };
 
-  // Start bulk upload
+  // Safely parse response as JSON, handling non-JSON responses
+  const safeParseJson = async (response: Response): Promise<{ success: boolean; error?: string; [key: string]: unknown }> => {
+    const contentType = response.headers.get("content-type") || "";
+    const text = await response.text();
+
+    // If it's JSON content type, try parsing
+    if (contentType.includes("application/json")) {
+      try {
+        return JSON.parse(text);
+      } catch {
+        return { success: false, error: `Invalid JSON response: ${text.substring(0, 200)}` };
+      }
+    }
+
+    // Non-JSON response (e.g., HTML error page, plain text)
+    if (!response.ok) {
+      // Common Vercel/server errors
+      if (text.includes("Request Entity Too Large") || text.includes("Request En")) {
+        return { success: false, error: "File too large for server. Try uploading fewer files at once." };
+      }
+      if (text.includes("FUNCTION_INVOCATION_TIMEOUT")) {
+        return { success: false, error: "Upload timed out. Try uploading fewer files at once." };
+      }
+      if (text.includes("FUNCTION_PAYLOAD_TOO_LARGE")) {
+        return { success: false, error: "Too many files. Try uploading fewer files at once." };
+      }
+      return { success: false, error: `Server error (${response.status}): ${text.substring(0, 200)}` };
+    }
+
+    // Response OK but not JSON
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { success: false, error: "Unexpected response from server" };
+    }
+  };
+
+  // Upload a single file to the bulk endpoint
+  const uploadSingleFile = async (
+    bf: BulkFile,
+    reciter: string,
+    dupAction: string
+  ): Promise<BulkUploadResult> => {
+    const formData = new FormData();
+    formData.append("reciterName", reciter);
+    formData.append("duplicateAction", dupAction);
+    formData.append("files", bf.file);
+
+    const res = await fetch("/api/quran-audio/bulk", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await safeParseJson(res);
+
+    if (!res.ok || !data.success) {
+      return {
+        fileName: bf.file.name,
+        originalName: bf.file.name,
+        status: "error",
+        error: data.error || `Upload failed (HTTP ${res.status})`,
+      };
+    }
+
+    const files = data.files as BulkUploadResult[] | undefined;
+    if (files && files.length > 0) {
+      return files[0];
+    }
+
+    return {
+      fileName: bf.file.name,
+      originalName: bf.file.name,
+      status: "success",
+    };
+  };
+
+  // Start bulk upload — one file at a time to avoid Vercel body size limit
   const handleUpload = async () => {
     const finalReciter = useCustomReciter ? customReciter : reciterName;
     if (!finalReciter.trim()) return;
@@ -154,36 +230,31 @@ export default function BulkQuranUpload({ onUploadComplete }: { onUploadComplete
     setUploadProgress(0);
 
     try {
-      const formData = new FormData();
-      formData.append("reciterName", finalReciter.trim());
-      formData.append("duplicateAction", duplicateAction);
+      const totalFiles = files.length;
+      const results: BulkUploadResult[] = [];
+      let completed = 0;
 
+      // Upload files one at a time to stay under Vercel's body size limit
       for (const bf of files) {
-        formData.append("files", bf.file);
+        const result = await uploadSingleFile(bf, finalReciter.trim(), duplicateAction);
+        results.push(result);
+        completed++;
+        setUploadProgress(Math.round((completed / totalFiles) * 100));
+        setUploadResults([...results]); // Update UI progressively
       }
 
-      setUploadProgress(10);
-
-      const res = await fetch("/api/quran-audio/bulk", {
-        method: "POST",
-        body: formData,
-      });
-
-      setUploadProgress(90);
-
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || "Bulk upload failed");
-        setPhase("review");
-        return;
-      }
-
-      setUploadResults(data.files || []);
+      setUploadResults(results);
       setUploadProgress(100);
       setPhase("complete");
       onUploadComplete();
     } catch (error) {
-      alert("Upload failed: " + (error instanceof Error ? error.message : "Unknown error"));
+      const message = error instanceof Error ? error.message : "Unknown error";
+      // Try to get more detail from the error
+      let detail = message;
+      if (message.includes("Unexpected token") || message.includes("is not valid JSON")) {
+        detail = "Server returned an unexpected response. Please try uploading fewer files at once.";
+      }
+      alert("Upload failed: " + detail);
       setPhase("review");
     }
   };
@@ -417,6 +488,7 @@ export default function BulkQuranUpload({ onUploadComplete }: { onUploadComplete
 
   // ── Phase: UPLOADING ──
   if (phase === "uploading") {
+    const completedCount = uploadResults.length;
     return (
       <div className="bg-gray-900 rounded-xl border border-white/10 p-6 mb-6">
         <h2 className="text-white text-lg font-semibold mb-4">{t("quran_bulk_uploading")}</h2>
@@ -426,7 +498,27 @@ export default function BulkQuranUpload({ onUploadComplete }: { onUploadComplete
             style={{ width: `${uploadProgress}%` }}
           />
         </div>
-        <p className="text-gray-400 text-sm">{uploadProgress}% — {t("quran_bulk_uploading")}</p>
+        <p className="text-gray-400 text-sm">
+          {uploadProgress}% — {completedCount} / {files.length} {files.length === 1 ? "file" : "files"}
+        </p>
+        {/* Show recent file results */}
+        {uploadResults.length > 0 && (
+          <div className="mt-3 max-h-[120px] overflow-y-auto space-y-1">
+            {uploadResults.slice(-5).map((r, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs">
+                <span className={
+                  r.status === "success" ? "text-emerald-400" :
+                  r.status === "error" ? "text-red-400" :
+                  r.status === "skipped" ? "text-yellow-400" : "text-gray-400"
+                }>
+                  {r.status === "success" ? "✓" : r.status === "error" ? "✕" : r.status === "skipped" ? "⊘" : "○"}
+                </span>
+                <span className="text-gray-300 truncate max-w-[200px]">{r.originalName}</span>
+                {r.error && <span className="text-red-400 text-xs truncate">{r.error}</span>}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
