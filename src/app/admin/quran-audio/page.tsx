@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useLanguage } from "@/components/LanguageProvider";
-import BulkQuranUpload from "@/components/BulkQuranUpload";
 
 interface QuranAudioEntry {
   id: string;
   surahName: string;
   surahNumber: number;
   ayahNumber: number;
+  audioType: string;
   reciterName: string;
   fileName: string;
   fileSize: number | null;
@@ -30,6 +30,26 @@ interface FolderState {
   email: string | null;
   folderId: string | null;
   folderName: string;
+}
+
+interface ScanStatus {
+  lastScan: string | null;
+  qari: string;
+  folderId: string | null;
+  totalIndexed: number;
+  activeFiles: number;
+  needsReview: number;
+}
+
+interface ScanResult {
+  totalFiles: number;
+  indexed: number;
+  needsReview: number;
+  duplicates: number;
+  deleted: number;
+  errors: number;
+  totalInDatabase: number;
+  lastScan: string;
 }
 
 const SURAH_LIST = [
@@ -92,11 +112,41 @@ const SURAH_LIST = [
   { number: 113, name: "Al-Falaq" }, { number: 114, name: "An-Nas" },
 ];
 
+const COMMON_QARIS = [
+  "Mishary Rashid Alafasy",
+  "Abdul Basit Abdul Samad",
+  "Maher Al Muaiqly",
+  "Saud Al-Shuraim",
+  "Yasser Al-Dosari",
+  "Muhammad Siddiq Al-Minshawi",
+  "Mohamed Al Tablawi",
+  "Ahmed Al Ajmi",
+  "Sudais and Shuraim",
+  "Abu Bakr Al Shatri",
+  "Nasser Al Qatami",
+  "Ali Jaber",
+  "Husary",
+  "Minshawi",
+  "Ayyoub",
+  "Muhsin Al-Qasim",
+  "Abdullah Awad Al Juhani",
+  "Fares Abbad",
+  "Khalifah Al-Tunaiji",
+];
+
 function formatFileSize(bytes: number | null): string {
   if (!bytes) return "—";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
 }
 
 export default function QuranAudioPage() {
@@ -118,6 +168,16 @@ export default function QuranAudioPage() {
   const [selectedFolderName, setSelectedFolderName] = useState("");
   const [savingFolder, setSavingFolder] = useState(false);
   const [folderMessage, setFolderMessage] = useState("");
+
+  // Qari state
+  const [qariName, setQariName] = useState("");
+  const [customQari, setCustomQari] = useState("");
+  const [showCustomQari, setShowCustomQari] = useState(false);
+
+  // Scan state
+  const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
 
   // Audio entries state
   const [entries, setEntries] = useState<QuranAudioEntry[]>([]);
@@ -142,7 +202,19 @@ export default function QuranAudioPage() {
     } catch { /* Error */ }
   }, []);
 
-  useEffect(() => { fetchFolderState(); }, [fetchFolderState]);
+  // Load scan status
+  const fetchScanStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/quran-audio/scan");
+      if (res.ok) {
+        const data = await res.json();
+        setScanStatus(data);
+        if (data.qari) setQariName(data.qari);
+      }
+    } catch { /* Error */ }
+  }, []);
+
+  useEffect(() => { fetchFolderState(); fetchScanStatus(); }, [fetchFolderState, fetchScanStatus]);
 
   // Load audio entries
   const fetchEntries = useCallback(async () => {
@@ -168,11 +240,12 @@ export default function QuranAudioPage() {
   };
 
   const handleDisconnectDrive = async () => {
-    if (!confirm("Disconnect Google Drive? Existing audio files will not be deleted.")) return;
+    if (!confirm("Disconnect Google Drive? Existing audio index will be removed.")) return;
     try {
       await fetch("/api/quran-audio/folder", { method: "DELETE" });
       await fetch("/api/google-drive/disconnect", { method: "POST" });
       await fetchFolderState();
+      await fetchScanStatus();
     } catch { /* Error */ }
   };
 
@@ -247,6 +320,35 @@ export default function QuranAudioPage() {
     setSavingFolder(false);
   };
 
+  // Scan / Sync
+  const handleScan = async () => {
+    const currentQari = showCustomQari ? customQari.trim() : qariName;
+    if (!currentQari) {
+      alert("Please select or enter a Qari (Reciter) name before scanning.");
+      return;
+    }
+    setScanning(true);
+    setScanResult(null);
+    try {
+      const res = await fetch("/api/quran-audio/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reciterName: currentQari }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setScanResult(data);
+        await fetchEntries();
+        await fetchScanStatus();
+      } else {
+        alert(data.error || "Scan failed");
+      }
+    } catch (err) {
+      alert("Scan failed: " + (err instanceof Error ? err.message : "Unknown error"));
+    }
+    setScanning(false);
+  };
+
   // Delete
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this audio entry?")) return;
@@ -264,13 +366,16 @@ export default function QuranAudioPage() {
   const existingReciters = [...new Set(entries.map((e) => e.reciterName))];
   const hasConnectedDrive = folderState.connected;
   const hasFolder = !!folderState.folderId;
+  const effectiveQari = showCustomQari ? customQari.trim() : qariName;
 
   return (
     <div>
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-white text-2xl font-bold mb-2">Quran Audio</h1>
-        <p className="text-gray-400 text-sm">Manage Quran audio files stored in Google Drive.</p>
+        <p className="text-gray-400 text-sm">
+          Connect your Google Drive folder containing Quran audio files. The system scans and indexes the files automatically.
+        </p>
       </div>
 
       {/* Google Drive Connection */}
@@ -309,7 +414,12 @@ export default function QuranAudioPage() {
           <div className="flex items-center justify-between flex-wrap gap-4 mb-3">
             <div>
               <h3 className="text-white font-semibold text-sm">{t("quran_drive_select_folder")}</h3>
-              <p className="text-gray-400 text-xs">{t("quran_drive_select_folder_desc")}</p>
+              <p className="text-gray-400 text-xs">
+                {hasFolder
+                  ? "Select the Google Drive folder containing your Quran audio files."
+                  : t("quran_drive_select_folder_desc")
+                }
+              </p>
             </div>
             <button onClick={openFolderBrowser} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
               {hasFolder ? t("quran_drive_change_folder") : t("quran_drive_select_folder")}
@@ -335,6 +445,130 @@ export default function QuranAudioPage() {
           {folderMessage && (
             <div className="mt-3 bg-emerald-900/20 border border-emerald-500/30 rounded-lg p-3">
               <p className="text-emerald-400 text-sm">{folderMessage}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Qari Selection + Scan/Sync */}
+      {hasFolder && (
+        <div className="bg-gray-900 rounded-xl border border-white/10 p-6 mb-6">
+          <h3 className="text-white font-semibold text-sm mb-4">Quran Audio Library</h3>
+
+          {/* Qari Selection */}
+          <div className="mb-4">
+            <label className="block text-gray-400 text-xs mb-2 font-medium uppercase tracking-wider">
+              Qari / Reciter *
+            </label>
+            {!showCustomQari ? (
+              <div className="flex flex-wrap gap-2 items-center">
+                <select
+                  value={qariName}
+                  onChange={(e) => setQariName(e.target.value)}
+                  className="bg-gray-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:border-emerald-500 focus:outline-none min-w-[280px]"
+                >
+                  <option value="">Select Qari</option>
+                  {COMMON_QARIS.map((q) => (
+                    <option key={q} value={q}>{q}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setShowCustomQari(true)}
+                  className="text-emerald-400 hover:text-emerald-300 text-xs whitespace-nowrap"
+                >
+                  + Custom Qari
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={customQari}
+                  onChange={(e) => setCustomQari(e.target.value)}
+                  placeholder="Enter qari name..."
+                  className="bg-gray-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:border-emerald-500 focus:outline-none flex-1 max-w-md"
+                />
+                <button
+                  onClick={() => { setShowCustomQari(false); setCustomQari(""); }}
+                  className="text-gray-400 hover:text-white text-xs whitespace-nowrap"
+                >
+                  Use dropdown
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Scan Status */}
+          {scanStatus && scanStatus.lastScan && (
+            <div className="bg-gray-800 rounded-lg p-3 mb-4">
+              <div className="flex flex-wrap gap-4 text-xs text-gray-400">
+                <span>Last scan: <span className="text-white">{formatDate(scanStatus.lastScan)}</span></span>
+                <span>Files indexed: <span className="text-emerald-400">{scanStatus.activeFiles}</span></span>
+                {scanStatus.needsReview > 0 && (
+                  <span>Needs review: <span className="text-yellow-400">{scanStatus.needsReview}</span></span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Scan Button */}
+          <button
+            onClick={handleScan}
+            disabled={scanning || !effectiveQari}
+            className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
+          >
+            {scanning ? (
+              <span className="flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Scanning Google Drive...
+              </span>
+            ) : scanStatus?.lastScan ? (
+              "Sync Google Drive"
+            ) : (
+              "Scan Google Drive Folder"
+            )}
+          </button>
+
+          {/* Scan Result */}
+          {scanResult && (
+            <div className="mt-4 bg-gray-800 rounded-lg p-4">
+              <h4 className="text-white text-sm font-medium mb-3">Scan Results</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
+                <div className="text-center">
+                  <div className="text-lg font-bold text-white">{scanResult.totalFiles}</div>
+                  <div className="text-xs text-gray-400">Total Files</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-bold text-emerald-400">{scanResult.indexed}</div>
+                  <div className="text-xs text-gray-400">New Indexed</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-bold text-blue-400">{scanResult.totalInDatabase}</div>
+                  <div className="text-xs text-gray-400">Total in DB</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-bold text-yellow-400">{scanResult.needsReview}</div>
+                  <div className="text-xs text-gray-400">Needs Review</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-bold text-orange-400">{scanResult.duplicates}</div>
+                  <div className="text-xs text-gray-400">Duplicates</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-bold text-red-400">{scanResult.deleted}</div>
+                  <div className="text-xs text-gray-400">Removed</div>
+                </div>
+              </div>
+              {scanResult.indexed > 0 && (
+                <p className="text-emerald-400 text-xs">
+                  ✓ {scanResult.indexed} new audio file(s) indexed successfully.
+                </p>
+              )}
+              {scanResult.needsReview > 0 && (
+                <p className="text-yellow-400 text-xs mt-1">
+                  ⚠ {scanResult.needsReview} file(s) could not be auto-detected. Check filenames in your Google Drive folder.
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -413,9 +647,6 @@ export default function QuranAudioPage() {
         </div>
       )}
 
-      {/* Bulk Upload — the ONLY upload interface */}
-      {hasFolder && <BulkQuranUpload onUploadComplete={fetchEntries} />}
-
       {/* Audio Entries List */}
       <div className="bg-gray-900 rounded-xl border border-white/10 overflow-hidden">
         <div className="p-4 border-b border-white/10 flex flex-wrap gap-3">
@@ -437,7 +668,12 @@ export default function QuranAudioPage() {
             <svg className="w-12 h-12 text-gray-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
             </svg>
-            <p className="text-gray-400">No Quran audio files uploaded yet.</p>
+            <p className="text-gray-400">
+              {hasFolder
+                ? "No audio files indexed yet. Select a Qari and click \"Scan Google Drive Folder\"."
+                : "Connect Google Drive and select a folder to get started."
+              }
+            </p>
           </div>
         )}
         {!loading && entries.length > 0 && (
@@ -447,6 +683,7 @@ export default function QuranAudioPage() {
                 <tr className="text-left text-gray-400 text-xs uppercase tracking-wider border-b border-white/10">
                   <th className="px-4 py-3">Surah</th>
                   <th className="px-4 py-3">Ayah</th>
+                  <th className="px-4 py-3">Type</th>
                   <th className="px-4 py-3">Reciter</th>
                   <th className="px-4 py-3">File</th>
                   <th className="px-4 py-3">Size</th>
@@ -463,6 +700,11 @@ export default function QuranAudioPage() {
                       <div className="text-gray-500 text-xs">#{entry.surahNumber}</div>
                     </td>
                     <td className="px-4 py-3 text-white">{entry.ayahNumber}</td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${entry.audioType === "full_surah" ? "bg-purple-500/10 text-purple-400" : "bg-blue-500/10 text-blue-400"}`}>
+                        {entry.audioType === "full_surah" ? "Full Surah" : "Ayah"}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-gray-300">{entry.reciterName}</td>
                     <td className="px-4 py-3 text-gray-400 text-xs max-w-[150px] truncate" title={entry.fileName}>{entry.fileName}</td>
                     <td className="px-4 py-3 text-gray-400 text-xs">{formatFileSize(entry.fileSize)}</td>
