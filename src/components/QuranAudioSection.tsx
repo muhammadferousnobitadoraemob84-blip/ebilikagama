@@ -249,13 +249,23 @@ export default function QuranAudioSection() {
   const getAudioUrlForVerse = useCallback(
     (surahId: number, ayah: number, reciterId: number): string => {
       // Check if we have an uploaded file for this verse
-      // Reciter ID maps to reciter names — check the map
       const reciterName = reciters.find((r) => r.id === reciterId)?.name || "";
       if (reciterName) {
+        // Try exact match first
         const key = `${surahId}:${ayah}:${reciterName}`;
         const entryId = uploadedMapRef.current.get(key);
         if (entryId) {
           return `/api/quran-audio/stream?id=${entryId}`;
+        }
+        // Try case-insensitive match
+        const lowerName = reciterName.toLowerCase().trim();
+        for (const [mapKey, mapEntryId] of uploadedMapRef.current.entries()) {
+          if (mapKey.startsWith(`${surahId}:${ayah}:`)) {
+            const mapReciter = mapKey.split(":").slice(2).join(":").toLowerCase().trim();
+            if (mapReciter === lowerName) {
+              return `/api/quran-audio/stream?id=${mapEntryId}`;
+            }
+          }
         }
       }
       // Fallback to external CDN

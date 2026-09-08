@@ -7,14 +7,17 @@ export const maxDuration = 30;
 
 // GET — Stream audio file from Google Drive for visitors
 // GET /api/quran-audio/stream?id=<quranAudioId>
-// Proxies the file without exposing Google Drive credentials
+// Supports Range requests for HTML5 audio seeking
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 
     if (!id) {
-      return NextResponse.json({ error: "Missing id parameter" }, { status: 400 });
+      return new NextResponse(JSON.stringify({ error: "Missing id parameter" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     // Look up the audio entry
@@ -23,60 +26,104 @@ export async function GET(request: NextRequest) {
     );
 
     if (!entry || !entry.googleDriveId) {
-      return NextResponse.json({ error: "Audio not found" }, { status: 404 });
+      return new NextResponse(JSON.stringify({ error: "Audio not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
-    // Get valid Google Drive token
+    // Get valid Google Drive token (with refresh if expired)
     const token = await getValidDriveToken();
     if (!token) {
-      return NextResponse.json({ error: "Google Drive not connected" }, { status: 503 });
+      console.error("[QURAN-STREAM] No valid Google Drive token available");
+      return new NextResponse(JSON.stringify({ error: "Google Drive not connected" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
-    // Fetch the file from Google Drive using the content download URL
+    // Get the Range header for partial content support
+    const rangeHeader = request.headers.get("range");
+
+    // Build Google Drive URL
     const driveUrl = `https://www.googleapis.com/drive/v3/files/${entry.googleDriveId}?alt=media`;
 
+    // Build fetch headers for Google Drive
+    const driveHeaders: Record<string, string> = {
+      Authorization: `Bearer ${token.accessToken}`,
+    };
+
+    // Forward Range header if present (for seeking support)
+    if (rangeHeader) {
+      driveHeaders["Range"] = rangeHeader;
+    }
+
     const driveResponse = await fetch(driveUrl, {
-      headers: {
-        Authorization: `Bearer ${token.accessToken}`,
-      },
+      headers: driveHeaders,
     });
 
     if (!driveResponse.ok) {
-      console.error(`[QURAN-STREAM] Google Drive error: ${driveResponse.status}`);
-      return NextResponse.json({ error: "Failed to fetch audio from storage" }, { status: 502 });
+      const errorText = await driveResponse.text().catch(() => "unknown");
+      console.error(
+        `[QURAN-STREAM] Google Drive error: ${driveResponse.status} for file ${entry.googleDriveId}:`,
+        errorText.substring(0, 200)
+      );
+
+      // Return a proper audio-compatible error (not JSON, so audio element doesn't crash)
+      return new NextResponse(null, {
+        status: driveResponse.status === 404 ? 404 : 502,
+        headers: {
+          "Content-Type": "text/plain",
+          "X-Error": "Audio not available from storage",
+        },
+      });
     }
 
-    // Stream the response to the client
-    const contentType = driveResponse.headers.get("Content-Type") || "audio/mpeg";
+    // Build response headers
+    const contentType = driveResponse.headers.get("Content-Type") || detectMimeType(entry.fileName);
     const contentLength = driveResponse.headers.get("Content-Length");
+    const isPartial = driveResponse.status === 206;
 
-    const headers: Record<string, string> = {
+    const responseHeaders: Record<string, string> = {
       "Content-Type": contentType,
       "Cache-Control": "public, max-age=86400, s-maxage=86400",
       "Access-Control-Allow-Origin": "*",
+      "Accept-Ranges": "bytes",
     };
+
     if (contentLength) {
-      headers["Content-Length"] = contentLength;
+      responseHeaders["Content-Length"] = contentLength;
+    }
+
+    // Forward Content-Range for partial responses
+    if (isPartial) {
+      const contentRange = driveResponse.headers.get("Content-Range");
+      if (contentRange) {
+        responseHeaders["Content-Range"] = contentRange;
+      }
     }
 
     // Stream the response body
     if (driveResponse.body) {
       return new NextResponse(driveResponse.body, {
-        status: 200,
-        headers,
+        status: isPartial ? 206 : 200,
+        headers: responseHeaders,
       });
     }
 
     // Fallback: buffer the response
     const buffer = await driveResponse.arrayBuffer();
     return new NextResponse(Buffer.from(buffer), {
-      status: 200,
-      headers,
+      status: isPartial ? 206 : 200,
+      headers: responseHeaders,
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     console.error("[QURAN-STREAM] Error:", msg);
-    return NextResponse.json({ error: "Failed to stream audio" }, { status: 500 });
+    return new NextResponse(null, {
+      status: 500,
+      headers: { "Content-Type": "text/plain" },
+    });
   }
 }
 
@@ -91,4 +138,30 @@ export async function OPTIONS() {
       "Access-Control-Max-Age": "86400",
     },
   });
+}
+
+/**
+ * Detect MIME type from filename extension
+ */
+function detectMimeType(fileName: string): string {
+  const ext = fileName.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "mp3":
+      return "audio/mpeg";
+    case "m4a":
+    case "mp4":
+      return "audio/mp4";
+    case "ogg":
+      return "audio/ogg";
+    case "wav":
+      return "audio/wav";
+    case "webm":
+      return "audio/webm";
+    case "flac":
+      return "audio/flac";
+    case "aac":
+      return "audio/aac";
+    default:
+      return "audio/mpeg";
+  }
 }

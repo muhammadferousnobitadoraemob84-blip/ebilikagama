@@ -45,7 +45,13 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    return NextResponse.json(entries);
+    // Convert BigInt fields to Number for JSON serialization
+    const serialized = entries.map((e) => ({
+      ...e,
+      fileSize: e.fileSize ? Number(e.fileSize) : null,
+    }));
+
+    return NextResponse.json(serialized);
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     console.error("[QURAN-AUDIO] GET error:", msg);
