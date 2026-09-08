@@ -30,15 +30,8 @@ interface FolderState {
   email: string | null;
   folderId: string | null;
   folderName: string;
-}
-
-interface ScanStatus {
-  lastScan: string | null;
   qari: string;
-  folderId: string | null;
-  totalIndexed: number;
-  activeFiles: number;
-  needsReview: number;
+  lastSync: string | null;
 }
 
 interface ScanResult {
@@ -50,6 +43,44 @@ interface ScanResult {
   errors: number;
   totalInDatabase: number;
   lastScan: string;
+}
+
+const COMMON_QARIS = [
+  "Mishary Rashid Alafasy",
+  "Abdul Basit Abdul Samad",
+  "Maher Al Muaiqly",
+  "Saud Al-Shuraim",
+  "Yasser Al-Dosari",
+  "Muhammad Siddiq Al-Minshawi",
+  "Mohamed Al Tablawi",
+  "Ahmed Al Ajmi",
+  "Sudais and Shuraim",
+  "Abu Bakr Al Shatri",
+  "Nasser Al Qatami",
+  "Ali Jaber",
+  "Husary",
+  "Minshawi",
+  "Ayyoub",
+  "Muhsin Al-Qasim",
+  "Abdullah Awad Al Juhani",
+  "Fares Abbad",
+  "Khalifah Al-Tunaiji",
+];
+
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
+
+function formatFileSize(bytes: number | null): string {
+  if (!bytes) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 const SURAH_LIST = [
@@ -112,50 +143,22 @@ const SURAH_LIST = [
   { number: 113, name: "Al-Falaq" }, { number: 114, name: "An-Nas" },
 ];
 
-const COMMON_QARIS = [
-  "Mishary Rashid Alafasy",
-  "Abdul Basit Abdul Samad",
-  "Maher Al Muaiqly",
-  "Saud Al-Shuraim",
-  "Yasser Al-Dosari",
-  "Muhammad Siddiq Al-Minshawi",
-  "Mohamed Al Tablawi",
-  "Ahmed Al Ajmi",
-  "Sudais and Shuraim",
-  "Abu Bakr Al Shatri",
-  "Nasser Al Qatami",
-  "Ali Jaber",
-  "Husary",
-  "Minshawi",
-  "Ayyoub",
-  "Muhsin Al-Qasim",
-  "Abdullah Awad Al Juhani",
-  "Fares Abbad",
-  "Khalifah Al-Tunaiji",
-];
-
-function formatFileSize(bytes: number | null): string {
-  if (!bytes) return "—";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
-}
-
 export default function QuranAudioPage() {
   const { t } = useLanguage();
 
-  // Google Drive state
-  const [folderState, setFolderState] = useState<FolderState>({
-    connected: false, email: null, folderId: null, folderName: "",
+  // ── Persisted state (from database) ──
+  const [savedState, setSavedState] = useState<FolderState>({
+    connected: false, email: null, folderId: null, folderName: "", qari: "", lastSync: null,
   });
+
+  // ── Working/editing state ──
+  const [editFolderId, setEditFolderId] = useState<string | null>(null);
+  const [editFolderName, setEditFolderName] = useState("");
+  const [editQari, setEditQari] = useState("");
+  const [editCustomQari, setEditCustomQari] = useState("");
+  const [editShowCustomQari, setEditShowCustomQari] = useState(false);
+
+  // ── UI state ──
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
   const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
   const [folderBrowsing, setFolderBrowsing] = useState(false);
@@ -164,59 +167,49 @@ export default function QuranAudioPage() {
   const [folderPageToken, setFolderPageToken] = useState<string | null>(null);
   const [folderSearch, setFolderSearch] = useState("");
   const [folderSearchMode, setFolderSearchMode] = useState(false);
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
-  const [selectedFolderName, setSelectedFolderName] = useState("");
-  const [savingFolder, setSavingFolder] = useState(false);
-  const [folderMessage, setFolderMessage] = useState("");
+  const [tempSelectedFolderId, setTempSelectedFolderId] = useState<string | null>(null);
+  const [tempSelectedFolderName, setTempSelectedFolderName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
 
-  // Qari state
-  const [qariName, setQariName] = useState("");
-  const [customQari, setCustomQari] = useState("");
-  const [showCustomQari, setShowCustomQari] = useState(false);
-
-  // Scan state
-  const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
+  // ── Scan state ──
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
 
-  // Audio entries state
+  // ── Audio entries state ──
   const [entries, setEntries] = useState<QuranAudioEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Filter state
+  const [loadingEntries, setLoadingEntries] = useState(true);
   const [filterSurah, setFilterSurah] = useState<number | "">("");
   const [filterReciter, setFilterReciter] = useState("");
-
-  // Delete state
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deleteFromDrive, setDeleteFromDrive] = useState(false);
 
-  // Load Google Drive folder state
-  const fetchFolderState = useCallback(async () => {
+  // ── Load persisted config ──
+  const fetchConfig = useCallback(async () => {
     try {
       const res = await fetch("/api/quran-audio/folder");
       if (res.ok) {
         const data = await res.json();
-        setFolderState(data);
+        const state: FolderState = {
+          connected: data.connected || false,
+          email: data.email || null,
+          folderId: data.folderId || null,
+          folderName: data.folderName || "",
+          qari: data.qari || "",
+          lastSync: data.lastSync || null,
+        };
+        setSavedState(state);
+        // Initialize editing state from saved
+        setEditFolderId(state.folderId);
+        setEditFolderName(state.folderName);
+        setEditQari(state.qari);
       }
     } catch { /* Error */ }
   }, []);
 
-  // Load scan status
-  const fetchScanStatus = useCallback(async () => {
-    try {
-      const res = await fetch("/api/quran-audio/scan");
-      if (res.ok) {
-        const data = await res.json();
-        setScanStatus(data);
-        if (data.qari) setQariName(data.qari);
-      }
-    } catch { /* Error */ }
-  }, []);
+  useEffect(() => { fetchConfig(); }, [fetchConfig]);
 
-  useEffect(() => { fetchFolderState(); fetchScanStatus(); }, [fetchFolderState, fetchScanStatus]);
-
-  // Load audio entries
+  // ── Load audio entries ──
   const fetchEntries = useCallback(async () => {
     try {
       const params = new URLSearchParams();
@@ -229,27 +222,70 @@ export default function QuranAudioPage() {
         setEntries(data);
       }
     } catch { /* Error */ }
-    setLoading(false);
+    setLoadingEntries(false);
   }, [filterSurah, filterReciter]);
 
   useEffect(() => { fetchEntries(); }, [fetchEntries]);
 
-  // Google Drive OAuth
+  // ── Compute unsaved changes ──
+  const effectiveEditQari = editShowCustomQari ? editCustomQari.trim() : editQari;
+  const isConfigured = !!savedState.folderId && !!savedState.qari;
+  const hasUnsavedChanges =
+    editFolderId !== savedState.folderId ||
+    editFolderName !== savedState.folderName ||
+    effectiveEditQari !== savedState.qari;
+  const canSave = !!editFolderId && !!effectiveEditQari && !!savedState.connected;
+
+  // ── Google Drive OAuth ──
   const handleConnectDrive = () => {
     window.location.href = "/api/google-drive/auth";
   };
 
   const handleDisconnectDrive = async () => {
-    if (!confirm("Disconnect Google Drive? Existing audio index will be removed.")) return;
+    if (!confirm("Disconnect Google Drive? This will also clear the Quran Audio configuration.")) return;
     try {
       await fetch("/api/quran-audio/folder", { method: "DELETE" });
       await fetch("/api/google-drive/disconnect", { method: "POST" });
-      await fetchFolderState();
-      await fetchScanStatus();
+      await fetchConfig();
+      setScanResult(null);
     } catch { /* Error */ }
   };
 
-  // Folder browser
+  // ── Save configuration ──
+  const handleSave = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    setSaveMessage("");
+    try {
+      const res = await fetch("/api/quran-audio/folder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          folderId: editFolderId,
+          folderName: editFolderName,
+          qari: effectiveEditQari,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSavedState({
+          ...savedState,
+          folderId: editFolderId,
+          folderName: editFolderName,
+          qari: effectiveEditQari,
+        });
+        setSaveMessage("✓ Quran Audio settings saved successfully.");
+        setTimeout(() => setSaveMessage(""), 5000);
+      } else {
+        alert(data.error || "Failed to save settings");
+      }
+    } catch {
+      alert("Failed to save settings. Please try again.");
+    }
+    setSaving(false);
+  };
+
+  // ── Folder browser ──
   const loadFolders = useCallback(async (parentId: string, search?: string, pageToken?: string) => {
     setFolderBrowsing(true);
     try {
@@ -275,8 +311,8 @@ export default function QuranAudioPage() {
 
   const openFolderBrowser = () => {
     setShowFolderBrowser(true);
-    setSelectedFolderId(folderState.folderId);
-    setSelectedFolderName(folderState.folderName);
+    setTempSelectedFolderId(editFolderId);
+    setTempSelectedFolderName(editFolderName);
     setFolderSearch("");
     setFolderSearchMode(false);
     loadFolders("root");
@@ -298,48 +334,29 @@ export default function QuranAudioPage() {
     loadFolders(folderId);
   };
 
-  const handleSaveFolder = async () => {
-    if (!selectedFolderId) return;
-    setSavingFolder(true);
-    try {
-      const res = await fetch("/api/quran-audio/folder", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folderId: selectedFolderId, folderName: selectedFolderName }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setFolderState((prev) => ({ ...prev, folderId: selectedFolderId, folderName: selectedFolderName }));
-        setShowFolderBrowser(false);
-        setFolderMessage(t("quran_drive_folder_saved"));
-        setTimeout(() => setFolderMessage(""), 3000);
-      } else {
-        alert(data.error || "Failed to save folder");
-      }
-    } catch { alert("Failed to save folder"); }
-    setSavingFolder(false);
+  const handleConfirmFolder = () => {
+    if (!tempSelectedFolderId) return;
+    setEditFolderId(tempSelectedFolderId);
+    setEditFolderName(tempSelectedFolderName);
+    setShowFolderBrowser(false);
   };
 
-  // Scan / Sync
+  // ── Scan / Sync ──
   const handleScan = async () => {
-    const currentQari = showCustomQari ? customQari.trim() : qariName;
-    if (!currentQari) {
-      alert("Please select or enter a Qari (Reciter) name before scanning.");
-      return;
-    }
+    if (!savedState.qari) return;
     setScanning(true);
     setScanResult(null);
     try {
       const res = await fetch("/api/quran-audio/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reciterName: currentQari }),
+        body: JSON.stringify({ reciterName: savedState.qari }),
       });
       const data = await res.json();
       if (res.ok) {
         setScanResult(data);
         await fetchEntries();
-        await fetchScanStatus();
+        await fetchConfig();
       } else {
         alert(data.error || "Scan failed");
       }
@@ -349,7 +366,7 @@ export default function QuranAudioPage() {
     setScanning(false);
   };
 
-  // Delete
+  // ── Delete entry ──
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this audio entry?")) return;
     setDeleting(id);
@@ -364,9 +381,6 @@ export default function QuranAudioPage() {
   };
 
   const existingReciters = [...new Set(entries.map((e) => e.reciterName))];
-  const hasConnectedDrive = folderState.connected;
-  const hasFolder = !!folderState.folderId;
-  const effectiveQari = showCustomQari ? customQari.trim() : qariName;
 
   return (
     <div>
@@ -378,94 +392,104 @@ export default function QuranAudioPage() {
         </p>
       </div>
 
-      {/* Google Drive Connection */}
+      {/* ═══════════════════════════════════════════════════════════
+          SECTION 1: QURAN AUDIO SOURCE CONFIGURATION
+          ═══════════════════════════════════════════════════════════ */}
       <div className="bg-gray-900 rounded-xl border border-white/10 p-6 mb-6">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${hasConnectedDrive ? "bg-emerald-600" : "bg-gray-700"}`}>
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-            </div>
-            <div>
-              <h2 className="text-white font-semibold">Google Drive</h2>
-              <p className="text-gray-400 text-xs">
-                {hasConnectedDrive ? `${t("quran_drive_connected")}: ${folderState.email}` : t("quran_drive_not_connected")}
-              </p>
-            </div>
+        <div className="flex items-center gap-3 mb-5">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${savedState.connected ? "bg-emerald-600" : "bg-gray-700"}`}>
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
           </div>
-          <div className="flex items-center gap-2">
-            {!hasConnectedDrive ? (
-              <button onClick={handleConnectDrive} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                {t("quran_drive_connect")}
+          <div>
+            <h2 className="text-white font-semibold">Quran Audio Source</h2>
+            <p className="text-gray-400 text-xs">
+              {isConfigured
+                ? "Configuration saved. You can scan/sync your Google Drive folder below."
+                : "Set up your Google Drive connection and Qari to get started."
+              }
+            </p>
+          </div>
+        </div>
+
+        {/* ── Google Drive Connection ── */}
+        <div className="mb-4">
+          <label className="block text-gray-400 text-xs mb-2 font-medium uppercase tracking-wider">
+            Google Drive
+          </label>
+          {savedState.connected ? (
+            <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-lg p-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-emerald-400 text-sm font-medium">✓ Connected</span>
+                {savedState.email && (
+                  <span className="text-gray-400 text-xs">— {savedState.email}</span>
+                )}
+              </div>
+              <button
+                onClick={handleDisconnectDrive}
+                className="text-red-400 hover:text-red-300 text-xs"
+              >
+                Disconnect
               </button>
+            </div>
+          ) : (
+            <button
+              onClick={handleConnectDrive}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+            >
+              {t("quran_drive_connect")}
+            </button>
+          )}
+        </div>
+
+        {/* ── Folder Selection ── */}
+        {savedState.connected && (
+          <div className="mb-4">
+            <label className="block text-gray-400 text-xs mb-2 font-medium uppercase tracking-wider">
+              Quran Audio Folder
+            </label>
+            {editFolderId ? (
+              <div className="flex items-center gap-2">
+                <div className="flex-1 bg-gray-800 border border-white/10 rounded-lg p-3 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-yellow-400 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
+                  </svg>
+                  <span className="text-white text-sm truncate">{editFolderName || editFolderId}</span>
+                  {editFolderId !== savedState.folderId && (
+                    <span className="text-yellow-400 text-xs shrink-0">• changed</span>
+                  )}
+                </div>
+                <button
+                  onClick={openFolderBrowser}
+                  className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2.5 rounded-lg text-sm shrink-0"
+                >
+                  Change
+                </button>
+              </div>
             ) : (
-              <button onClick={handleDisconnectDrive} className="bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-2 rounded-lg text-xs transition-colors">
-                {t("quran_drive_disconnect")}
+              <button
+                onClick={openFolderBrowser}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+              >
+                Select Folder
               </button>
             )}
           </div>
-        </div>
-      </div>
+        )}
 
-      {/* Folder Selection */}
-      {hasConnectedDrive && (
-        <div className="bg-gray-900 rounded-xl border border-white/10 p-6 mb-6">
-          <div className="flex items-center justify-between flex-wrap gap-4 mb-3">
-            <div>
-              <h3 className="text-white font-semibold text-sm">{t("quran_drive_select_folder")}</h3>
-              <p className="text-gray-400 text-xs">
-                {hasFolder
-                  ? "Select the Google Drive folder containing your Quran audio files."
-                  : t("quran_drive_select_folder_desc")
-                }
-              </p>
-            </div>
-            <button onClick={openFolderBrowser} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-              {hasFolder ? t("quran_drive_change_folder") : t("quran_drive_select_folder")}
-            </button>
-          </div>
-          {hasFolder && (
-            <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-lg p-3">
-              <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                </svg>
-                <span className="text-emerald-400 text-sm font-medium">
-                  {t("quran_drive_selected_folder")}: {folderState.folderName || folderState.folderId}
-                </span>
-              </div>
-            </div>
-          )}
-          {!hasFolder && (
-            <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-3">
-              <p className="text-yellow-400 text-sm">{t("quran_drive_no_folder")}</p>
-            </div>
-          )}
-          {folderMessage && (
-            <div className="mt-3 bg-emerald-900/20 border border-emerald-500/30 rounded-lg p-3">
-              <p className="text-emerald-400 text-sm">{folderMessage}</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Qari Selection + Scan/Sync */}
-      {hasFolder && (
-        <div className="bg-gray-900 rounded-xl border border-white/10 p-6 mb-6">
-          <h3 className="text-white font-semibold text-sm mb-4">Quran Audio Library</h3>
-
-          {/* Qari Selection */}
-          <div className="mb-4">
+        {/* ── Qari Selection ── */}
+        {savedState.connected && (
+          <div className="mb-5">
             <label className="block text-gray-400 text-xs mb-2 font-medium uppercase tracking-wider">
               Qari / Reciter *
             </label>
-            {!showCustomQari ? (
+            {!editShowCustomQari ? (
               <div className="flex flex-wrap gap-2 items-center">
                 <select
-                  value={qariName}
-                  onChange={(e) => setQariName(e.target.value)}
-                  className="bg-gray-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:border-emerald-500 focus:outline-none min-w-[280px]"
+                  value={editQari}
+                  onChange={(e) => setEditQari(e.target.value)}
+                  className="bg-gray-800 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:border-emerald-500 focus:outline-none min-w-[280px]"
                 >
                   <option value="">Select Qari</option>
                   {COMMON_QARIS.map((q) => (
@@ -473,23 +497,26 @@ export default function QuranAudioPage() {
                   ))}
                 </select>
                 <button
-                  onClick={() => setShowCustomQari(true)}
+                  onClick={() => setEditShowCustomQari(true)}
                   className="text-emerald-400 hover:text-emerald-300 text-xs whitespace-nowrap"
                 >
                   + Custom Qari
                 </button>
+                {effectiveEditQari !== savedState.qari && effectiveEditQari && (
+                  <span className="text-yellow-400 text-xs">• changed</span>
+                )}
               </div>
             ) : (
               <div className="flex gap-2 items-center">
                 <input
                   type="text"
-                  value={customQari}
-                  onChange={(e) => setCustomQari(e.target.value)}
+                  value={editCustomQari}
+                  onChange={(e) => setEditCustomQari(e.target.value)}
                   placeholder="Enter qari name..."
-                  className="bg-gray-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:border-emerald-500 focus:outline-none flex-1 max-w-md"
+                  className="bg-gray-800 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:border-emerald-500 focus:outline-none flex-1 max-w-md"
                 />
                 <button
-                  onClick={() => { setShowCustomQari(false); setCustomQari(""); }}
+                  onClick={() => { setEditShowCustomQari(false); setEditCustomQari(""); }}
                   className="text-gray-400 hover:text-white text-xs whitespace-nowrap"
                 >
                   Use dropdown
@@ -497,37 +524,91 @@ export default function QuranAudioPage() {
               </div>
             )}
           </div>
+        )}
 
-          {/* Scan Status */}
-          {scanStatus && scanStatus.lastScan && (
-            <div className="bg-gray-800 rounded-lg p-3 mb-4">
-              <div className="flex flex-wrap gap-4 text-xs text-gray-400">
-                <span>Last scan: <span className="text-white">{formatDate(scanStatus.lastScan)}</span></span>
-                <span>Files indexed: <span className="text-emerald-400">{scanStatus.activeFiles}</span></span>
-                {scanStatus.needsReview > 0 && (
-                  <span>Needs review: <span className="text-yellow-400">{scanStatus.needsReview}</span></span>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Scan Button */}
-          <button
-            onClick={handleScan}
-            disabled={scanning || !effectiveQari}
-            className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
-          >
-            {scanning ? (
-              <span className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Scanning Google Drive...
-              </span>
-            ) : scanStatus?.lastScan ? (
-              "Sync Google Drive"
-            ) : (
-              "Scan Google Drive Folder"
+        {/* ── Save Button ── */}
+        {savedState.connected && (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSave}
+              disabled={saving || !canSave}
+              className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
+            >
+              {saving ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Saving...
+                </span>
+              ) : (
+                "Save"
+              )}
+            </button>
+            {hasUnsavedChanges && !saving && (
+              <span className="text-yellow-400 text-xs font-medium">Unsaved changes</span>
             )}
-          </button>
+            {saveMessage && (
+              <span className="text-emerald-400 text-xs">{saveMessage}</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════
+          SECTION 2: CONFIGURATION DASHBOARD (shown after save)
+          ═══════════════════════════════════════════════════════════ */}
+      {isConfigured && (
+        <div className="bg-gray-900 rounded-xl border border-white/10 p-6 mb-6">
+          <h3 className="text-white font-semibold text-sm mb-4">Configuration Status</h3>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <div className="bg-gray-800 rounded-lg p-3">
+              <p className="text-gray-400 text-xs mb-1">Folder</p>
+              <p className="text-white text-sm font-medium truncate">{savedState.folderName || "—"}</p>
+            </div>
+            <div className="bg-gray-800 rounded-lg p-3">
+              <p className="text-gray-400 text-xs mb-1">Qari</p>
+              <p className="text-white text-sm font-medium">{savedState.qari}</p>
+            </div>
+            <div className="bg-gray-800 rounded-lg p-3">
+              <p className="text-gray-400 text-xs mb-1">Last Sync</p>
+              <p className="text-white text-sm font-medium">{formatDate(savedState.lastSync)}</p>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleScan}
+              disabled={scanning}
+              className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              {scanning ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Scanning...
+                </span>
+              ) : savedState.lastSync ? (
+                "Sync Google Drive"
+              ) : (
+                "Scan Google Drive"
+              )}
+            </button>
+            <button
+              onClick={openFolderBrowser}
+              className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm transition-colors"
+            >
+              Change Folder
+            </button>
+            <button
+              onClick={() => {
+                setEditShowCustomQari(true);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+              className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm transition-colors"
+            >
+              Change Qari
+            </button>
+          </div>
 
           {/* Scan Result */}
           {scanResult && (
@@ -574,7 +655,9 @@ export default function QuranAudioPage() {
         </div>
       )}
 
-      {/* Folder Browser Modal */}
+      {/* ═══════════════════════════════════════════════════════════
+          FOLDER BROWSER MODAL
+          ═══════════════════════════════════════════════════════════ */}
       {showFolderBrowser && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-gray-900 rounded-xl border border-white/10 w-full max-w-2xl max-h-[80vh] flex flex-col">
@@ -610,9 +693,9 @@ export default function QuranAudioPage() {
                 <div className="space-y-1">
                   {driveFolders.map((folder) => (
                     <button key={folder.id}
-                      onClick={() => { setSelectedFolderId(folder.id); setSelectedFolderName(folder.name); }}
+                      onClick={() => { setTempSelectedFolderId(folder.id); setTempSelectedFolderName(folder.name); }}
                       onDoubleClick={() => navigateIntoFolder(folder.id)}
-                      className={`w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${selectedFolderId === folder.id ? "bg-emerald-600/20 border border-emerald-500/50" : "hover:bg-white/5 border border-transparent"}`}>
+                      className={`w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${tempSelectedFolderId === folder.id ? "bg-emerald-600/20 border border-emerald-500/50" : "hover:bg-white/5 border border-transparent"}`}>
                       <svg className="w-5 h-5 text-yellow-400 shrink-0" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
                       </svg>
@@ -629,17 +712,17 @@ export default function QuranAudioPage() {
               )}
             </div>
             <div className="p-4 border-t border-white/10">
-              {selectedFolderId && (
+              {tempSelectedFolderId && (
                 <div className="bg-gray-800 rounded-lg p-3 mb-3">
                   <p className="text-gray-400 text-xs">{t("quran_drive_selected_folder")}</p>
-                  <p className="text-white text-sm font-medium">{selectedFolderName || selectedFolderId}</p>
+                  <p className="text-white text-sm font-medium">{tempSelectedFolderName || tempSelectedFolderId}</p>
                 </div>
               )}
               <div className="flex justify-end gap-2">
                 <button onClick={() => setShowFolderBrowser(false)} className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm">Cancel</button>
-                <button onClick={handleSaveFolder} disabled={!selectedFolderId || savingFolder}
+                <button onClick={handleConfirmFolder} disabled={!tempSelectedFolderId}
                   className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                  {savingFolder ? "Saving..." : t("quran_drive_confirm_folder")}
+                  {t("quran_drive_confirm_folder")}
                 </button>
               </div>
             </div>
@@ -647,7 +730,9 @@ export default function QuranAudioPage() {
         </div>
       )}
 
-      {/* Audio Entries List */}
+      {/* ═══════════════════════════════════════════════════════════
+          SECTION 3: INDEXED AUDIO ENTRIES
+          ═══════════════════════════════════════════════════════════ */}
       <div className="bg-gray-900 rounded-xl border border-white/10 overflow-hidden">
         <div className="p-4 border-b border-white/10 flex flex-wrap gap-3">
           <select value={filterSurah} onChange={(e) => setFilterSurah(e.target.value ? parseInt(e.target.value, 10) : "")}
@@ -662,21 +747,21 @@ export default function QuranAudioPage() {
           </select>
           <span className="text-gray-500 text-sm self-center">{entries.length} audio file{entries.length !== 1 ? "s" : ""}</span>
         </div>
-        {loading && (<div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /></div>)}
-        {!loading && entries.length === 0 && (
+        {loadingEntries && (<div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /></div>)}
+        {!loadingEntries && entries.length === 0 && (
           <div className="text-center py-12">
             <svg className="w-12 h-12 text-gray-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
             </svg>
             <p className="text-gray-400">
-              {hasFolder
-                ? "No audio files indexed yet. Select a Qari and click \"Scan Google Drive Folder\"."
-                : "Connect Google Drive and select a folder to get started."
+              {isConfigured
+                ? "No audio files indexed yet. Click \"Scan Google Drive\" above to index your files."
+                : "Configure your Google Drive source and save to get started."
               }
             </p>
           </div>
         )}
-        {!loading && entries.length > 0 && (
+        {!loadingEntries && entries.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
