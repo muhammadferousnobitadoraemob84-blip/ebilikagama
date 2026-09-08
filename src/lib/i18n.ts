@@ -260,6 +260,13 @@ const translations = {
     quran_volume: "Volume",
     quran_mute: "Mute",
     quran_unmute: "Unmute",
+    quran_play: "Play",
+    quran_pause: "Pause",
+    quran_now_playing: "Now playing",
+    quran_paused: "Paused",
+    quran_missing_audio: "Audio for this Ayah is currently unavailable.",
+    quran_unavailable: "No audio",
+    quran_no_library: "No Quran audio indexed yet. Audio will appear here once the Google Drive library is synced.",
     quran_arabic_bismillah: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
 
     // Quran Audio Admin - Google Drive
@@ -588,6 +595,13 @@ const translations = {
     quran_volume: "Volum",
     quran_mute: "Senyapkan",
     quran_unmute: "Bunyikan",
+    quran_play: "Main",
+    quran_pause: "Jeda",
+    quran_now_playing: "Sedang dimainkan",
+    quran_paused: "Dijeda",
+    quran_missing_audio: "Audio untuk ayah ini tidak tersedia buat masa ini.",
+    quran_unavailable: "Tiada audio",
+    quran_no_library: "Tiada audio Al-Quran diindeks lagi. Audio akan dipaparkan di sini selepas perpustakaan Google Drive disegerak.",
     quran_arabic_bismillah: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
 
     // Quran Audio Admin - Google Drive
@@ -916,6 +930,13 @@ const translations = {
     quran_volume: "音量",
     quran_mute: "静音",
     quran_unmute: "取消静音",
+    quran_play: "播放",
+    quran_pause: "暂停",
+    quran_now_playing: "正在播放",
+    quran_paused: "已暂停",
+    quran_missing_audio: "该节经文的音频暂时无法播放。",
+    quran_unavailable: "无音频",
+    quran_no_library: "尚未索引任何古兰经音频。同步 Google Drive 资料库后，音频将显示在此处。",
     quran_arabic_bismillah: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
 
     // Quran Audio Admin - Google Drive

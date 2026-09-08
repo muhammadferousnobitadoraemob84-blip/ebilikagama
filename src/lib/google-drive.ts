@@ -22,8 +22,12 @@ export function getRedirectUri(requestUrl?: string): string {
   return "https://ebilikagamabeta.vercel.app/api/google-drive/callback";
 }
 
-// Scopes needed for Google Drive
-const SCOPES = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly";
+// Scopes needed for Google Drive.
+// drive.readonly is REQUIRED for the Quran audio stream endpoint: the indexed
+// files were uploaded to Drive manually (not by this app), so drive.file does
+// NOT grant access to them. drive.metadata.readonly alone permits listing
+// metadata but NOT downloading file content (?alt=media) — playback would 403.
+const SCOPES = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly";
 
 // User's Google Drive folder for Live Replays
 // https://drive.google.com/drive/folders/1YRUK9XzaE53553_nOltMw66HWK8j5-Z_

@@ -64,9 +64,12 @@ export async function GET(request: NextRequest) {
 
     if (!driveResponse.ok) {
       const errorText = await driveResponse.text().catch(() => "unknown");
+      // 403 with "insufficientPermissions"/"The user is not authorized" typically means the
+      // stored OAuth token lacks the drive.readonly scope (reconnect required).
+      // 404 means the file was moved/deleted from Drive.
       console.error(
         `[QURAN-STREAM] Google Drive error: ${driveResponse.status} for file ${entry.googleDriveId}:`,
-        errorText.substring(0, 200)
+        errorText.substring(0, 300)
       );
 
       // Return a proper audio-compatible error (not JSON, so audio element doesn't crash)
@@ -74,7 +77,10 @@ export async function GET(request: NextRequest) {
         status: driveResponse.status === 404 ? 404 : 502,
         headers: {
           "Content-Type": "text/plain",
-          "X-Error": "Audio not available from storage",
+          "X-Error":
+            driveResponse.status === 403
+              ? "drive-scope-reconnect-required"
+              : "Audio not available from storage",
         },
       });
     }

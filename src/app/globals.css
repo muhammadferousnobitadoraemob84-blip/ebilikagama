@@ -261,6 +261,18 @@ html {
   }
 }
 
+/* Arabic font for Quran text (Amiri — open-source SIL OFL Quranic typeface) */
+@font-face {
+  font-family: "Amiri Quran";
+  src: url("https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.woff2") format("woff2");
+  font-display: swap;
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC;
+}
+
+.font-arabic {
+  font-family: "Amiri Quran", "Amiri", "Scheherazade New", "Traditional Arabic", "Noto Naskh Arabic", serif;
+}
+
 /* Quran audio progress bar */
 .quran-progress {
   -webkit-appearance: none;
