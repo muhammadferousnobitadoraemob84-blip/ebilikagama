@@ -267,6 +267,9 @@ const translations = {
     quran_missing_audio: "Audio for this Ayah is currently unavailable.",
     quran_unavailable: "No audio",
     quran_no_library: "No Quran audio indexed yet. Audio will appear here once the Google Drive library is synced.",
+    quran_full_surah_available: "A full-surah recording is available for this surah.",
+    quran_play_full_surah: "Play full surah",
+    quran_full_surah_playing: "Full surah recitation",
     quran_arabic_bismillah: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
 
     // Quran Audio Admin - Google Drive
@@ -602,6 +605,9 @@ const translations = {
     quran_missing_audio: "Audio untuk ayah ini tidak tersedia buat masa ini.",
     quran_unavailable: "Tiada audio",
     quran_no_library: "Tiada audio Al-Quran diindeks lagi. Audio akan dipaparkan di sini selepas perpustakaan Google Drive disegerak.",
+    quran_full_surah_available: "Rakaman penuh surah tersedia untuk surah ini.",
+    quran_play_full_surah: "Main penuh surah",
+    quran_full_surah_playing: "Bacaan penuh surah",
     quran_arabic_bismillah: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
 
     // Quran Audio Admin - Google Drive
@@ -937,6 +943,9 @@ const translations = {
     quran_missing_audio: "该节经文的音频暂时无法播放。",
     quran_unavailable: "无音频",
     quran_no_library: "尚未索引任何古兰经音频。同步 Google Drive 资料库后，音频将显示在此处。",
+    quran_full_surah_available: "此苏拉有整章诵读录音可用。",
+    quran_play_full_surah: "播放整章",
+    quran_full_surah_playing: "整章诵读",
     quran_arabic_bismillah: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
 
     // Quran Audio Admin - Google Drive

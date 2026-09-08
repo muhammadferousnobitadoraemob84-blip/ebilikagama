@@ -52,6 +52,8 @@ export default function QuranAudioSection() {
   const [selectedSurah, setSelectedSurah] = useState<number>(1);
   const [selectedQari, setSelectedQari] = useState<string>("");
   const [activeAyah, setActiveAyah] = useState<number | null>(null);
+  const [fullSurah, setFullSurah] = useState<IndexedAyah | null>(null);
+  const [playingFull, setPlayingFull] = useState(false);
 
   // Player state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -136,14 +138,25 @@ export default function QuranAudioSection() {
           `/api/quran-audio/public?surah=${selectedSurah}&reciter=${encodeURIComponent(selectedQari)}`
         );
         if (cancelled) return;
-        const map = new Map<number, IndexedAyah>();
+        // Per-ayah records drive the highlighted verse list; full-surah recordings
+        // (audioType "full_surah") are played as a single track without fake per-ayah timing.
+        const perAyah = new Map<number, IndexedAyah>();
+        let fsEntry: IndexedAyah | null = null;
         for (const e of data || []) {
-          if (!map.has(e.ayahNumber)) map.set(e.ayahNumber, e); // first record wins
+          if (e.audioType === "full_surah") {
+            if (!fsEntry) fsEntry = e;
+          } else if (!perAyah.has(e.ayahNumber)) {
+            perAyah.set(e.ayahNumber, e); // first record wins
+          }
         }
-        indexedMapRef.current = map;
+        indexedMapRef.current = perAyah;
+        setFullSurah(fsEntry);
         setMissingAudio(false);
       } catch {
-        if (!cancelled) indexedMapRef.current = new Map();
+        if (!cancelled) {
+          indexedMapRef.current = new Map();
+          setFullSurah(null);
+        }
       }
     })();
     return () => {
@@ -166,6 +179,12 @@ export default function QuranAudioSection() {
       audio.addEventListener("pause", () => setIsPlaying(false));
       audio.addEventListener("waiting", () => setIsBuffering(true));
       audio.addEventListener("ended", () => {
+        if (audio.dataset.mode === "full") {
+          // Full-surah track finished — no per-ayah advance possible
+          setIsPlaying(false);
+          setIsBuffering(false);
+          return;
+        }
         const map = indexedMapRef.current;
         const current = Number(audio.dataset.ayah || "0");
         // Auto-advance to the next ayah that HAS audio (skip unavailable ones)
@@ -199,6 +218,7 @@ export default function QuranAudioSection() {
     audio.pause();
     audio.src = url;
     audio.dataset.ayah = String(activeAyah);
+    audio.dataset.mode = "ayah";
     lastLoadedUrlRef.current = url;
     audio.load();
     setIsBuffering(true);
@@ -213,9 +233,44 @@ export default function QuranAudioSection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeAyah]);
 
+  // ── Full-surah single-track playback (no per-ayah timing is claimed) ──
+  const playFullSurah = useCallback(async () => {
+    if (!fullSurah) return;
+    const audio = getAudio();
+    const url = `/api/quran-audio/stream?id=${encodeURIComponent(fullSurah.id)}&t=${fullSurah.id}`;
+    if (lastLoadedUrlRef.current !== url) {
+      audio.pause();
+      audio.src = url;
+      audio.dataset.ayah = "0";
+      audio.dataset.mode = "full";
+      lastLoadedUrlRef.current = url;
+      audio.load();
+    }
+    setPlayingFull(true);
+    setIsBuffering(true);
+    setMissingAudio(false);
+    try {
+      await audio.play();
+    } catch {
+      setIsBuffering(false);
+    }
+  }, [fullSurah, getAudio]);
+
   // ── Play/pause toggle ──
   const togglePlayPause = useCallback(async () => {
     const audio = getAudio();
+    if (playingFull) {
+      if (audio.paused) {
+        try {
+          await audio.play();
+        } catch {
+          setIsPlaying(false);
+        }
+      } else {
+        audio.pause();
+      }
+      return;
+    }
     if (activeAyah === null) {
       // Nothing selected yet: start from the first indexed ayah
       const first = indexedMapRef.current.size
@@ -223,6 +278,8 @@ export default function QuranAudioSection() {
         : null;
       if (first !== null) {
         setActiveAyah(first);
+      } else if (fullSurah) {
+        await playFullSurah();
       } else {
         setMissingAudio(true);
       }
@@ -244,7 +301,7 @@ export default function QuranAudioSection() {
       audio.pause();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [getAudio, activeAyah]);
+  }, [getAudio, activeAyah, playingFull, fullSurah, playFullSurah]);
 
   // ── Previous / next (skip ayahs without audio) ──
   const skipWithAudio = useCallback((from: number, dir: 1 | -1): number | null => {
@@ -300,6 +357,7 @@ export default function QuranAudioSection() {
     lastLoadedUrlRef.current = "";
     setSelectedSurah(id);
     setActiveAyah(null);
+    setPlayingFull(false);
     setCurrentTime(0);
     setDuration(0);
     setMissingAudio(false);
@@ -312,17 +370,22 @@ export default function QuranAudioSection() {
     lastLoadedUrlRef.current = "";
     setSelectedQari(e.target.value);
     setActiveAyah(null);
+    setPlayingFull(false);
     setCurrentTime(0);
     setDuration(0);
     setMissingAudio(false);
     setError("");
   }, []);
 
-  // ── Click an ayah card to play it ──
-  const handleAyahClick = useCallback((ayah: number) => {
-    setMissingAudio(false);
-    setActiveAyah(ayah);
-  }, []);
+  // ── Click an ayah card to play it (leaves full-surah mode) ──
+  const handleAyahClick = useCallback(
+    (ayah: number) => {
+      setPlayingFull(false);
+      setMissingAudio(false);
+      setActiveAyah(ayah);
+    },
+    []
+  );
 
   // ── Cleanup ──
   useEffect(() => {
@@ -356,6 +419,7 @@ export default function QuranAudioSection() {
   );
   const availableCount = indexedMapRef.current.size;
   const progressMax = duration || 0;
+  const activeIsFull = playingFull && !!fullSurah;
 
   // ── Error state ──
   if (error === "quran_error") {
@@ -436,7 +500,9 @@ export default function QuranAudioSection() {
             <p className="text-gray-400 text-xs sm:text-sm mt-2 text-center">
               {currentSurah ? `${currentSurah.name_simple} — ${currentSurah.name_arabic}` : ""}
               {" · "}
-              {t("quran_ayah")} {activeAyah ?? "—"} {t("quran_of")} {currentSurah?.verses_count ?? "—"}
+              {activeIsFull
+                ? t("quran_full_surah_playing")
+                : `${t("quran_ayah")} ${activeAyah ?? "—"} ${t("quran_of")} ${currentSurah?.verses_count ?? "—"}`}
               {" · "}
               {t("quran_reciter")}: {selectedQari || "—"}
             </p>
@@ -499,7 +565,7 @@ export default function QuranAudioSection() {
               <div className="flex items-center gap-2 sm:gap-4">
                 <button
                   onClick={goPrev}
-                  disabled={activeAyah === null || skipWithAudio(activeAyah, -1) === null}
+                  disabled={playingFull || activeAyah === null || skipWithAudio(activeAyah, -1) === null}
                   className="text-gray-400 hover:text-white disabled:text-gray-700 disabled:cursor-not-allowed transition-colors p-2"
                   aria-label={t("quran_previous")}
                 >
@@ -529,7 +595,7 @@ export default function QuranAudioSection() {
 
                 <button
                   onClick={goNext}
-                  disabled={activeAyah === null || skipWithAudio(activeAyah, 1) === null}
+                  disabled={playingFull || activeAyah === null || skipWithAudio(activeAyah, 1) === null}
                   className="text-gray-400 hover:text-white disabled:text-gray-700 disabled:cursor-not-allowed transition-colors p-2"
                   aria-label={t("quran_next")}
                 >
@@ -551,6 +617,21 @@ export default function QuranAudioSection() {
             {missingAudio && (
               <div className="mt-3 text-center">
                 <p className="text-amber-400 text-sm">{t("quran_missing_audio")}</p>
+              </div>
+            )}
+
+            {/* Full-surah single-track notice + play button */}
+            {fullSurah && !playingFull && (
+              <div className="mt-3 flex flex-col sm:flex-row items-center justify-center gap-2">
+                <p className="text-gray-400 text-xs text-center">
+                  {t("quran_full_surah_available")}
+                </p>
+                <button
+                  onClick={playFullSurah}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-full transition-colors shrink-0"
+                >
+                  {t("quran_play_full_surah")}
+                </button>
               </div>
             )}
 
