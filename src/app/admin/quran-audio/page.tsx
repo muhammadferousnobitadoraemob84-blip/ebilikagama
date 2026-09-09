@@ -176,6 +176,10 @@ export default function QuranAudioPage() {
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
 
+  // ── Playback test state ──
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
   // ── Audio entries state ──
   const [entries, setEntries] = useState<QuranAudioEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
@@ -364,6 +368,50 @@ export default function QuranAudioPage() {
       alert("Scan failed: " + (err instanceof Error ? err.message : "Unknown error"));
     }
     setScanning(false);
+  };
+
+  // ── Playback test: verifies the REAL stream pipeline end-to-end ──
+  const runPlaybackTest = async () => {
+    if (entries.length === 0) {
+      setTestResult({ ok: false, message: "No indexed audio to test. Scan Google Drive first." });
+      return;
+    }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const sample = entries[0];
+      const res = await fetch(
+        `/api/quran-audio/stream?id=${encodeURIComponent(sample.id)}`,
+        { headers: { Range: "bytes=0-1" } }
+      );
+      const marker = res.headers.get("X-Error");
+      const via = res.headers.get("X-Served-Via");
+      if (res.ok) {
+        setTestResult({
+          ok: true,
+          message: `✓ Playback OK — audio bytes reach the browser (via ${via || "stream"}). Visitors can play Quran audio.`,
+        });
+      } else if (marker === "drive-scope-reconnect-required") {
+        setTestResult({
+          ok: false,
+          message:
+            "✕ Google Drive authorization cannot download file content (the stored permission predates the required download scope). Click 'Reconnect Google Drive' below, approve the new permission, then Sync. Your folder and Qari settings are preserved.",
+        });
+      } else if (res.status === 404 || marker === "file-not-found") {
+        setTestResult({
+          ok: false,
+          message: "✕ The audio file no longer exists in Google Drive. Re-sync the folder to update the index.",
+        });
+      } else {
+        setTestResult({
+          ok: false,
+          message: `✕ Stream failed (HTTP ${res.status}${marker ? `, ${marker}` : ""}). Check server logs for details.`,
+        });
+      }
+    } catch {
+      setTestResult({ ok: false, message: "✕ Network error while testing playback." });
+    }
+    setTesting(false);
   };
 
   // ── Delete entry ──
@@ -608,7 +656,37 @@ export default function QuranAudioPage() {
             >
               Change Qari
             </button>
+            <button
+              onClick={runPlaybackTest}
+              disabled={testing || entries.length === 0}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              {testing ? "Testing..." : "Test Playback"}
+            </button>
           </div>
+
+          {/* Playback test result */}
+          {testResult && (
+            <div
+              className={`mt-4 rounded-lg p-4 border ${
+                testResult.ok
+                  ? "bg-emerald-900/20 border-emerald-500/30"
+                  : "bg-red-900/20 border-red-500/30"
+              }`}
+            >
+              <p className={`text-sm ${testResult.ok ? "text-emerald-300" : "text-red-300"}`}>
+                {testResult.message}
+              </p>
+              {!testResult.ok && testResult.message.includes("Reconnect") && (
+                <button
+                  onClick={handleConnectDrive}
+                  className="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Reconnect Google Drive
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Scan Result */}
           {scanResult && (
