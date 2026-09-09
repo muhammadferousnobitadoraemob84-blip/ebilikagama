@@ -66,6 +66,7 @@ export default function QuranAudioSection() {
 
   // Refs
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const lastErrorUrlRef = useRef<string>("");
   const indexedMapRef = useRef<Map<number, IndexedAyah>>(new Map()); // ayahNumber → entry
   const versesCacheRef = useRef<Map<number, VerseText[]>>(new Map());
   const ayahRefs = useRef<Map<number, HTMLDivElement | null>>(new Map());
@@ -169,6 +170,7 @@ export default function QuranAudioSection() {
     if (!audioRef.current) {
       const audio = new Audio();
       audio.preload = "auto";
+      audio.volume = 0.8; // never start muted/silent
       audio.addEventListener("timeupdate", () => setCurrentTime(audio.currentTime));
       audio.addEventListener("durationchange", () => setDuration(audio.duration));
       audio.addEventListener("loadedmetadata", () => setDuration(audio.duration));
@@ -178,6 +180,28 @@ export default function QuranAudioSection() {
       });
       audio.addEventListener("pause", () => setIsPlaying(false));
       audio.addEventListener("waiting", () => setIsBuffering(true));
+      audio.addEventListener("stalled", () => setIsBuffering(true));
+      audio.addEventListener("error", () => {
+        // Surface real media errors for the currently loaded source only.
+        if (!audio.src || !audio.error || audio.src === lastErrorUrlRef.current) return;
+        lastErrorUrlRef.current = audio.src;
+        setIsPlaying(false);
+        setIsBuffering(false);
+        setError("quran_stream_error");
+        // Keep the ayah unplayed: drop highlight + do not auto-advance.
+        setActiveAyah(null);
+        setPlayingFull(false);
+        // Diagnostic probe: log the server's X-Error marker (never exposes tokens)
+        fetch(audio.src, { headers: { Range: "bytes=0-1" } })
+          .then((r) => {
+            if (!r.ok) {
+              console.error(
+                `[QuranAudio] Stream failed: HTTP ${r.status} (${r.headers.get("X-Error") || "no error marker"})`
+              );
+            }
+          })
+          .catch(() => {});
+      });
       audio.addEventListener("ended", () => {
         if (audio.dataset.mode === "full") {
           // Full-surah track finished — no per-ayah advance possible
@@ -222,11 +246,19 @@ export default function QuranAudioSection() {
     lastLoadedUrlRef.current = url;
     audio.load();
     setIsBuffering(true);
+    setError("");
     audio
       .play()
       .then(() => setIsPlaying(true))
-      .catch(() => {
-        // Autoplay policy blocked — not an error; user presses Play
+      .catch((err) => {
+        // Autoplay policy blocked — not an error; user presses Play.
+        if (err?.name === "NotAllowedError") {
+          setIsPlaying(false);
+          setIsBuffering(false);
+          return;
+        }
+        // NotSupportedError → the source failed to load (server/network).
+        console.error("[QuranAudio] play() failed:", err?.name, err?.message);
         setIsPlaying(false);
         setIsBuffering(false);
       });
@@ -249,6 +281,7 @@ export default function QuranAudioSection() {
     setPlayingFull(true);
     setIsBuffering(true);
     setMissingAudio(false);
+    setError("");
     try {
       await audio.play();
     } catch {

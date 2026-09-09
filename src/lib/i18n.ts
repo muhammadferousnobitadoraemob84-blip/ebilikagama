@@ -270,6 +270,8 @@ const translations = {
     quran_full_surah_available: "A full-surah recording is available for this surah.",
     quran_play_full_surah: "Play full surah",
     quran_full_surah_playing: "Full surah recitation",
+    quran_stream_error:
+      "Unable to stream this audio from Google Drive. If this persists, the site owner may need to reconnect Google Drive in the Admin Panel or share the folder with \"Anyone with the link\".",
     quran_arabic_bismillah: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
 
     // Quran Audio Admin - Google Drive
@@ -608,6 +610,8 @@ const translations = {
     quran_full_surah_available: "Rakaman penuh surah tersedia untuk surah ini.",
     quran_play_full_surah: "Main penuh surah",
     quran_full_surah_playing: "Bacaan penuh surah",
+    quran_stream_error:
+      "Tidak dapat memainkan audio ini daripada Google Drive. Jika masalah berterusan, pemilik laman mungkin perlu menyambung semula Google Drive di Panel Admin atau berkongsi folder dengan \"Sesiapa sahaja yang mempunyai pautan\".",
     quran_arabic_bismillah: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
 
     // Quran Audio Admin - Google Drive
@@ -946,6 +950,7 @@ const translations = {
     quran_full_surah_available: "此苏拉有整章诵读录音可用。",
     quran_play_full_surah: "播放整章",
     quran_full_surah_playing: "整章诵读",
+    quran_stream_error: "无法从 Google Drive 播放此音频。如果问题持续，网站管理员可能需要在管理面板重新连接 Google Drive，或将文件夹设为“知道链接的任何人”可访问。",
     quran_arabic_bismillah: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
 
     // Quran Audio Admin - Google Drive
