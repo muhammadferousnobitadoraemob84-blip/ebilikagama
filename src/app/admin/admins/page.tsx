@@ -577,7 +577,7 @@ export default function AdminManagement() {
               Adakah anda pasti mahu memadamkan admin ini?
             </p>
             <p className="text-gray-500 text-sm mb-6">
-              &quot;{deleteModal.username}&quot; — Tindakan ini tidak boleh dibatalkan.
+              "{deleteModal.username}" — Tindakan ini tidak boleh dibatalkan.
             </p>
             <div className="flex gap-3 justify-end">
               <button

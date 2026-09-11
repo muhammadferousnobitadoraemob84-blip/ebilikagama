@@ -27,6 +27,19 @@ export async function ensureDatabase(): Promise<boolean> {
     return true;
   } catch (err) {
     console.error("[DB-INIT] Tables check failed:", err);
+    // The check can fail due to a missing NEW column (schema drift between
+    // the deployed database and the current Prisma client). Apply migrations
+    // before giving up — runMigrations() uses idempotent IF NOT EXISTS DDL.
+    try {
+      console.log("[DB-INIT] Attempting migrations to fix schema drift...");
+      await runMigrations();
+      await withRetry(() => prisma.user.findFirst());
+      _initialized = true;
+      console.log("[DB-INIT] Database ready after migration recovery.");
+      return true;
+    } catch (recoverErr) {
+      console.error("[DB-INIT] Migration recovery failed:", recoverErr);
+    }
   }
 
   // Step 2: Create tables using raw SQL (PostgreSQL) with retry
@@ -170,6 +183,15 @@ async function runMigrations() {
   try {
     await prisma.$executeRawUnsafe(`
       ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "profilePhoto" TEXT;
+    `);
+  } catch {
+    // Column might already exist
+  }
+
+  // Add lastLogin column to User table if it doesn't exist (User Management)
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastLogin" TIMESTAMP(3);
     `);
   } catch {
     // Column might already exist

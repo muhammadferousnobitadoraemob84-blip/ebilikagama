@@ -4,17 +4,18 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLanguage } from "@/components/LanguageProvider";
 
-export default function AdminLogin() {
+export default function SignInPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") || "/admin";
-  const { language, setLanguage, t } = useLanguage();
+  const redirect = searchParams.get("redirect") || "/";
+  const { t } = useLanguage();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [adminView, setAdminView] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,18 +26,21 @@ export default function AdminLogin() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password, isAdmin: true }),
+        body: JSON.stringify({ username, password, isAdmin: adminView ? true : undefined }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "Log masuk gagal");
+        setError(data.error || t("sign_in_error_generic"));
         setLoading(false);
         return;
       }
 
-      router.push(redirect);
+      // Successful login → always land on the homepage (or the page the
+      // visitor originally requested). Admins reach the Admin Panel through
+      // the profile-picture menu, not automatically.
+      router.push(redirect || "/");
     } catch {
       setError("Ralat rangkaian. Sila cuba lagi.");
       setLoading(false);
@@ -44,37 +48,19 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-950 px-4">
-      <div className="w-full max-w-md">
-        {/* Language switcher */}
-        <div className="flex justify-center gap-2 mb-6">
-          {["en", "bm", "zh"].map((lang) => (
-            <button
-              key={lang}
-              type="button"
-              onClick={() => setLanguage(lang as "en" | "bm" | "zh")}
-              className={`px-3 py-1 text-sm rounded-lg transition-colors ${
-                language === lang
-                  ? "bg-gray-700 text-white"
-                  : "bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white"
-              }`}
-            >
-              {lang === "bm" ? "Bahasa Melayu" : lang === "zh" ? "中文" : "English"}
-            </button>
-          ))}
-        </div>
-
+    <div className="min-h-screen flex items-center justify-center bg-black px-4">
+      <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-br from-red-600 to-red-800 rounded-2xl flex items-center justify-center text-white font-bold text-2xl mx-auto mb-4 shadow-lg shadow-red-600/20">
+          <div className="mx-auto mb-4 w-16 h-16 bg-gradient-to-br from-red-600 to-red-800 rounded-2xl flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-red-600/20">
             MS
           </div>
           <h1 className="text-white text-2xl font-bold">{t("sign_in_title")}</h1>
-          <p className="text-gray-400 mt-2">{t("admin_access_only")}</p>
+          <p className="text-gray-400 mt-2">{t("sign_in_subtitle")}</p>
         </div>
 
         {/* Login Form */}
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-5 bg-gray-900 rounded-xl border border-white/10 p-6">
           {error && (
             <div className="bg-red-600/10 border border-red-600/30 text-red-400 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
               <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -98,8 +84,8 @@ export default function AdminLogin() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="admin-input pl-10"
-                placeholder="Masukkan username"
+                className="w-full admin-input pl-10"
+                placeholder={adminView ? "Admin username" : "username / email"}
                 required
                 autoComplete="username"
                 autoFocus
@@ -121,8 +107,8 @@ export default function AdminLogin() {
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="admin-input pl-10 pr-10"
-                placeholder="Masukkan kata laluan"
+                className="w-full admin-input pl-10 pr-10"
+                placeholder="••••••••"
                 required
                 autoComplete="current-password"
               />
@@ -154,19 +140,28 @@ export default function AdminLogin() {
             {loading ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Sedang log masuk...
+                {t("sign_in_button")}
               </span>
             ) : (
               t("sign_in_button")
             )}
           </button>
-        </form>
 
-        <div className="mt-6 text-center">
-          <a href="/sign-in" className="text-gray-500 hover:text-gray-300 text-sm transition-colors">
-            ← Kembali ke log masuk pengguna
-          </a>
-        </div>
+          {/* Administrator entry point — visually distinct, redirects to the
+              dedicated admin sign-in (role is verified server-side) */}
+          <div className="pt-3 border-t border-white/10 text-center">
+            <p className="text-gray-500 text-xs mb-2">{t("admin_sign_in_prompt")}</p>
+            <a
+              href="/admin/login"
+              className="inline-flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              {t("admin_sign_in_button")}
+            </a>
+          </div>
+        </form>
       </div>
     </div>
   );

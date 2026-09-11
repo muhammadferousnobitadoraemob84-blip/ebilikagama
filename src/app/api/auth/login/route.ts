@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    const { username, password } = await request.json();
+    const { username, password, isAdmin } = await request.json().catch(() => ({}));
 
     if (!username || !password) {
       return NextResponse.json(
@@ -17,10 +17,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Ensure database is ready (auto-init on first request)
     const dbReady = await ensureDatabase();
     if (!dbReady) {
-      // Check if DATABASE_URL is even set
       if (!process.env.DATABASE_URL) {
         return NextResponse.json(
           { error: "DATABASE_URL belum disediakan. Sila tambah DATABASE_URL di Vercel → Settings → Environment Variables." },
@@ -33,10 +31,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Look up user
     let user;
     try {
-      user = await prisma.user.findUnique({ where: { username } });
+      // Normalize: trim whitespace; match username case-insensitively via
+      // lowercased comparison so casing differences cannot create duplicates.
+      const normalized = String(username).trim();
+      user = await prisma.user.findFirst({
+        where: { username: { equals: normalized, mode: "insensitive" } },
+      });
     } catch (dbError) {
       console.error("[LOGIN] Database query failed:", dbError);
       return NextResponse.json(
@@ -45,6 +47,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Generic error — never reveal whether the username exists.
     if (!user) {
       return NextResponse.json(
         { error: "Username atau kata laluan salah" },
@@ -52,15 +55,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if account is active
     if (!user.active) {
       return NextResponse.json(
-        { error: "Akaun ini telah dinyahaktifkan. Sila hubungi owner." },
+        { error: "Akaun ini telah dinyahaktifkan. Sila hubungi pentadbir." },
         { status: 403 }
       );
     }
 
-    // Verify password
     let valid: boolean;
     try {
       valid = await bcrypt.compare(password, user.passwordHash);
@@ -79,7 +80,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create JWT token
+    // Admin sign-in gate: the admin form requires an admin/owner role.
+    // This is server-side — the flag alone grants nothing.
+    if (isAdmin && user.role !== "admin" && user.role !== "owner") {
+      return NextResponse.json(
+        { error: "Akaun ini bukan akaun pentadbir." },
+        { status: 403 }
+      );
+    }
+
     let token: string;
     try {
       token = await createToken({
@@ -95,6 +104,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Record last login (best-effort; never blocks authentication)
+    try {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLogin: new Date() },
+      });
+    } catch {
+      // non-fatal
+    }
+
     const response = NextResponse.json({
       success: true,
       username: user.username,
@@ -106,7 +125,7 @@ export async function POST(request: NextRequest) {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 14, // 14 days
+      maxAge: 60 * 60 * 24 * 14,
       path: "/",
     });
 

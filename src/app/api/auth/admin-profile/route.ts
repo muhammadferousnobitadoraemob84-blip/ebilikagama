@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
+import { verifyToken } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export async function GET() {
       return NextResponse.json({ loggedIn: false });
     }
 
-    // Fetch admin profile photo
+    // Fetch user data
     const user = await prisma.user.findUnique({
       where: { id: session.userId },
       select: {
