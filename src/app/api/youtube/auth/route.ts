@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getYouTubeAuthUrl } from "@/lib/youtube";
-import { verifyToken } from "@/lib/auth";
+import { verifyToken, isAdminRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +13,8 @@ export async function GET(request: NextRequest) {
     }
 
     const user = await verifyToken(token);
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!user || !isAdminRole(user.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const state = Buffer.from(JSON.stringify({ type: "youtube", adminToken: token })).toString("base64");

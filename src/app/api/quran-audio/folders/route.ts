@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getAdminSession } from "@/lib/auth";
 import { getValidDriveToken } from "@/lib/google-drive";
 
 export const dynamic = "force-dynamic";
@@ -20,9 +20,9 @@ interface FolderItem {
 // GET /api/quran-audio/folders?parentId=<id>&search=<query>&pageToken=<token>
 export async function GET(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const token = await getValidDriveToken();

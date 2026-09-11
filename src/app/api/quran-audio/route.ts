@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getAdminSession } from "@/lib/auth";
 import { prisma, withRetry } from "@/lib/prisma";
 import {
   getValidDriveToken,
@@ -25,9 +25,9 @@ const MAX_AUDIO_SIZE = 50 * 1024 * 1024; // 50MB
 // GET — List all Quran Audio entries
 export async function GET(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);
@@ -62,9 +62,9 @@ export async function GET(request: NextRequest) {
 // POST — Upload a new Quran Audio entry to Google Drive + save metadata
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const formData = await request.formData();
@@ -192,9 +192,9 @@ export async function POST(request: NextRequest) {
 // DELETE — Remove a Quran Audio entry (optionally delete from Google Drive)
 export async function DELETE(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyToken } from "@/lib/auth";
+import { verifyToken, isAdminRole } from "@/lib/auth";
 import { ensureDatabase } from "@/lib/db-init";
 import { notifyProgramChange } from "@/lib/program-events";
 
@@ -17,8 +17,8 @@ export async function POST(request: NextRequest) {
     }
 
     const user = await verifyToken(token);
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!user || !isAdminRole(user.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const body = await request.json();

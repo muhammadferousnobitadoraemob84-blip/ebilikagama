@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getAdminSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,7 @@ interface CheckResult {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
       return NextResponse.json({ error: "Tidak dibenarkan" }, { status: 401 });
     }

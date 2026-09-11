@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, withRetry } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
+import { getAdminSession } from "@/lib/auth";
 import { notifyChannelChange } from "@/lib/channel-events";
 import { ensureDatabase } from "@/lib/db-init";
 
@@ -71,9 +71,9 @@ export async function GET(request: NextRequest) {
 // POST create new channel (admin only)
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
-      return NextResponse.json({ error: "Tidak dibenarkan" }, { status: 401 });
+      return NextResponse.json({ error: "Tidak dibenarkan" }, { status: 403 });
     }
 
     const body = await request.json();
@@ -112,9 +112,9 @@ export async function POST(request: NextRequest) {
 // PUT update all channels (for reordering)
 export async function PUT(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
-      return NextResponse.json({ error: "Tidak dibenarkan" }, { status: 401 });
+      return NextResponse.json({ error: "Tidak dibenarkan" }, { status: 403 });
     }
 
     const body = await request.json();

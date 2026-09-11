@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getAdminSession } from "@/lib/auth";
 import { prisma, withRetry } from "@/lib/prisma";
 import {
   getValidDriveToken,
@@ -42,9 +42,9 @@ interface BulkFileMetadata {
 // POST — Bulk upload Quran audio files
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const formData = await request.formData();
@@ -259,9 +259,9 @@ export async function POST(request: NextRequest) {
 // DELETE — Bulk delete Quran Audio entries
 export async function DELETE(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const { ids, deleteFromDrive } = await request.json();

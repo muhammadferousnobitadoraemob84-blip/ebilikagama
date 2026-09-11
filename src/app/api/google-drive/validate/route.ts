@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyToken } from "@/lib/auth";
+import { verifyToken, isAdminRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +12,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    try {
-      await verifyToken(token);
-    } catch {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const gdriveSession = await verifyToken(token);
+    if (!gdriveSession || !isAdminRole(gdriveSession.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const { link, fileId } = await request.json();

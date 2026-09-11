@@ -37,6 +37,22 @@ export async function getSession(): Promise<SessionPayload | null> {
   return verifyToken(token);
 }
 
+/** True for admin or owner sessions. */
+export function isAdminRole(role: string | undefined | null): boolean {
+  return role === "admin" || role === "owner";
+}
+
+/**
+ * Server-side admin authorization for API routes.
+ * Returns the session when the caller is an authenticated admin/owner,
+ * otherwise null — respond with 403 when null.
+ */
+export async function getAdminSession(): Promise<SessionPayload | null> {
+  const session = await getSession();
+  if (!session || !isAdminRole(session.role)) return null;
+  return session;
+}
+
 export async function verifyAndLeaveCookie(): Promise<SessionPayload | null> {
   // For server components/pages that need to read the session cookie without
   // writing a new one (Next.js forbidden to read and write in the same request).

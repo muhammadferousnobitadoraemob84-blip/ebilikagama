@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
+import { getAdminSession } from "@/lib/auth";
 import { notifyChannelChange } from "@/lib/channel-events";
 
 export const dynamic = "force-dynamic";
@@ -44,9 +44,9 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
-      return NextResponse.json({ error: "Tidak dibenarkan" }, { status: 401 });
+      return NextResponse.json({ error: "Tidak dibenarkan" }, { status: 403 });
     }
 
     const { id } = await params;
@@ -92,9 +92,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
-      return NextResponse.json({ error: "Tidak dibenarkan" }, { status: 401 });
+      return NextResponse.json({ error: "Tidak dibenarkan" }, { status: 403 });
     }
 
     const { id } = await params;

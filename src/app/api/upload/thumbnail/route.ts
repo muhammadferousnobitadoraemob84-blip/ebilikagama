@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyToken } from "@/lib/auth";
+import { getAdminSession } from "@/lib/auth";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -7,16 +7,10 @@ export const dynamic = "force-dynamic";
 // POST - Upload thumbnail (stores as base64 in response, saved to DB by caller)
 export async function POST(request: NextRequest) {
   try {
-    // Verify admin authentication
-    const token = request.cookies.get("admin-token")?.value;
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    try {
-      await verifyToken(token);
-    } catch {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Verify admin authentication + role (server-side authorization)
+    const session = await getAdminSession();
+    if (!session) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     // Get file from form data

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUrl } from "@/lib/google-drive";
-import { verifyToken } from "@/lib/auth";
+import { verifyToken, isAdminRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -14,9 +14,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL("/admin/login", request.url));
     }
 
-    try {
-      await verifyToken(token);
-    } catch {
+    const gdriveSession = await verifyToken(token);
+    if (!gdriveSession || !isAdminRole(gdriveSession.role)) {
       return NextResponse.redirect(new URL("/admin/login", request.url));
     }
 

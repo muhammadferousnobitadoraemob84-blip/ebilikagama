@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureDatabase } from "@/lib/db-init";
-import { verifyToken } from "@/lib/auth";
+import { verifyToken, isAdminRole } from "@/lib/auth";
 import { getValidYouTubeToken, getYouTubeChannelInfo } from "@/lib/youtube";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +17,8 @@ export async function GET(request: NextRequest) {
     }
 
     const user = await verifyToken(token);
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!user || !isAdminRole(user.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const connectedSetting = await prisma.setting.findUnique({ where: { key: "youtube_connected" } });

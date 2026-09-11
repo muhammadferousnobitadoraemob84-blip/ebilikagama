@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyToken } from "@/lib/auth";
+import { verifyToken, isAdminRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +13,8 @@ export async function POST(request: NextRequest) {
     }
 
     const user = await verifyToken(token);
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!user || !isAdminRole(user.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     // Remove YouTube tokens and connection info

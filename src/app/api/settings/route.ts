@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
+import { getAdminSession } from "@/lib/auth";
 import { ensureDatabase } from "@/lib/db-init";
 
 export const dynamic = "force-dynamic";
@@ -69,9 +69,9 @@ export async function GET() {
 // PUT update settings (admin only)
 export async function PUT(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
-      return NextResponse.json({ error: "Tidak dibenarkan" }, { status: 401 });
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const body = await request.json();

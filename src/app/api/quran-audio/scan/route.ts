@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getAdminSession } from "@/lib/auth";
 import { prisma, withRetry } from "@/lib/prisma";
 import { getValidDriveToken } from "@/lib/google-drive";
 import { parseQuranFilename } from "@/lib/quran-filename-parser";
@@ -98,9 +98,9 @@ function isAudioFile(file: DriveFile): boolean {
 // POST — Scan the selected Google Drive folder and index all audio files
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const body = await request.json().catch(() => ({}));
@@ -313,9 +313,9 @@ export async function POST(request: NextRequest) {
 // GET — Get scan status and stats
 export async function GET() {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const [lastSyncRecord, qariRecord, folderRecord] = await Promise.all([

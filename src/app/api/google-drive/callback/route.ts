@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { verifyToken, isAdminRole } from "@/lib/auth";
 import { exchangeCodeForTokens, verifyGoogleDriveConnection } from "@/lib/google-drive";
 import { exchangeYouTubeCodeForTokens, getYouTubeChannelInfo } from "@/lib/youtube";
 import { prisma } from "@/lib/prisma";
@@ -20,13 +21,26 @@ export async function GET(request: NextRequest) {
 
     // Decode state to determine which flow this is
     let flowType = "drive";
+    let adminToken: string | undefined;
     try {
       if (state) {
         const decoded = JSON.parse(Buffer.from(state, "base64").toString());
         if (decoded.type === "youtube") flowType = "youtube";
+        adminToken = typeof decoded.adminToken === "string" ? decoded.adminToken : undefined;
       }
     } catch {
       // Default to drive flow
+    }
+
+    // SECURITY: only an authenticated admin/owner may complete an OAuth flow.
+    // The state payload embeds the admin session token that started the flow.
+    const adminSession = adminToken ? await verifyToken(adminToken) : null;
+    if (!adminSession || !isAdminRole(adminSession.role)) {
+      const target =
+        flowType === "youtube" ? "/admin/youtube" : "/admin/settings";
+      return NextResponse.redirect(
+        new URL(`${target}?drive=error&message=Administrator authentication required`, request.url)
+      );
     }
 
     // Handle OAuth errors

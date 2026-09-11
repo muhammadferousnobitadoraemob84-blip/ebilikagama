@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getAdminSession } from "@/lib/auth";
 import { prisma, withRetry } from "@/lib/prisma";
 import { getValidDriveToken } from "@/lib/google-drive";
 
@@ -8,9 +8,9 @@ export const dynamic = "force-dynamic";
 // GET — Get the currently configured Quran Audio Google Drive settings
 export async function GET() {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const [folderRecord, emailRecord, connectedRecord, qariRecord, lastSyncRecord] = await Promise.all([
@@ -65,9 +65,9 @@ export async function GET() {
 // POST — Save the Quran Audio configuration (folder + qari) together
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const { folderId, folderName, qari } = await request.json();
@@ -161,9 +161,9 @@ export async function POST(request: NextRequest) {
 // DELETE — Remove the configured folder and qari (disconnect)
 export async function DELETE() {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     await withRetry(() =>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getYouTubeScheduledStreams, refreshYouTubeAccessToken } from "@/lib/youtube";
-import { verifyToken } from "@/lib/auth";
+import { verifyToken, isAdminRole } from "@/lib/auth";
 import { ensureDatabase } from "@/lib/db-init";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +17,8 @@ export async function GET(request: NextRequest) {
     }
 
     const user = await verifyToken(token);
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!user || !isAdminRole(user.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     // Get YouTube tokens

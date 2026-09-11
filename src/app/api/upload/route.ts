@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getAdminSession } from "@/lib/auth";
 import { prisma, withRetry } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -43,10 +43,10 @@ function getImageDimensions(buffer: Buffer): { width: number; height: number } |
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
       console.error("[UPLOAD] No session - unauthorized");
-      return NextResponse.json({ error: "Tidak dibenarkan" }, { status: 401 });
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     console.log("[UPLOAD] Authenticated user:", session.userId);

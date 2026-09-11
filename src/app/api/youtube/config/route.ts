@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getYouTubeRedirectUri } from "@/lib/youtube";
 import { getRedirectUri } from "@/lib/google-drive";
-import { verifyToken } from "@/lib/auth";
+import { verifyToken, isAdminRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +14,8 @@ export async function GET(request: NextRequest) {
     }
 
     const user = await verifyToken(token);
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!user || !isAdminRole(user.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     // Use request.url to derive the redirect URI the same way the auth route does

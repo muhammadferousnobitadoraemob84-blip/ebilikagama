@@ -1,5 +1,23 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { jwtVerify } from "jose";
+
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || "freebuff-stream-secret-key-change-in-production"
+);
+
+/** Edge-safe session verify: returns the role when the JWT is valid. */
+async function getEdgeSessionRole(
+  token: string | undefined
+): Promise<string | null> {
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    return typeof payload.role === "string" ? payload.role : null;
+  } catch {
+    return null;
+  }
+}
 
 // ─── Edge Proxy (Next.js 16): Geoblocking + Authentication Gate ──────
 //
@@ -57,7 +75,7 @@ const GEO_EXEMPT_PREFIXES = [
   "/images",
 ];
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
   // ── Static-ish assets: never blocked ────────────────────────────────
@@ -92,6 +110,27 @@ export function proxy(request: NextRequest) {
   );
 
   const token = request.cookies.get("admin-token")?.value;
+  const role = await getEdgeSessionRole(token);
+
+  // ── /admin pages: full server-side role authorization ───────────────
+  // A normal (non-admin) session must be denied here, before any admin
+  // page content is rendered — not just hidden in the browser.
+  const isAdminPage =
+    (path === "/admin" || path.startsWith("/admin/")) &&
+    path !== "/admin/login";
+  if (isAdminPage) {
+    if (!role) {
+      const loginUrl = new URL("/sign-in", request.url);
+      loginUrl.searchParams.set("redirect", path);
+      return NextResponse.redirect(loginUrl);
+    }
+    if (role !== "admin" && role !== "owner") {
+      // Authenticated normal user: no admin access, send to homepage.
+      return NextResponse.redirect(new URL("/?denied=admin", request.url));
+    }
+    return NextResponse.next();
+  }
+
   if (token) {
     // Session present: role authorization happens server-side per route.
     return NextResponse.next();

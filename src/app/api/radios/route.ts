@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
+import { getSession, getAdminSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 // GET - List radios (public sees only enabled, admin sees all)
 export async function GET(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     const isAdmin = !!session;
 
     const radios = await prisma.radio.findMany({
@@ -39,9 +39,9 @@ export async function GET(request: NextRequest) {
 // POST - Create radio (admin only)
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSession();
+    const session = await getAdminSession();
     if (!session) {
-      return NextResponse.json({ error: "Tidak dibenarkan" }, { status: 401 });
+      return NextResponse.json({ error: "Tidak dibenarkan" }, { status: 403 });
     }
 
     const body = await request.json();
