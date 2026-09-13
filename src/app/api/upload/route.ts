@@ -126,7 +126,14 @@ export async function POST(request: NextRequest) {
       }
 
       console.log("[UPLOAD] Setting saved and verified:", purpose);
-      return NextResponse.json({ url: `/api/images/setting/${purpose}`, saved: true });
+      const sv = await withRetry(() =>
+        prisma.setting.findUnique({
+          where: { key: purpose },
+          select: { updatedAt: true },
+        })
+      );
+      const v = sv ? new Date(sv.updatedAt).getTime() : Date.now();
+      return NextResponse.json({ url: `/api/images/setting/${purpose}?v=${v}`, saved: true });
     }
 
     if (purpose === "channel_thumbnail") {
@@ -173,7 +180,12 @@ export async function POST(request: NextRequest) {
       }
 
       console.log("[UPLOAD] Channel thumbnail saved and verified:", targetId);
-      return NextResponse.json({ url: `/api/images/channel/${targetId}`, saved: true });
+      // Versioned URL — cache-busts any previously cached old thumbnail
+      const ch = await withRetry(() =>
+        prisma.channel.findUnique({ where: { id: targetId }, select: { updatedAt: true } })
+      );
+      const v = ch ? new Date(ch.updatedAt).getTime() : Date.now();
+      return NextResponse.json({ url: `/api/images/channel/${targetId}?v=${v}`, saved: true });
     }
 
     if (purpose === "replay_thumbnail") {
@@ -210,7 +222,7 @@ export async function POST(request: NextRequest) {
       );
 
       const verify = await withRetry(() =>
-        prisma.radio.findUnique({ where: { id: targetId }, select: { thumbnail: true } })
+        prisma.radio.findUnique({ where: { id: targetId }, select: { thumbnail: true, updatedAt: true } })
       );
       if (!verify || !verify.thumbnail || !verify.thumbnail.startsWith("data:")) {
         console.error("[UPLOAD] Radio thumbnail save verification failed for:", targetId);
@@ -221,7 +233,8 @@ export async function POST(request: NextRequest) {
       }
 
       console.log("[UPLOAD] Radio thumbnail saved and verified:", targetId);
-      return NextResponse.json({ url: `/api/images/radio/${targetId}`, saved: true });
+      const v = verify ? new Date(verify.updatedAt).getTime() : Date.now();
+      return NextResponse.json({ url: `/api/images/radio/${targetId}?v=${v}`, saved: true });
     }
 
     if (purpose === "profile_photo") {

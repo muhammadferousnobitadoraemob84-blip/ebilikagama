@@ -22,11 +22,12 @@ export async function GET(
     }
 
     // Replace base64 thumbnail with image URL to keep response small
+    // Versioned with updatedAt so re-uploads get a fresh, cache-busted URL
     const optimized = {
       ...channel,
       thumbnail:
         channel.thumbnail && channel.thumbnail.startsWith("data:")
-          ? `/api/images/channel/${channel.id}`
+          ? `/api/images/channel/${channel.id}?v=${new Date(channel.updatedAt).getTime()}`
           : channel.thumbnail,
     };
     return NextResponse.json(optimized);

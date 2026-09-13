@@ -8,7 +8,7 @@ async function getSettings() {
   try {
     await ensureDatabase();
     const settings = await prisma.setting.findMany({
-      select: { key: true, value: true },
+      select: { key: true, value: true, updatedAt: true },
     });
     const map: Record<string, string> = {};
     settings.forEach((s) => {
@@ -17,7 +17,13 @@ async function getSettings() {
         (s.key === "site_logo" || s.key === "hero_image") &&
         s.value.startsWith("data:")
       ) {
-        map[s.key] = `/api/images/setting/${s.key}`;
+        let v = 0;
+        try {
+          v = s.updatedAt ? new Date(s.updatedAt).getTime() : 0;
+        } catch {
+          v = 0;
+        }
+        map[s.key] = `/api/images/setting/${s.key}?v=${v}`;
       } else {
         map[s.key] = s.value;
       }
@@ -49,6 +55,7 @@ async function getChannels() {
         description: true,
         liveStatus: true,
         displayOrder: true,
+        updatedAt: true,
       },
     });
     // Replace base64 thumbnails with lightweight image URLs
@@ -59,7 +66,7 @@ async function getChannels() {
       twitchUsername: c.twitchUsername,
       thumbnail:
         c.thumbnail && c.thumbnail.startsWith("data:")
-          ? `/api/images/channel/${c.id}`
+          ? `/api/images/channel/${c.id}?v=${new Date(c.updatedAt).getTime()}`
           : c.thumbnail,
       description: c.description,
       liveStatus: c.liveStatus,

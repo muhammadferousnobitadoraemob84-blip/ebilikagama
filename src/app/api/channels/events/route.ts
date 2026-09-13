@@ -24,7 +24,7 @@ export async function GET() {
               ...ch,
               thumbnail:
                 ch.thumbnail && ch.thumbnail.startsWith("data:")
-                  ? `/api/images/channel/${ch.id}`
+                  ? `/api/images/channel/${ch.id}?v=${new Date(ch.updatedAt).getTime()}`
                   : ch.thumbnail,
             }));
             const data = `data: ${JSON.stringify(optimized)}\n\n`;

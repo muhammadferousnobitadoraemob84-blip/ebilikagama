@@ -23,6 +23,13 @@ interface StagedRow {
   password: string;
 }
 
+interface ImportRow {
+  raw: string[]; // original cells (mapping mode)
+  fullName: string;
+  username: string;
+  password: string;
+}
+
 interface PreviewRow {
   fullName: string;
   username: string;
@@ -103,6 +110,17 @@ export default function UserManagementPage() {
     failedCount: number;
     results: { fullName: string; username: string; status: string; reason?: string }[];
   } | null>(null);
+
+  // XLSX/DOCX import
+  const [importing, setImporting] = useState(false);
+  const [importNeedsMapping, setImportNeedsMapping] = useState(false);
+  const [importRows, setImportRows] = useState<ImportRow[]>([]);
+  const [importHeaders, setImportHeaders] = useState<string[]>([]);
+  const [importMapping, setImportMapping] = useState<{ fullName: number | null; username: number | null; password: number | null }>({
+    fullName: null,
+    username: null,
+    password: null,
+  });
 
   // Edit modal
   const [editModal, setEditModal] = useState<UserRow | null>(null);
@@ -262,6 +280,68 @@ export default function UserManagementPage() {
       e.target.value = "";
     };
     reader.readAsText(file);
+  };
+
+  // ── XLSX / DOCX import: parse server-side, then stage rows ──
+  const handleDocImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCsvError("");
+    setImportNeedsMapping(false);
+    setImportRows([]);
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // CSV keeps the lightweight client-side path
+    if (file.name.toLowerCase().endsWith(".csv")) {
+      handleCsvImport(e);
+      return;
+    }
+
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/users/import/parse", {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCsvError(data.error || "Failed to parse the file.");
+        return;
+      }
+      if (!data.rows || data.rows.length === 0) {
+        setCsvError("No user rows found in the file.");
+        return;
+      }
+      setImportHeaders(data.headers || []);
+      if (data.needsMapping) {
+        // Show the column-mapping step before staging
+        setImportNeedsMapping(true);
+        setImportRows(data.rows.map((r: { raw: string[] }) => ({ ...r, fullName: "", username: "", password: "" })));
+        setImportMapping(data.mapping || { fullName: null, username: null, password: null });
+      } else {
+        stageImportRows(data.rows, data.mapping);
+      }
+    } catch {
+      setCsvError("Failed to upload the file for parsing.");
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
+  };
+
+  const stageImportRows = (
+    rows: { fullName?: string; username?: string; password?: string; raw?: string[] }[],
+    mapping?: { fullName: number | null; username: number | null; password: number | null }
+  ) => {
+    const staged: StagedRow[] = rows.map((r) => {
+      const fullName = (r.fullName ?? (mapping && mapping.fullName !== null && r.raw ? r.raw[mapping.fullName] : "") ?? "").trim();
+      const username = (r.username ?? (mapping && mapping.username !== null && r.raw ? r.raw[mapping.username] : "") ?? "").trim();
+      const password = (r.password ?? (mapping && mapping.password !== null && r.raw ? r.raw[mapping.password] : "") ?? "").trim();
+      return { fullName, username, password };
+    });
+    setBulkRows(staged);
+    setImportNeedsMapping(false);
   };
 
   // ── Bulk: validate preview ──
@@ -607,21 +687,99 @@ export default function UserManagementPage() {
             <div>
               <h2 className="text-white font-semibold text-lg">Tambah Pengguna Secara Pukal</h2>
               <p className="text-gray-400 text-sm mt-1">
-                Masukkan barisan atau import fail CSV (format: fullName,username,password)
+                Masukkan barisan atau import fail CSV / XLSX / DOCX (kolum: Full Name, Username, Password)
               </p>
             </div>
-            <label className="admin-btn admin-btn-secondary cursor-pointer flex items-center gap-2">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              Import CSV
-              <input type="file" accept=".csv,text/csv" onChange={handleCsvImport} className="hidden" />
-            </label>
+            <div className="flex flex-wrap gap-2">
+              <label className="admin-btn admin-btn-secondary cursor-pointer flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                {importing ? "Parsing…" : "Import File (CSV / XLSX / DOCX)"}
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.docx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={handleDocImport}
+                  className="hidden"
+                  disabled={importing}
+                />
+              </label>
+            </div>
           </div>
 
           {csvError && (
             <div className="bg-red-600/10 border border-red-600/30 text-red-400 px-4 py-3 rounded-xl text-sm mb-4">
               {csvError}
+            </div>
+          )}
+
+          {/* XLSX/DOCX column-mapping step */}
+          {importNeedsMapping && (
+            <div className="bg-blue-600/10 border border-blue-600/30 rounded-xl p-4 mb-4">
+              <h3 className="text-white font-semibold mb-1">Could not identify the columns automatically</h3>
+              <p className="text-gray-400 text-sm mb-3">
+                Map the file columns to the user fields, then click Apply.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                {(["fullName", "username", "password"] as const).map((field) => (
+                  <div key={field}>
+                    <label className="block text-gray-300 text-xs font-medium mb-1 capitalize">
+                      {field === "fullName" ? "Full Name" : field}
+                    </label>
+                    <select
+                      className="admin-input"
+                      value={importMapping[field] ?? ""}
+                      onChange={(e) =>
+                        setImportMapping((m) => ({
+                          ...m,
+                          [field]: e.target.value === "" ? null : parseInt(e.target.value, 10),
+                        }))
+                      }
+                    >
+                      <option value="">— none —</option>
+                      {importHeaders.map((h, i) => (
+                        <option key={i} value={i}>
+                          {h.trim() || `Column ${i + 1}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              {/* First rows preview for mapping context */}
+              <div className="overflow-x-auto mb-3 max-h-40">
+                <table className="w-full text-xs">
+                  <tbody>
+                    {importRows.slice(0, 5).map((r, ri) => (
+                      <tr key={ri} className="border-b border-white/5">
+                        {r.raw.map((cell, ci) => (
+                          <td key={ci} className="py-1 px-2 text-gray-400 whitespace-nowrap">
+                            {cell}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => stageImportRows(importRows, importMapping)}
+                  disabled={importMapping.fullName === null || importMapping.username === null}
+                  className="admin-btn admin-btn-primary text-sm disabled:opacity-50"
+                >
+                  Apply Mapping & Continue
+                </button>
+                <button
+                  onClick={() => {
+                    setImportNeedsMapping(false);
+                    setImportRows([]);
+                  }}
+                  className="admin-btn admin-btn-secondary text-sm"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           )}
 

@@ -197,6 +197,15 @@ async function runMigrations() {
     // Column might already exist
   }
 
+  // Add updatedAt to Setting table if missing (used for image cache-busting)
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "Setting" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+    `);
+  } catch {
+    // Column might already exist
+  }
+
   // Check if Subscriber table has the correct schema
   // If it has 'email' column instead of 'anonymousId', drop and recreate
   try {

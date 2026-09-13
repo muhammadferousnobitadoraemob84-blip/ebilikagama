@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
         ...p,
         thumbnail:
           p.thumbnail && p.thumbnail.startsWith("data:")
-            ? `/api/images/program/${p.id}`
+            ? `/api/images/program/${p.id}?v=${new Date(p.updatedAt).getTime()}`
             : p.thumbnail,
       }));
       return NextResponse.json(optimized);

@@ -24,7 +24,7 @@ export async function GET(
       ...radio,
       thumbnail:
         radio.thumbnail && radio.thumbnail.startsWith("data:")
-          ? `/api/images/radio/${radio.id}`
+          ? `/api/images/radio/${radio.id}?v=${new Date(radio.updatedAt).getTime()}`
           : radio.thumbnail,
     };
 

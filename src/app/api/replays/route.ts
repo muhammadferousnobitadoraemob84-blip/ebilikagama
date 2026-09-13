@@ -26,7 +26,16 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.json(replays);
+    // Version replay thumbnails with updatedAt so re-uploads bust browser/CDN cache
+    const optimized = replays.map((r) => ({
+      ...r,
+      thumbnail:
+        r.thumbnail && r.thumbnail.startsWith("data:")
+          ? `/api/images/replay/${r.id}?v=${new Date(r.updatedAt).getTime()}`
+          : r.thumbnail,
+    }));
+
+    return NextResponse.json(optimized);
   } catch (error) {
     console.error("[REPLAYS] Error:", error);
     return NextResponse.json(

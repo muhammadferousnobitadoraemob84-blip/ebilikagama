@@ -7,9 +7,23 @@ import { ensureDatabase } from "@/lib/db-init";
 export const dynamic = "force-dynamic";
 
 // Helper: convert base64 data URI to an API image URL
-function toImageUrl(base64Data: string | null, type: string, id: string): string | null {
+// The URL is versioned with the record's updatedAt so that a newly uploaded
+// thumbnail gets a fresh URL — browsers/CDNs then treat it as a new resource
+// instead of serving the stale cached old image.
+function toImageUrl(
+  base64Data: string | null,
+  type: string,
+  id: string,
+  updatedAt?: Date | string
+): string | null {
   if (!base64Data || !base64Data.startsWith("data:")) return null;
-  return `/api/images/${type}/${id}`;
+  let v = 0;
+  try {
+    v = updatedAt ? new Date(updatedAt).getTime() : 0;
+  } catch {
+    v = 0;
+  }
+  return `/api/images/${type}/${id}?v=${v}`;
 }
 
 // GET all channels (public — only active)
@@ -53,7 +67,7 @@ export async function GET(request: NextRequest) {
     if (raw !== "true") {
       const optimized = channels.map((ch) => ({
         ...ch,
-        thumbnail: toImageUrl(ch.thumbnail, "channel", ch.id),
+        thumbnail: toImageUrl(ch.thumbnail, "channel", ch.id, ch.updatedAt),
       }));
       return NextResponse.json(optimized);
     }

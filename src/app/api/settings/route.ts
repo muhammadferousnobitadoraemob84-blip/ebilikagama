@@ -23,13 +23,20 @@ export async function GET() {
   try {
     await ensureDatabase();
     const settings = await prisma.setting.findMany({
-      select: { key: true, value: true },
+      select: { key: true, value: true, updatedAt: true },
     });
     const settingsMap: Record<string, string> = {};
     settings.forEach((s) => {
       // Replace base64 image data with API URLs to avoid huge responses
+      // Versioned with updatedAt so a re-uploaded logo/hero gets a fresh URL
       if (IMAGE_KEYS.has(s.key) && s.value.startsWith("data:")) {
-        settingsMap[s.key] = `/api/images/setting/${s.key}`;
+        let v = 0;
+        try {
+          v = s.updatedAt ? new Date(s.updatedAt).getTime() : 0;
+        } catch {
+          v = 0;
+        }
+        settingsMap[s.key] = `/api/images/setting/${s.key}?v=${v}`;
       } else {
         settingsMap[s.key] = s.value;
       }
