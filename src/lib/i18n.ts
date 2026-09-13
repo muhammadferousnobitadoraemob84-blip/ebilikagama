@@ -442,6 +442,8 @@ const translations = {
     um_import_err_norows: "No user rows found in the file.",
     um_import_err_notable:
       "File detected, but no valid user table was found. Expected columns: Full Name, Username, Password.",
+    um_import_err_nodata:
+      "File contains rows, but no readable user data was found.",
     um_import_success: "{n} users staged for import.",
     um_import_err_upload: "Failed to upload the file for parsing.",
     um_edit_title: "Edit User",
@@ -884,6 +886,8 @@ const translations = {
     um_import_err_norows: "Tiada baris pengguna dijumpai dalam fail.",
     um_import_err_notable:
       "Fail dikesan, tetapi tiada jadual pengguna yang sah dijumpai. Kolum yang dijangka: Nama Penuh, Nama Pengguna, Kata Laluan.",
+    um_import_err_nodata:
+      "Fail mengandungi baris, tetapi tiada data pengguna yang boleh dibaca dijumpai.",
     um_import_success: "{n} pengguna telah dimasukkan untuk diimport.",
     um_import_err_upload: "Gagal memuat naik fail untuk diproses.",
     um_edit_title: "Sunting Pengguna",
@@ -1325,6 +1329,8 @@ const translations = {
     um_import_err_norows: "文件中未找到用户数据行。",
     um_import_err_notable:
       "已检测到文件，但未找到有效的用户表格。预期的列：全名、用户名、密码。",
+    um_import_err_nodata:
+      "文件包含数据行，但未找到可读取的用户数据。",
     um_import_success: "已载入 {n} 个用户待导入。",
     um_import_err_upload: "上传文件解析失败。",
     um_edit_title: "编辑用户",

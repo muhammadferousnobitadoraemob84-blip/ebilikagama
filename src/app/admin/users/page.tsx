@@ -449,8 +449,15 @@ export default function UserManagementPage() {
           })
         );
       }
-      if (rows.length === 0) {
-        setCsvError(um("um_import_err_notable"));
+      // Guard against the "N rows detected but all values empty" failure
+      // mode: a row is only usable when its values were actually extracted.
+      const meaningful = rows.filter((r) => r.fullName && r.username);
+      const withPassword = meaningful.filter((r) => r.password.length > 0).length;
+      console.log(
+        `[UserImport] "${file.name}": rows=${rows.length} meaningful=${meaningful.length} withPassword=${withPassword}`
+      );
+      if (rows.length === 0 || meaningful.length === 0) {
+        setCsvError(um("um_import_err_nodata"));
         return;
       }
       stageImportRows(rows);

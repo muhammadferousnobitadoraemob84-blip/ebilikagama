@@ -97,7 +97,46 @@ function decodeXmlEntities(s: string): string {
 }
 
 function stripTags(xml: string): string {
-  return decodeXmlEntities(xml.replace(/<[^>]*>/g, ""));
+  return decodeXmlEntities(
+    xml.replace(/<\/?[A-Za-z][^\s>\/]*(?:\s[^<>]*)?>/g, "")
+  );
+}
+
+/**
+ * Regex source for a tag name tolerating an XML namespace prefix, so
+ * generators that emit <x:row>/<x:c> instead of <row>/<c> still parse.
+ */
+function tagRegexSource(name: string): string {
+  return `[A-Za-z][A-Za-z0-9]*:${name}|${name}`;
+}
+
+/** Split an XML string into top-level <name>...</name> blocks (any prefix). */
+function splitElements(xml: string, name: string): string[] {
+  const src = tagRegexSource(name);
+  const blocks: string[] = [];
+  const stack: number[] = []; // start offsets of unclosed open tags
+  const tokenRe = new RegExp(
+    `<(${src})\\b([^>]*)>|<\\/(${src})\\s*>`,
+    "g"
+  );
+  let m: RegExpExecArray | null;
+  while ((m = tokenRe.exec(xml)) !== null) {
+    if (m[1]) {
+      // open tag (self-closing tags have no content: emit immediately)
+      if (m[2].endsWith(String.fromCharCode(47))) {
+        if (stack.length === 0) blocks.push(m[0]);
+      } else {
+        stack.push(m.index);
+      }
+    } else if (m[3]) {
+      // close tag
+      const start = stack.pop();
+      if (start !== undefined && stack.length === 0) {
+        blocks.push(xml.slice(start, m.index + m[0].length));
+      }
+    }
+  }
+  return blocks;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -198,7 +237,9 @@ function analyzeRows(rows: string[][], hasHeaderHint = true): TableAnalysis {
   let mapping: ColumnMapping = { fullName: null, username: null, password: null };
 
   if (hasHeaderHint) {
-    const scanLimit = Math.min(nonEmpty.length, 8);
+    // Real-world files often carry title rows, export metadata, or blank
+    // rows before the header, so scan a generous prefix of the sheet.
+    const scanLimit = Math.min(nonEmpty.length, 30);
     let bestHits = 0;
     for (let i = 0; i < scanLimit; i++) {
       const m = detectMapping(nonEmpty[i]);
@@ -264,19 +305,20 @@ function buildParsedTable(
 function parseSharedStrings(xml: string | undefined): string[] {
   if (!xml) return [];
   const strings: string[] = [];
-  const siRegex = /<si(?:\s[^>]*)?>([\s\S]*?)<\/si>|<si\/>/g;
-  let m: RegExpExecArray | null;
-  while ((m = siRegex.exec(xml)) !== null) {
-    if (!m[1]) {
-      strings.push("");
-      continue;
-    }
-    // Concatenate all <t> runs (rich text)
+  // Namespace-prefix tolerant + case-insensitive: some producers emit
+  // lowercase <si>/<t> tags or prefixed tags inside the SST part.
+  const siBlocks = splitElements(xml, "si");
+  for (const block of siBlocks) {
     const texts: string[] = [];
-    const tRegex = /<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g;
+    const tRegex = /<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/gi;
     let t: RegExpExecArray | null;
-    while ((t = tRegex.exec(m[1])) !== null) {
+    while ((t = tRegex.exec(block)) !== null) {
       texts.push(decodeXmlEntities(t[1]));
+    }
+    if (texts.length === 0) {
+      // Fallback: strip every tag from the block (handles unusual nesting)
+      const stripped = stripTags(block.replace(/^<si\b[^>]*>/i, "").replace(/<\/si>$/i, ""));
+      texts.push(stripped);
     }
     strings.push(texts.join(""));
   }
@@ -296,25 +338,35 @@ function colIndexFromRef(ref: string | undefined): number | null {
 }
 
 /**
- * Parse one worksheet's XML into a string matrix. Reads actual <row>/<c>
- * elements — never the <dimension> metadata — and handles shared strings,
- * inline strings, cached formula results and numbers. Cells are placed by
- * their r="B3" reference when present so omitted empty cells don't shift
- * columns.
+ * Parse one worksheet's XML into a string matrix. Reads the actual
+ * <row>/<c> elements — never the <dimension> metadata — and handles all
+ * common cell value shapes:
+ *
+ *  - t="s"  shared string (index resolved through sharedStrings.xml)
+ *  - t="inlineStr" / <is><t>…  inline strings
+ *  - t="str"  cached formula result
+ *  - t="n" / no type  numbers
+ *  - t="b"  booleans, t="e" errors (textual)
+ *  - cells with no <v> at all (e.g. style-only) → empty
+ *
+ * Namespace prefixes are tolerated (<x:row>, <x:c>, <x:v>, <x:is>) because
+ * some generators emit prefixed tags. Cells are placed by their r="B3"
+ * reference when present so omitted empty cells never shift columns.
  */
 function parseXlsxSheet(sheetXml: string, sharedStrings: string[]): string[][] {
   const rows: string[][] = [];
-  const rowRegex = /<row\b[^>]*?>([\s\S]*?)<\/row>|<row\b[^>]*?\/>/g;
-  let rowMatch: RegExpExecArray | null;
-  while ((rowMatch = rowRegex.exec(sheetXml)) !== null) {
-    const rowXml = rowMatch[0];
+  const rowBlocks = splitElements(sheetXml, "row");
+  for (const rowXml of rowBlocks) {
     const cells: string[] = [];
     let nextFree = 0;
-    const cellRegex = /<c\b([^>]*?)\/>|<c\b([^>]*?)>([\s\S]*?)<\/c>/g;
+    const cellRegex = new RegExp(
+      `<(${tagRegexSource("c")})\\b([^>]*)>([\\s\\S]*?)<\\/\\1>|<(${tagRegexSource("c")})\\b([^>]*)\\/>`,
+      "g"
+    );
     let cellMatch: RegExpExecArray | null;
     while ((cellMatch = cellRegex.exec(rowXml)) !== null) {
-      const attrs = cellMatch[1] || cellMatch[2] || "";
-      const inner = cellMatch[3] || "";
+      const attrs = cellMatch[2] ?? cellMatch[5] ?? "";
+      const inner = cellMatch[3] ?? "";
 
       // Place by r reference, else sequentially
       const refMatch = attrs.match(/\br="([A-Za-z]+\d+)"/);
@@ -322,19 +374,40 @@ function parseXlsxSheet(sheetXml: string, sharedStrings: string[]): string[][] {
       const idx = col !== null ? col : nextFree;
       while (cells.length <= idx) cells.push("");
 
-      const typeMatch = attrs.match(/t="([^"]+)"/);
-      const type = typeMatch ? typeMatch[1] : "n";
+      const typeMatch = attrs.match(/\bt="([^"]+)"/);
+      const type = typeMatch ? typeMatch[1].toLowerCase() : "n";
+
+      // The first <v>…</v> (any prefix); the shared-string index for
+      // t="s" and the value for numeric/formula cells live here.
+      const vRegex = /<(?:[A-Za-z][A-Za-z0-9]*:)?v\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z][A-Za-z0-9]*:)?v>/;
+      const vMatch = inner.match(vRegex);
+      const rawV = vMatch ? vMatch[1] : null;
 
       let text = "";
       if (type === "s") {
-        const vMatch = inner.match(/<v>([\s\S]*?)<\/v>/);
-        if (vMatch) text = sharedStrings[parseInt(vMatch[1], 10)] ?? "";
-      } else if (type === "inlineStr" || /<is[\s>]/.test(inner)) {
+        // Resolve the shared-string index to the actual text. Never return
+        // the raw index — an unresolved index means the SST lookup failed,
+        // not that the cell is empty.
+        if (rawV !== null) {
+          const idxNum = parseInt(rawV.trim(), 10);
+          if (!Number.isNaN(idxNum) && sharedStrings[idxNum] !== undefined) {
+            text = sharedStrings[idxNum];
+          } else if (!Number.isNaN(idxNum) && sharedStrings.length === 0) {
+            // No SST part found: fall back to stripping tags from the cell
+            // (may recover plain inline content in malformed files).
+            text = stripTags(inner);
+          }
+        }
+      } else if (type === "str" || type === "e") {
+        // cached formula result / error: value is inline text or <v>
+        text = rawV !== null ? decodeXmlEntities(rawV) : stripTags(inner);
+      } else if (type === "b") {
+        text = rawV === "1" ? "TRUE" : rawV === "0" ? "FALSE" : rawV ?? "";
+      } else if (type === "inlineStr" || /<(?:[A-Za-z][A-Za-z0-9]*:)?is[\s>]/.test(inner)) {
         text = stripTags(inner);
       } else {
-        // "n" number, "str" cached formula string, "b" boolean, "e" error
-        const vMatch = inner.match(/<v>([\s\S]*?)<\/v>/);
-        text = vMatch ? decodeXmlEntities(vMatch[1]) : "";
+        // "n" (numbers) and any unknown type: use <v> when present
+        text = rawV !== null ? decodeXmlEntities(rawV) : "";
       }
 
       cells[idx] = text.trim();
@@ -423,6 +496,19 @@ function parseXlsx(buf: Buffer): ParsedTable {
   if (!best) {
     throw new Error(
       "The XLSX workbook contains no readable data rows in any worksheet."
+    );
+  }
+
+  // Diagnostic: if rows were found but every mapped value is empty, the
+  // cell-value extraction failed (e.g. unresolved shared strings) — surface
+  // this loudly in the server log so it is never mistaken for real data.
+  const totalCells = best.rows.reduce((n, r) => n + r.filter((c) => c.length > 0).length, 0);
+  if (best.rows.length > 0 && totalCells === 0) {
+    console.error(
+      `[doc-import] Sheet "${best.sheet.name}" returned ${best.rows.length} rows but ZERO non-empty cell values — ` +
+        `sharedStrings parsed: ${sharedStrings.length}, first row XML sample: ${(
+          entries.get(best.sheet.path)?.toString("utf8").slice(0, 600) ?? ""
+        ).replace(/\s+/g, " ")}`
     );
   }
 

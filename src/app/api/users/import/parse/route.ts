@@ -47,6 +47,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: msg }, { status: 400 });
     }
 
+    // Dev-mode diagnostic: what the parser found, so empty-extraction bugs
+    // are visible in the server logs instead of surfacing as "—" rows.
+    const first = parsed.rows[0];
+    console.log(
+      `[UserImport-PARSE] "${file.name}" sheets=${JSON.stringify(parsed.debug?.sheets)} selected="${parsed.debug?.selected}" headers=${JSON.stringify(parsed.headers.slice(0, 6))} parsedRows=${parsed.rows.length} needsMapping=${parsed.needsMapping}`
+    );
+    if (first) {
+      console.log(
+        `[UserImport-PARSE] firstRow: fullName=${JSON.stringify(first.fullName)} username=${JSON.stringify(first.username)} password=${first.password ? "[exists]" : "[empty]"}`
+      );
+    }
+
     // Drop any raw cell payloads from the response (row.raw is not serialized
     // unless mapping is needed; passwords stay in the row objects for the
     // confirm step, exactly like the existing CSV staging flow).
