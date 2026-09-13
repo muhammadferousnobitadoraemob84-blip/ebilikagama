@@ -473,6 +473,14 @@ export default function UserManagementPage() {
         setCsvError(um("um_import_err_nopassword"));
         return;
       }
+      // Consistency check (dev diagnostic): the number reported to the admin
+      // must equal the number staged for preview AND import — one dataset,
+      // never a truncated copy.
+      if (process.env.NODE_ENV === "development") {
+        console.log(
+          `[UserImport] consistency: parsed=${rows.length} normalized=${rows.length} preview=${rows.length} valid=${valid.length} (preview === staged === imported array)`
+        );
+      }
       stageImportRows(rows);
     } catch {
       setCsvError(um("um_import_err_upload"));
@@ -844,13 +852,18 @@ export default function UserManagementPage() {
             </div>
           )}
 
-          {/* Step 2: valid rows detected → confirm import */}
+          {/* Step 2: rows detected → confirm import */}
           {fileStaged && (
             <div>
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-blue-600/10 border border-blue-600/30 rounded-xl px-4 py-3 mb-4">
-                <p className="text-white font-semibold text-sm tracking-wide">
-                  {fmt("um_import_valid", validStagedCount)}
-                </p>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-blue-600/10 border border-blue-600/30 rounded-xl px-4 py-3 mb-2">
+                <div>
+                  <p className="text-white font-semibold text-sm tracking-wide">
+                    {fmt("um_import_total", bulkRows.length)}
+                  </p>
+                  <p className="text-gray-400 text-xs mt-0.5">
+                    {um("um_import_valid_prefix")} {validStagedCount} · {um("um_import_invalid_prefix")} {bulkRows.length - validStagedCount}
+                  </p>
+                </div>
                 <div className="flex gap-2">
                   <button
                     onClick={resetImportState}
@@ -861,7 +874,7 @@ export default function UserManagementPage() {
                   </button>
                   <button
                     onClick={handleBulkCreate}
-                    disabled={bulkCreating || validStagedCount === 0}
+                    disabled={bulkCreating || bulkRows.length === 0 || validStagedCount === 0}
                     className="admin-btn admin-btn-primary text-sm disabled:opacity-50 flex items-center gap-2"
                   >
                     {bulkCreating ? (
@@ -870,13 +883,18 @@ export default function UserManagementPage() {
                         {um("um_import_reading")}
                       </>
                     ) : (
-                      fmt("um_import_go", validStagedCount)
+                      fmt("um_import_go", bulkRows.length)
                     )}
                   </button>
                 </div>
               </div>
-              {/* Read-only preview: passwords masked unless revealed */}
-              <div className="flex justify-end mb-2">
+              {/* Read-only preview: passwords masked unless revealed.
+                  Renders EVERY staged row — no slicing/pagination — inside
+                  a scrollable container (max-height + overflow-y-auto). */}
+              <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+                <p className="text-gray-500 text-xs">
+                  {um("um_import_showing_prefix")} {bulkRows.length} {um("um_import_showing_of")} {bulkRows.length} {um("um_import_showing_users")}
+                </p>
                 <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -887,31 +905,46 @@ export default function UserManagementPage() {
                   {um("um_import_show_passwords")}
                 </label>
               </div>
-              <div className="overflow-x-auto mb-4 max-h-64 overflow-y-auto border border-white/10 rounded-xl">
+              <div className="overflow-x-auto mb-4 max-h-[500px] overflow-y-auto border border-white/10 rounded-xl">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0">
                     <tr className="bg-gray-800 border-b border-white/10 text-left text-gray-400 text-xs uppercase">
                       <th className="py-2 px-3">{um("um_label_full_name")}</th>
                       <th className="py-2 px-3">{um("um_th_username")}</th>
                       <th className="py-2 px-3">{um("um_label_password")}</th>
+                      <th className="py-2 px-3">{um("um_import_th_status")}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {bulkRows.slice(0, 100).map((row, idx) => (
-                      <tr key={idx} className={`border-b border-white/5 ${!(row.fullName && row.username && row.password) ? "opacity-50" : ""}`}>
-                        <td className="py-1.5 px-3 text-gray-200 truncate max-w-[240px]">{row.fullName || "—"}</td>
-                        <td className="py-1.5 px-3 text-gray-400 truncate max-w-[240px]">{row.username || "—"}</td>
-                        <td className="py-1.5 px-3 font-mono">
-                          {row.password ? (
-                            <span className={showPasswords ? "text-gray-300 break-all" : "text-gray-500"}>
-                              {showPasswords ? row.password : "••••••••••••"}
-                            </span>
-                          ) : (
-                            <span className="text-red-400 text-xs">{um("um_import_missing")}</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                    {bulkRows.map((row, idx) => {
+                      const missing: string[] = [];
+                      if (!row.fullName) missing.push(um("um_label_full_name"));
+                      if (!row.username) missing.push(um("um_th_username"));
+                      if (!row.password) missing.push(um("um_label_password"));
+                      const ok = missing.length === 0;
+                      return (
+                        <tr key={idx} className={`border-b border-white/5 ${ok ? "" : "opacity-60"}`}>
+                          <td className="py-1.5 px-3 text-gray-200 truncate max-w-[220px]">{row.fullName || "—"}</td>
+                          <td className="py-1.5 px-3 text-gray-400 truncate max-w-[220px]">{row.username || "—"}</td>
+                          <td className="py-1.5 px-3 font-mono">
+                            {row.password ? (
+                              <span className={showPasswords ? "text-gray-300 break-all" : "text-gray-500"}>
+                                {showPasswords ? row.password : "••••••••••••"}
+                              </span>
+                            ) : (
+                              <span className="text-red-400 text-xs">{um("um_import_missing")}</span>
+                            )}
+                          </td>
+                          <td className="py-1.5 px-3 text-xs whitespace-nowrap">
+                            {ok ? (
+                              <span className="text-green-400">{um("um_import_row_ready")}</span>
+                            ) : (
+                              <span className="text-red-400">{um("um_import_missing")}: {missing.join(", ")}</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
