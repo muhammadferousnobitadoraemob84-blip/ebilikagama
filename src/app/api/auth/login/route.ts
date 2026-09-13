@@ -23,8 +23,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const dbReady = await ensureDatabase();
+    // DB gate with a hard cap: if the (memoized) init/migrations stall, the
+    // request fails visibly instead of hanging. Init continues in the
+    // background so the next attempt is warm.
+    let dbReady = false;
+    try {
+      dbReady = await Promise.race([
+        ensureDatabase(),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000)),
+      ]);
+    } catch {
+      dbReady = false;
+    }
     if (!dbReady) {
+      console.error(`[LOGIN] DB init not ready after 5s cap (total ${Date.now() - t0}ms)`);
       if (!process.env.DATABASE_URL) {
         return NextResponse.json(
           { error: "DATABASE_URL belum disediakan. Sila tambah DATABASE_URL di Vercel → Settings → Environment Variables." },
@@ -32,8 +44,8 @@ export async function POST(request: NextRequest) {
         );
       }
       return NextResponse.json(
-        { error: "Pangkalan data tidak tersedia. Sila hubungi pentadbir." },
-        { status: 500 }
+        { error: "Perkhidmatan pengesahan tidak tersedia buat sementara. Sila cuba lagi sebentar." },
+        { status: 503 }
       );
     }
 

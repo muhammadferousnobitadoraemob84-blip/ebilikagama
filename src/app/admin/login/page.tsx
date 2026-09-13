@@ -6,7 +6,7 @@ import { useLanguage } from "@/components/LanguageProvider";
 
 // Login must fail visibly instead of spinning forever if the backend or
 // network hangs (cold serverless start, DB stall, lost connection).
-const LOGIN_TIMEOUT_MS = 10_000;
+const LOGIN_TIMEOUT_MS = 15_000;
 
 export default function AdminLogin() {
   const router = useRouter();

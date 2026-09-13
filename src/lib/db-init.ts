@@ -1,15 +1,52 @@
 import { prisma, withRetry } from "@/lib/prisma";
 
 let _initialized = false;
+let _initPromise: Promise<boolean> | null = null;
+
+// Bump when runMigrations() changes so cold instances re-apply migrations
+// exactly once, then skip them entirely (17+ DDL round-trips otherwise).
+const SCHEMA_VERSION = "3";
+
+async function getSchemaVersion(): Promise<string | null> {
+  try {
+    const rows = await prisma.$queryRaw<{ value: string }[]>`SELECT value FROM "Setting" WHERE key = 'db_schema_version' LIMIT 1`;
+    return rows && rows[0] ? String(rows[0].value) : null;
+  } catch {
+    return null; // table may not exist yet
+  }
+}
+
+async function setSchemaVersion(): Promise<void> {
+  try {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "Setting" ("id", "key", "value", "updatedAt") VALUES ($1, 'db_schema_version', $2, CURRENT_TIMESTAMP) ON CONFLICT ("key") DO UPDATE SET "value" = $2, "updatedAt" = CURRENT_TIMESTAMP`,
+      `setting-schema-version`,
+      SCHEMA_VERSION
+    );
+  } catch (e) {
+    console.warn("[DB-INIT] Could not persist schema version:", e instanceof Error ? e.message : e);
+  }
+}
 
 /**
- * Ensures the database tables exist.
- * Uses raw SQL to create tables (works on Vercel where child_process doesn't).
+ * Ensures the database tables exist. Promise-memoized: concurrent callers
+ * share ONE init run instead of each re-running the migration suite in
+ * parallel (which made cold-start login appear to hang).
  * Idempotent — safe to call multiple times.
  */
-export async function ensureDatabase(): Promise<boolean> {
-  if (_initialized) return true;
+export function ensureDatabase(): Promise<boolean> {
+  if (_initialized) return Promise.resolve(true);
+  if (!_initPromise) {
+    _initPromise = initDatabase().catch((err) => {
+      // Allow the next request to retry a failed init
+      _initPromise = null;
+      throw err;
+    });
+  }
+  return _initPromise;
+}
 
+async function initDatabase(): Promise<boolean> {
   // Check if DATABASE_URL is set
   if (!process.env.DATABASE_URL) {
     console.error("[DB-INIT] DATABASE_URL is not set.");
@@ -18,10 +55,22 @@ export async function ensureDatabase(): Promise<boolean> {
 
   // Step 1: Check if tables already exist (with retry)
   try {
+    const t0 = Date.now();
     console.log("[DB-INIT] Checking database connection...");
     await withRetry(() => prisma.user.findFirst());
+    console.log(`[DB-INIT] Connection ok in ${Date.now() - t0}ms.`);
+
+    // Fast path: tables exist AND schema version matches → skip migrations.
+    const version = await getSchemaVersion();
+    if (version === SCHEMA_VERSION) {
+      _initialized = true;
+      console.log("[DB-INIT] Schema up-to-date (v" + SCHEMA_VERSION + "), migrations skipped.");
+      return true;
+    }
+
     console.log("[DB-INIT] Tables exist, running migrations...");
     await runMigrations();
+    await setSchemaVersion();
     _initialized = true;
     console.log("[DB-INIT] Database ready.");
     return true;
@@ -34,6 +83,7 @@ export async function ensureDatabase(): Promise<boolean> {
       console.log("[DB-INIT] Attempting migrations to fix schema drift...");
       await runMigrations();
       await withRetry(() => prisma.user.findFirst());
+      await setSchemaVersion();
       _initialized = true;
       console.log("[DB-INIT] Database ready after migration recovery.");
       return true;
@@ -49,6 +99,7 @@ export async function ensureDatabase(): Promise<boolean> {
 
     // Step 3: Seed data
     await seedData();
+    await setSchemaVersion();
 
     _initialized = true;
     return true;
