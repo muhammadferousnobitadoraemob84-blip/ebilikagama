@@ -4,6 +4,10 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLanguage } from "@/components/LanguageProvider";
 
+// Login must fail visibly instead of spinning forever if the backend or
+// network hangs (cold serverless start, DB stall, lost connection).
+const LOGIN_TIMEOUT_MS = 10_000;
+
 export default function SignInPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -19,31 +23,48 @@ export default function SignInPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return; // no duplicate submissions
     setError("");
     setLoading(true);
+
+    // AbortController guarantees the fetch cannot hang past the timeout.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS);
 
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password, isAdmin: adminView ? true : undefined }),
+        signal: controller.signal,
       });
 
-      const data = await res.json();
+      let data: { error?: string } = {};
+      try {
+        data = await res.json();
+      } catch {
+        // Non-JSON response (proxy error page etc.) — fall through to !res.ok
+      }
 
       if (!res.ok) {
         setError(data.error || t("sign_in_error_generic"));
-        setLoading(false);
-        return;
+        return; // finally resets loading
       }
 
-      // Successful login → always land on the homepage (or the page the
-      // visitor originally requested). Admins reach the Admin Panel through
-      // the profile-picture menu, not automatically.
-      router.push(redirect || "/");
-    } catch {
-      setError("Ralat rangkaian. Sila cuba lagi.");
+      console.log("[LOGIN] success → redirect", redirect || "/");
+      // Authentication succeeded: clear the spinner state immediately so the
+      // button never stays stuck while the next page loads.
       setLoading(false);
+      router.push(redirect || "/");
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setError(t("sign_in_error_timeout"));
+      } else {
+        setError(t("sign_in_error_network"));
+      }
+    } finally {
+      clearTimeout(timer);
+      setLoading(false); // always reset: success, failure, or timeout
     }
   };
 

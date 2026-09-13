@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, withRetry } from "@/lib/prisma";
 import { createToken } from "@/lib/auth";
 import { ensureDatabase } from "@/lib/db-init";
 import bcrypt from "bcryptjs";
@@ -7,6 +7,12 @@ import bcrypt from "bcryptjs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  // Step timing: a normal login completes in well under a second; any slow
+  // step is identified in the server logs instead of hanging silently.
+  const t0 = Date.now();
+  let tLookup = 0;
+  let tVerify = 0;
+  let tSession = 0;
   try {
     const { username, password, isAdmin } = await request.json().catch(() => ({}));
 
@@ -33,12 +39,15 @@ export async function POST(request: NextRequest) {
 
     let user;
     try {
-      // Normalize: trim whitespace; match username case-insensitively via
-      // lowercased comparison so casing differences cannot create duplicates.
-      const normalized = String(username).trim();
-      user = await prisma.user.findFirst({
-        where: { username: { equals: normalized, mode: "insensitive" } },
-      });
+      // Exact (index-backed) match on the unique username column after
+      // normalization: trim + lowercase. Using findFirst + mode:"insensitive"
+      // compiles to ILIKE which bypasses the unique index; lowering the
+      // input instead keeps the lookup O(1) on the index. Usernames are
+      // stored normalized by User Management, so casing cannot diverge.
+      const normalized = String(username).trim().toLowerCase();
+      user = await withRetry(() =>
+        prisma.user.findFirst({ where: { username: normalized } })
+      );
     } catch (dbError) {
       console.error("[LOGIN] Database query failed:", dbError);
       return NextResponse.json(
@@ -46,6 +55,8 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+    tLookup = Date.now() - t0;
+    console.log(`[LOGIN] lookup ${tLookup}ms user=${user ? "found" : "not-found"}`);
 
     // Generic error — never reveal whether the username exists.
     if (!user) {
@@ -62,6 +73,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const vStart = Date.now();
     let valid: boolean;
     try {
       valid = await bcrypt.compare(password, user.passwordHash);
@@ -72,6 +84,8 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+    tVerify = Date.now() - vStart;
+    console.log(`[LOGIN] verify ${tVerify}ms valid=${valid}`);
 
     if (!valid) {
       return NextResponse.json(
@@ -89,6 +103,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const sStart = Date.now();
     let token: string;
     try {
       token = await createToken({
@@ -103,6 +118,7 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+    tSession = Date.now() - sStart;
 
     // Record last login (best-effort; never blocks authentication)
     try {
@@ -129,6 +145,9 @@ export async function POST(request: NextRequest) {
       path: "/",
     });
 
+    console.log(
+      `[LOGIN] total ${Date.now() - t0}ms (lookup ${tLookup}ms · verify ${tVerify}ms · session ${tSession}ms)`
+    );
     return response;
   } catch (error) {
     console.error("[LOGIN] Unexpected error:", error);

@@ -4,6 +4,10 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLanguage } from "@/components/LanguageProvider";
 
+// Login must fail visibly instead of spinning forever if the backend or
+// network hangs (cold serverless start, DB stall, lost connection).
+const LOGIN_TIMEOUT_MS = 10_000;
+
 export default function AdminLogin() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -18,28 +22,45 @@ export default function AdminLogin() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return; // no duplicate submissions
     setError("");
     setLoading(true);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS);
 
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password, isAdmin: true }),
+        signal: controller.signal,
       });
 
-      const data = await res.json();
+      let data: { error?: string } = {};
+      try {
+        data = await res.json();
+      } catch {
+        // Non-JSON response — fall through to !res.ok
+      }
 
       if (!res.ok) {
         setError(data.error || "Log masuk gagal");
-        setLoading(false);
-        return;
+        return; // finally resets loading
       }
 
-      router.push(redirect);
-    } catch {
-      setError("Ralat rangkaian. Sila cuba lagi.");
+      console.log("[LOGIN] admin success → redirect", redirect);
       setLoading(false);
+      router.push(redirect);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setError(t("sign_in_error_timeout"));
+      } else {
+        setError(t("sign_in_error_network"));
+      }
+    } finally {
+      clearTimeout(timer);
+      setLoading(false); // always reset: success, failure, or timeout
     }
   };
 
