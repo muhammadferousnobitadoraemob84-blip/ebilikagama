@@ -51,9 +51,9 @@ export async function POST(request: NextRequest) {
     if (rows.length === 0) {
       return NextResponse.json({ error: "No users provided" }, { status: 400 });
     }
-    if (rows.length > 200) {
+    if (rows.length > 1000) {
       return NextResponse.json(
-        { error: "Too many users in one batch (max 200)" },
+        { error: "Too many users in one batch (max 1000)" },
         { status: 400 }
       );
     }

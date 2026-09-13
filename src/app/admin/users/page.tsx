@@ -24,20 +24,6 @@ interface StagedRow {
   password: string;
 }
 
-interface ImportRow {
-  raw: string[]; // original cells (mapping mode)
-  fullName: string;
-  username: string;
-  password: string;
-}
-
-interface PreviewRow {
-  fullName: string;
-  username: string;
-  valid: boolean;
-  reason?: string;
-}
-
 const USER_DOMAIN = "@ebilikagamatv.com";
 const MIN_PASSWORD_LENGTH = 6;
 
@@ -127,10 +113,9 @@ export default function UserManagementPage() {
   const [creating, setCreating] = useState(false);
   const [createdUser, setCreatedUser] = useState<UserRow | null>(null);
 
-  // Bulk
+  // Bulk (direct import mode)
   const [bulkRows, setBulkRows] = useState<StagedRow[]>([]);
   const [csvError, setCsvError] = useState("");
-  const [bulkPreview, setBulkPreview] = useState<PreviewRow[] | null>(null);
   const [bulkCreating, setBulkCreating] = useState(false);
   const [bulkResult, setBulkResult] = useState<{
     createdCount: number;
@@ -138,17 +123,11 @@ export default function UserManagementPage() {
     failedCount: number;
     results: { fullName: string; username: string; status: string; reason?: string }[];
   } | null>(null);
+  const [showAllResults, setShowAllResults] = useState(false);
 
-  // XLSX/DOCX import
+  // XLSX/DOCX import: rows detected from the uploaded file (direct mode)
   const [importing, setImporting] = useState(false);
-  const [importNeedsMapping, setImportNeedsMapping] = useState(false);
-  const [importRows, setImportRows] = useState<ImportRow[]>([]);
-  const [importHeaders, setImportHeaders] = useState<string[]>([]);
-  const [importMapping, setImportMapping] = useState<{ fullName: number | null; username: number | null; password: number | null }>({
-    fullName: null,
-    username: null,
-    password: null,
-  });
+  const [fileStaged, setFileStaged] = useState(false);
 
   // Filter panel
   const [filterOpen, setFilterOpen] = useState(false);
@@ -324,238 +303,168 @@ export default function UserManagementPage() {
     }
   };
 
-  // ── Bulk: stage rows ──
-  const addBulkRow = () => {
-    setBulkRows((r) => [...r, { fullName: "", username: "", password: "" }]);
-  };
-  const updateBulkRow = (idx: number, field: keyof StagedRow, value: string) => {
-    setBulkRows((rows) =>
-      rows.map((r, i) => (i === idx ? { ...r, [field]: value } : r))
-    );
-  };
-  const removeBulkRow = (idx: number) => {
-    setBulkRows((rows) => rows.filter((_, i) => i !== idx));
+  // ── Direct import: stage rows detected from a file (XLSX / DOCX / CSV) ──
+  // The server parses the file, finds the FULL NAME / USERNAME / PASSWORD
+  // columns and returns the rows. Nothing is created until the admin clicks
+  // the Import button (one confirmation step, no mapping, no manual rows).
+  const stageImportRows = (rows: StagedRow[]) => {
+    setBulkRows(rows);
+    setFileStaged(rows.length > 0);
+    setBulkResult(null);
+    setShowAllResults(false);
   };
 
-  const handleCsvImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const resetImportState = () => {
+    setBulkRows([]);
+    setFileStaged(false);
+    setBulkResult(null);
     setCsvError("");
+    setShowAllResults(false);
+  };
+
+  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCsvError("");
+    setBulkResult(null);
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        // Strip UTF-8 BOM so the first header column is not polluted
-        let text = String(reader.result || "");
-        if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
-
-        // RFC-4180-style row tokenizer with quote handling
-        const parseCsvRows = (raw: string, delim: string): string[][] => {
-          const out: string[][] = [];
-          let row: string[] = [];
-          let field = "";
-          let inQuotes = false;
-          for (let i = 0; i < raw.length; i++) {
-            const ch = raw[i];
-            if (inQuotes) {
-              if (ch === '"') {
-                if (raw[i + 1] === '"') {
-                  field += '"';
-                  i++;
-                } else {
-                  inQuotes = false;
-                }
-              } else {
-                field += ch;
-              }
-            } else if (ch === '"') {
-              inQuotes = true;
-            } else if (ch === delim) {
-              row.push(field);
-              field = "";
-            } else if (ch === "\n" || ch === "\r") {
-              if (ch === "\r" && raw[i + 1] === "\n") i++;
-              row.push(field);
-              field = "";
-              out.push(row);
-              row = [];
-            } else {
-              field += ch;
-            }
-          }
-          if (field.length > 0 || row.length > 0) {
-            row.push(field);
-            out.push(row);
-          }
-          return out;
-        };
-
-        // Auto-detect delimiter from the first non-empty line
-        const firstLine = text.split(/\r?\n/).find((l) => l.trim()) || "";
-        const counts: Record<string, number> = {
-          ",": (firstLine.match(/,/g) || []).length,
-          ";": (firstLine.match(/;/g) || []).length,
-          "\t": (firstLine.match(/\t/g) || []).length,
-        };
-        const delim = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][1] > 0
-          ? Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]
-          : ",";
-        console.log(`[UserImport] CSV "${file.name}": delimiter=${JSON.stringify(delim)}`);
-
-        const allRows = parseCsvRows(text, delim).filter((r) =>
-          r.some((c) => c.trim())
-        );
-
-        // Reuse the shared header detection so "Full Name;Username;Password"
-        // headers work with any casing/spacing, and headerless 3-col files
-        // still map positionally.
-        const nameRe = /^(full[\s._-]*)?name$/i;
-        const userRe = /^(user(name)?|email)(\s*\/?\s*(email))?$/i;
-        const passRe = /^(pass(word)?|pwd|kata[\s._-]*laluan)$/i;
-        let headerIdx = -1;
-        let map = { fullName: 0, username: 1, password: 2 };
-        const limit = Math.min(allRows.length, 8);
-        for (let i = 0; i < limit; i++) {
-          const m = { fullName: -1, username: -1, password: -1 };
-          for (let c = 0; c < allRows[i].length; c++) {
-            const v = allRows[i][c].trim().toLowerCase().replace(/[*:]+$/, "").trim();
-            if (m.fullName === -1 && nameRe.test(v)) m.fullName = c;
-            else if (m.username === -1 && userRe.test(v)) m.username = c;
-            else if (m.password === -1 && passRe.test(v)) m.password = c;
-          }
-          const hits = Object.values(m).filter((x) => x !== -1).length;
-          if (hits >= 2) {
-            headerIdx = i;
-            map = {
-              fullName: m.fullName !== -1 ? m.fullName : 0,
-              username: m.username !== -1 ? m.username : 1,
-              password: m.password !== -1 ? m.password : 2,
-            };
-            if (hits === 3) break;
-          }
-        }
-
-        const dataRows = headerIdx >= 0 ? allRows.slice(headerIdx + 1) : allRows;
-        const parsed: StagedRow[] = dataRows
-          .filter((r) => r.some((c) => c.trim()))
-          .map((r) => ({
-            fullName: (r[map.fullName] || "").trim(),
-            username: (r[map.username] || "").trim(),
-            // Preserve the password exactly as imported (no trim on purpose):
-            // special characters and intentional spaces stay intact.
-            password: r[map.password] || "",
-          }))
-          .filter((r) => r.fullName || r.username);
-
-        console.log(
-          `[UserImport] CSV "${file.name}": ${allRows.length} rows read, header=${headerIdx}, ${parsed.length} valid rows`
-        );
-
-        if (parsed.length === 0) {
-          setCsvError(um("um_import_err_norows"));
-        } else {
-          setBulkRows(parsed); // replace placeholders with imported rows
-          showToast("success", fmt("um_import_success", parsed.length));
-        }
-      } catch {
-        setCsvError(um("um_import_err_upload"));
-      }
-      // Allow re-importing the same file later
-      e.target.value = "";
-    };
-    reader.readAsText(file);
-  };
-
-  // ── XLSX / DOCX import: parse server-side, then stage rows ──
-  const handleDocImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    setCsvError("");
-    setImportNeedsMapping(false);
-    setImportRows([]);
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // CSV keeps the lightweight client-side path
-    if (file.name.toLowerCase().endsWith(".csv")) {
-      handleCsvImport(e);
-      return;
-    }
 
     console.log(
       `[UserImport] file="${file.name}" size=${file.size} type=${file.type || "unknown"}`
     );
 
+    // Detect rows client-side for CSV (fast path), server-side for XLSX/DOCX
+    const isCsv = file.name.toLowerCase().endsWith(".csv");
+
+    const readAsText = () =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("read failed"));
+        reader.readAsText(file);
+      });
+
+    const parseCsv = (text: string): StagedRow[] => {
+      // Strip UTF-8 BOM
+      if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+      const parseCsvRows = (raw: string, delim: string): string[][] => {
+        const out: string[][] = [];
+        let row: string[] = [];
+        let field = "";
+        let inQuotes = false;
+        for (let i = 0; i < raw.length; i++) {
+          const ch = raw[i];
+          if (inQuotes) {
+            if (ch === '"') {
+              if (raw[i + 1] === '"') { field += '"'; i++; } else inQuotes = false;
+            } else field += ch;
+          } else if (ch === '"') {
+            inQuotes = true;
+          } else if (ch === delim) {
+            row.push(field); field = "";
+          } else if (ch === "\n" || ch === "\r") {
+            if (ch === "\r" && raw[i + 1] === "\n") i++;
+            row.push(field); field = "";
+            out.push(row); row = [];
+          } else field += ch;
+        }
+        if (field.length > 0 || row.length > 0) { row.push(field); out.push(row); }
+        return out;
+      };
+      const firstLine = text.split(/\r?\n/).find((l) => l.trim()) || "";
+      const counts: Record<string, number> = {
+        ",": (firstLine.match(/,/g) || []).length,
+        ";": (firstLine.match(/;/g) || []).length,
+        "\t": (firstLine.match(/\t/g) || []).length,
+      };
+      const delim =
+        Object.entries(counts).sort((a, b) => b[1] - a[1])[0][1] > 0
+          ? Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]
+          : ",";
+      const allRows = parseCsvRows(text, delim).filter((r) => r.some((c) => c.trim()));
+      const nameRe = /^(full[\s._-]*)?name$/i;
+      const userRe = /^(user(name)?|email)(\s*\/?\s*(email))?$/i;
+      const passRe = /^(pass(word)?|pwd|kata[\s._-]*laluan)$/i;
+      let headerIdx = -1;
+      let map = { fullName: 0, username: 1, password: 2 };
+      for (let i = 0; i < Math.min(allRows.length, 8); i++) {
+        const m = { fullName: -1, username: -1, password: -1 };
+        for (let c = 0; c < allRows[i].length; c++) {
+          const v = allRows[i][c].trim().toLowerCase().replace(/[*:]+$/, "").trim();
+          if (m.fullName === -1 && nameRe.test(v)) m.fullName = c;
+          else if (m.username === -1 && userRe.test(v)) m.username = c;
+          else if (m.password === -1 && passRe.test(v)) m.password = c;
+        }
+        const hits = Object.values(m).filter((x) => x !== -1).length;
+        if (hits >= 2) {
+          headerIdx = i;
+          map = {
+            fullName: m.fullName !== -1 ? m.fullName : 0,
+            username: m.username !== -1 ? m.username : 1,
+            password: m.password !== -1 ? m.password : 2,
+          };
+          if (hits === 3) break;
+        }
+      }
+      const dataRows = headerIdx >= 0 ? allRows.slice(headerIdx + 1) : allRows;
+      return dataRows
+        .filter((r) => r.some((c) => c.trim()))
+        .map((r) => ({
+          fullName: (r[map.fullName] || "").trim(),
+          username: (r[map.username] || "").trim(),
+          password: r[map.password] || "",
+        }))
+        .filter((r) => r.fullName || r.username);
+    };
+
     setImporting(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/users/import/parse", {
-        method: "POST",
-        body: fd,
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setCsvError(translateError(um, data.error) || um("um_import_err_upload"));
-        return;
+      let rows: StagedRow[];
+      if (isCsv) {
+        rows = parseCsv(await readAsText());
+        console.log(`[UserImport] CSV "${file.name}": ${rows.length} rows detected`);
+      } else {
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch("/api/users/import/parse", {
+          method: "POST",
+          body: fd,
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setCsvError(translateError(um, data.error) || um("um_import_err_upload"));
+          return;
+        }
+        console.log(
+          `[UserImport] parsed "${file.name}": sheets=${JSON.stringify(data.debug?.sheets ?? [])} selected="${data.debug?.selected ?? "?"}" rows=${data.rowCount}`
+        );
+        if (!data.rows || data.rows.length === 0) {
+          setCsvError(um("um_import_err_notable"));
+          return;
+        }
+        rows = data.rows.map(
+          (r: { fullName?: string; username?: string; password?: string; raw?: string[] }) => ({
+            fullName: (r.fullName ?? "").trim(),
+            username: (r.username ?? "").trim(),
+            password: r.password ?? "",
+          })
+        );
       }
-      console.log(
-        `[UserImport] parsed "${file.name}": sheets=${JSON.stringify(data.debug?.sheets ?? [])} selected="${data.debug?.selected ?? "?"}" rows=${data.rowCount} needsMapping=${data.needsMapping}`
-      );
-      if (!data.rows || data.rows.length === 0) {
+      if (rows.length === 0) {
         setCsvError(um("um_import_err_notable"));
         return;
       }
-      setImportHeaders(data.headers || []);
-      if (data.needsMapping) {
-        // Columns not confidently identified → manual mapping step
-        setImportNeedsMapping(true);
-        setImportRows(data.rows.map((r: { raw: string[] }) => ({ ...r, fullName: "", username: "", password: "" })));
-        setImportMapping(data.mapping || { fullName: null, username: null, password: null });
-      } else {
-        // All required columns identified → stage rows directly (replaces placeholders)
-        stageImportRows(data.rows, data.mapping);
-        showToast("success", fmt("um_import_success", data.rows.length));
-      }
+      stageImportRows(rows);
     } catch {
       setCsvError(um("um_import_err_upload"));
     } finally {
       setImporting(false);
-      e.target.value = "";
+      e.target.value = ""; // allow re-importing the same file later
     }
   };
 
-  const stageImportRows = (
-    rows: { fullName?: string; username?: string; password?: string; raw?: string[] }[],
-    mapping?: { fullName: number | null; username: number | null; password: number | null }
-  ) => {
-    const staged: StagedRow[] = rows.map((r) => {
-      const fullName = (r.fullName ?? (mapping && mapping.fullName !== null && r.raw ? r.raw[mapping.fullName] : "") ?? "").trim();
-      const username = (r.username ?? (mapping && mapping.username !== null && r.raw ? r.raw[mapping.username] : "") ?? "").trim();
-      const password = (r.password ?? (mapping && mapping.password !== null && r.raw ? r.raw[mapping.password] : "") ?? "").trim();
-      return { fullName, username, password };
-    });
-    setBulkRows(staged);
-    setImportNeedsMapping(false);
-  };
-
-  // ── Bulk: validate preview ──
-  const buildBulkPreview = () => {
-    const preview: PreviewRow[] = bulkRows.map((r) => {
-      const fullName = r.fullName.trim();
-      if (!fullName) return { ...r, valid: false, reason: translateError(um, "Full name is required") };
-      const uErr = validateUsernameLocal(r.username);
-      if (uErr) return { ...r, valid: false, reason: translateError(um, uErr) };
-      const pErr = validatePasswordLocal(r.password);
-      if (pErr) return { ...r, valid: false, reason: translateError(um, pErr) };
-      return { ...r, valid: true };
-    });
-    setBulkPreview(preview);
-  };
-
-  const bulkValidCount = bulkPreview?.filter((r) => r.valid).length ?? 0;
-
-  // ── Bulk: create valid users ──
+  // ── Direct import: create the staged users now ──
   const handleBulkCreate = async () => {
-    if (!bulkPreview) return;
-    const validRows = bulkRows.filter((r, i) => bulkPreview[i]?.valid);
+    const validRows = bulkRows;
     if (validRows.length === 0) return;
 
     setBulkCreating(true);
@@ -571,8 +480,7 @@ export default function UserManagementPage() {
         return;
       }
       setBulkResult(data);
-      setBulkRows([]);
-      setBulkPreview(null);
+      setShowAllResults(false);
       showToast(
         "success",
         `${um("um_bulk_created")} ${data.createdCount} · ${um("um_bulk_skipped")} ${data.skippedCount} · ${um("um_bulk_failed")} ${data.failedCount}`
@@ -872,18 +780,23 @@ export default function UserManagementPage() {
         </div>
       )}
 
-      {/* ═══════════ BULK ADD USERS ═══════════ */}
+      {/* ═══════════ BULK ADD USERS (direct import mode) ═══════════ */}
       {tab === "bulk" && (
         <div className="admin-card max-w-4xl">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
-            <div>
-              <h2 className="text-white font-semibold text-lg">{um("um_bulk_title")}</h2>
-              <p className="text-gray-400 text-sm mt-1">
-                {um("um_bulk_desc")}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <label className="admin-btn admin-btn-secondary cursor-pointer flex items-center gap-2">
+          <div className="mb-4">
+            <h2 className="text-white font-semibold text-lg">{um("um_bulk_title")}</h2>
+            <p className="text-gray-400 text-sm mt-1">{um("um_bulk_desc")}</p>
+            <p className="text-gray-500 text-xs mt-1">{um("um_import_supported")}</p>
+          </div>
+
+          {/* Step 1: pick a file */}
+          {!fileStaged && (
+            <div className="border border-dashed border-white/20 rounded-xl p-8 text-center">
+              <svg className="w-10 h-10 text-gray-500 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              <p className="text-gray-400 text-sm mb-4">{um("um_import_select")}</p>
+              <label className="admin-btn admin-btn-primary cursor-pointer inline-flex items-center gap-2">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
@@ -891,251 +804,139 @@ export default function UserManagementPage() {
                 <input
                   type="file"
                   accept=".csv,.xlsx,.docx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  onChange={handleDocImport}
+                  onChange={handleFileImport}
                   className="hidden"
                   disabled={importing}
                 />
               </label>
             </div>
-          </div>
+          )}
 
           {csvError && (
-            <div className="bg-red-600/10 border border-red-600/30 text-red-400 px-4 py-3 rounded-xl text-sm mb-4">
+            <div className="bg-red-600/10 border border-red-600/30 text-red-400 px-4 py-3 rounded-xl text-sm mt-4">
               {csvError}
             </div>
           )}
 
-          {/* XLSX/DOCX column-mapping step */}
-          {importNeedsMapping && (
-            <div className="bg-blue-600/10 border border-blue-600/30 rounded-xl p-4 mb-4">
-              <h3 className="text-white font-semibold mb-1">{um("um_mapping_title")}</h3>
-              <p className="text-gray-400 text-sm mb-3">
-                Map the file columns to the user fields, then click Apply.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-                {(["fullName", "username", "password"] as const).map((field) => (
-                  <div key={field}>
-                    <label className="block text-gray-300 text-xs font-medium mb-1">
-                      {field === "fullName" ? um("um_label_full_name") : field === "username" ? um("um_th_username") : um("um_label_password")}
-                    </label>
-                    <select
-                      className="admin-input"
-                      value={importMapping[field] ?? ""}
-                      onChange={(e) =>
-                        setImportMapping((m) => ({
-                          ...m,
-                          [field]: e.target.value === "" ? null : parseInt(e.target.value, 10),
-                        }))
-                      }
-                    >
-                      <option value="">{um("um_mapping_none")}</option>
-                      {importHeaders.map((h, i) => (
-                        <option key={i} value={i}>
-                          {h.trim() || fmt("um_mapping_column", i + 1)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
+          {/* Step 2: rows detected → confirm import */}
+          {fileStaged && (
+            <div>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-blue-600/10 border border-blue-600/30 rounded-xl px-4 py-3 mb-4">
+                <p className="text-white font-semibold text-sm tracking-wide">
+                  {fmt("um_import_detected", bulkRows.length)}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={resetImportState}
+                    disabled={bulkCreating}
+                    className="admin-btn admin-btn-secondary text-sm"
+                  >
+                    {um("um_btn_cancel")}
+                  </button>
+                  <button
+                    onClick={handleBulkCreate}
+                    disabled={bulkCreating || bulkRows.length === 0}
+                    className="admin-btn admin-btn-primary text-sm disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {bulkCreating ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        {um("um_import_reading")}
+                      </>
+                    ) : (
+                      fmt("um_import_go", bulkRows.length)
+                    )}
+                  </button>
+                </div>
               </div>
-              {/* First rows preview for mapping context */}
-              <div className="overflow-x-auto mb-3 max-h-40">
-                <table className="w-full text-xs">
+              {/* Read-only preview of detected rows (passwords masked) */}
+              <div className="overflow-x-auto mb-4 max-h-64 overflow-y-auto border border-white/10 rounded-xl">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0">
+                    <tr className="bg-gray-800 border-b border-white/10 text-left text-gray-400 text-xs uppercase">
+                      <th className="py-2 px-3">{um("um_label_full_name")}</th>
+                      <th className="py-2 px-3">{um("um_th_username")}</th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {importRows.slice(0, 5).map((r, ri) => (
-                      <tr key={ri} className="border-b border-white/5">
-                        {r.raw.map((cell, ci) => (
-                          <td key={ci} className="py-1 px-2 text-gray-400 whitespace-nowrap">
-                            {cell}
-                          </td>
-                        ))}
+                    {bulkRows.slice(0, 100).map((row, idx) => (
+                      <tr key={idx} className="border-b border-white/5">
+                        <td className="py-1.5 px-3 text-gray-200 truncate max-w-[260px]">{row.fullName || "—"}</td>
+                        <td className="py-1.5 px-3 text-gray-400 truncate max-w-[260px]">{row.username || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => stageImportRows(importRows, importMapping)}
-                  disabled={importMapping.fullName === null || importMapping.username === null}
-                  className="admin-btn admin-btn-primary text-sm disabled:opacity-50"
-                >
-                  {um("um_mapping_apply")}
-                </button>
-                <button
-                  onClick={() => {
-                    setImportNeedsMapping(false);
-                    setImportRows([]);
-                  }}
-                  className="admin-btn admin-btn-secondary text-sm"
-                >
-                  {um("um_btn_cancel")}
-                </button>
-              </div>
             </div>
           )}
 
-          {/* Staged rows table */}
-          <div className="overflow-x-auto mb-4">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-white/10 text-left text-gray-400 text-xs uppercase">
-                  <th className="py-2 px-2">{um("um_label_full_name")}</th>
-                  <th className="py-2 px-2">{um("um_th_username")}</th>
-                  <th className="py-2 px-2">{um("um_label_password")}</th>
-                  <th className="py-2 px-2 w-10"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {bulkRows.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="py-6 text-center text-gray-500 text-sm">
-                      {um("um_bulk_empty")}
-                    </td>
-                  </tr>
-                )}
-                {bulkRows.map((row, idx) => (
-                  <tr key={idx} className="border-b border-white/5">
-                    <td className="py-1.5 px-2">
-                      <input
-                        type="text"
-                        value={row.fullName}
-                        onChange={(e) => updateBulkRow(idx, "fullName", e.target.value)}
-                        className="admin-input"
-                        placeholder="Muhammad Ahmad"
-                      />
-                    </td>
-                    <td className="py-1.5 px-2">
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={row.username.replace(USER_DOMAIN, "")}
-                          onChange={(e) =>
-                            updateBulkRow(idx, "username", e.target.value + USER_DOMAIN)
-                          }
-                          className="admin-input pr-40"
-                          placeholder="muhammad"
-                        />
-                        <span className="absolute inset-y-0 right-0 pr-2 flex items-center text-gray-500 text-xs pointer-events-none">
-                          {USER_DOMAIN}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-1.5 px-2">
-                      <input
-                        type="password"
-                        value={row.password}
-                        onChange={(e) => updateBulkRow(idx, "password", e.target.value)}
-                        className="admin-input"
-                        placeholder="••••••••"
-                        autoComplete="off"
-                      />
-                    </td>
-                    <td className="py-1.5 px-2 text-right">
-                      <button
-                        onClick={() => removeBulkRow(idx)}
-                        className="text-red-400 hover:text-red-300 p-1"
-                        aria-label="Remove row"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex flex-wrap gap-2 mb-4">
-            <button onClick={addBulkRow} className="admin-btn admin-btn-secondary text-sm">
-              {um("um_bulk_add_row")}
-            </button>
-            <button
-              onClick={buildBulkPreview}
-              disabled={bulkRows.length === 0}
-              className="admin-btn admin-btn-primary text-sm disabled:opacity-50"
-            >
-              {um("um_bulk_validate")}
-            </button>
-          </div>
-
-          {/* Preview */}
-          {bulkPreview && (
-            <div className="border border-white/10 rounded-xl overflow-hidden">
-              <div className="bg-gray-800 px-4 py-3 flex items-center justify-between">
-                <h3 className="text-white text-sm font-medium">{um("um_bulk_review")}</h3>
-                <p className="text-xs text-gray-400">
-                  {bulkValidCount} {um("um_bulk_valid")} · {bulkPreview.length - bulkValidCount} {um("um_bulk_invalid")}
-                </p>
-              </div>
-              <div className="max-h-72 overflow-y-auto divide-y divide-white/5">
-                {bulkPreview.map((r, idx) => (
-                  <div key={idx} className="px-4 py-2.5 flex items-start gap-3">
-                    <span className={r.valid ? "text-green-400" : "text-red-400"}>
-                      {r.valid ? "✓" : "✕"}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-white text-sm truncate">{r.fullName || "—"}</p>
-                      <p className="text-gray-400 text-xs truncate">{r.username || "—"}</p>
-                      {!r.valid && r.reason && (
-                        <p className="text-red-400 text-xs mt-0.5">{r.reason}</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="bg-gray-800 px-4 py-3 flex justify-end gap-2">
-                <button
-                  onClick={() => setBulkPreview(null)}
-                  className="admin-btn admin-btn-secondary text-sm"
-                >
-                  {um("um_btn_cancel")}
-                </button>
-                <button
-                  onClick={handleBulkCreate}
-                  disabled={bulkCreating || bulkValidCount === 0}
-                  className="admin-btn admin-btn-primary text-sm disabled:opacity-50 flex items-center gap-2"
-                >
-                  {bulkCreating ? (
-                    <>
-                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      {um("um_btn_creating")}
-                    </>
-                  ) : (
-                    fmt("um_bulk_create_valid", bulkValidCount)
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Bulk result summary */}
+          {/* Step 3: result summary + detailed table */}
           {bulkResult && (
-            <div className="mt-4 border border-white/10 rounded-xl overflow-hidden">
+            <div className="border border-white/10 rounded-xl overflow-hidden">
               <div className="bg-gray-800 px-4 py-3">
-                <h3 className="text-white text-sm font-medium">{um("um_bulk_done")}</h3>
+                <h3 className="text-white text-sm font-semibold">{um("um_import_complete")}</h3>
+                <p className="text-gray-300 text-sm mt-1">
+                  {fmt("um_import_added", bulkResult.createdCount)}
+                </p>
                 <p className="text-gray-400 text-xs mt-1">
                   {um("um_bulk_created")} {bulkResult.createdCount} · {um("um_bulk_skipped")} {bulkResult.skippedCount} · {um("um_bulk_failed")} {bulkResult.failedCount}
                 </p>
               </div>
-              <div className="max-h-60 overflow-y-auto divide-y divide-white/5">
-                {bulkResult.results
-                  .filter((r) => r.status !== "created")
-                  .map((r, idx) => (
-                    <div key={idx} className="px-4 py-2 text-sm">
-                      <p className={r.status === "skipped" ? "text-yellow-400" : "text-red-400"}>
-                        {r.status === "skipped" ? "Skipped:" : "Failed:"} {r.username}
-                      </p>
-                      <p className="text-gray-500 text-xs">{r.reason}</p>
-                    </div>
-                  ))}
-                {bulkResult.skippedCount === 0 && bulkResult.failedCount === 0 && (
-                  <div className="px-4 py-3 text-green-400 text-sm">
-                    {um("um_bulk_all_ok")}
-                  </div>
-                )}
+              <div className="max-h-72 overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0">
+                    <tr className="bg-gray-800 border-b border-white/10 text-left text-gray-400 text-xs uppercase">
+                      <th className="py-2 px-3">{um("um_label_full_name")}</th>
+                      <th className="py-2 px-3">{um("um_th_username")}</th>
+                      <th className="py-2 px-3">{um("um_import_th_status")}</th>
+                      <th className="py-2 px-3">{um("um_import_th_reason")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(showAllResults
+                      ? bulkResult.results
+                      : bulkResult.results.filter((r) => r.status !== "created")
+                    ).map((r, idx) => (
+                      <tr key={idx} className="border-b border-white/5">
+                        <td className="py-1.5 px-3 text-gray-200 truncate max-w-[220px]">{r.fullName || "—"}</td>
+                        <td className="py-1.5 px-3 text-gray-400 truncate max-w-[240px]">{r.username || "—"}</td>
+                        <td className="py-1.5 px-3">
+                          <span
+                            className={
+                              r.status === "created"
+                                ? "text-green-400"
+                                : r.status === "skipped"
+                                ? "text-yellow-400"
+                                : "text-red-400"
+                            }
+                          >
+                            {r.status === "created"
+                              ? um("um_import_status_created")
+                              : r.status === "skipped"
+                              ? um("um_import_status_skipped")
+                              : um("um_import_status_failed")}
+                          </span>
+                        </td>
+                        <td className="py-1.5 px-3 text-gray-500 text-xs">{r.reason ? translateError(um, r.reason) : ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="bg-gray-800 px-4 py-3 flex items-center justify-between gap-2">
+                <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={showAllResults}
+                    onChange={(e) => setShowAllResults(e.target.checked)}
+                    className="accent-red-600"
+                  />
+                  {um("um_import_show_failures")}
+                </label>
+                <button onClick={resetImportState} className="admin-btn admin-btn-secondary text-sm">
+                  {um("um_btn_import")}
+                </button>
               </div>
             </div>
           )}
