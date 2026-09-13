@@ -190,6 +190,8 @@ const PASSWORD_PATTERNS = [
   /^pwd$/i,
   /^pass$/i,
   /^kata[\s._-]*laluan$/i,
+  /^katalaluan$/i,
+  /^kata\s*\(?\s*laluan\s*\)?$/i,
 ];
 
 function normalizeHeader(value: string): string {
@@ -275,7 +277,9 @@ function extractParsedRows(
     .map((r) => ({
       fullName: mapping.fullName !== null ? (r[mapping.fullName] || "").trim() : "",
       username: mapping.username !== null ? (r[mapping.username] || "").trim() : "",
-      password: mapping.password !== null ? (r[mapping.password] || "").trim() : "",
+      // Preserve the password EXACTLY as stored in the cell — no trim, no
+      // transformation. It is hashed only at user-creation time.
+      password: mapping.password !== null ? r[mapping.password] || "" : "",
       raw: r,
     }));
 }

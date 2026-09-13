@@ -137,6 +137,9 @@ export default function UserManagementPage() {
   const filterRef = useRef<HTMLDivElement>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
 
+  // Bulk import preview: passwords masked unless the admin reveals them
+  const [showPasswords, setShowPasswords] = useState(false);
+
   // Edit modal
   const [editModal, setEditModal] = useState<UserRow | null>(null);
   const [editName, setEditName] = useState("");
@@ -419,6 +422,7 @@ export default function UserManagementPage() {
     setImporting(true);
     try {
       let rows: StagedRow[];
+      let detectedHeaders: string[] = [];
       if (isCsv) {
         rows = parseCsv(await readAsText());
         console.log(`[UserImport] CSV "${file.name}": ${rows.length} rows detected`);
@@ -437,6 +441,7 @@ export default function UserManagementPage() {
         console.log(
           `[UserImport] parsed "${file.name}": sheets=${JSON.stringify(data.debug?.sheets ?? [])} selected="${data.debug?.selected ?? "?"}" rows=${data.rowCount}`
         );
+        detectedHeaders = data.headers ?? [];
         if (!data.rows || data.rows.length === 0) {
           setCsvError(um("um_import_err_notable"));
           return;
@@ -452,12 +457,20 @@ export default function UserManagementPage() {
       // Guard against the "N rows detected but all values empty" failure
       // mode: a row is only usable when its values were actually extracted.
       const meaningful = rows.filter((r) => r.fullName && r.username);
-      const withPassword = meaningful.filter((r) => r.password.length > 0).length;
+      const valid = rows.filter((r) => r.fullName && r.username && r.password);
       console.log(
-        `[UserImport] "${file.name}": rows=${rows.length} meaningful=${meaningful.length} withPassword=${withPassword}`
+        `[UserImport] "${file.name}": headers=${JSON.stringify(detectedHeaders)} rows=${rows.length} withName=${rows.filter((r) => r.fullName).length} withUsername=${rows.filter((r) => r.username).length} withPassword=${rows.filter((r) => r.password).length} valid=${valid.length}`
+      );
+      console.log(
+        `[UserImport] firstRow: fullName=${JSON.stringify(rows[0]?.fullName ?? null)} username=${JSON.stringify(rows[0]?.username ?? null)} password=[REDACTED, exists=${Boolean(rows[0]?.password)}]`
       );
       if (rows.length === 0 || meaningful.length === 0) {
         setCsvError(um("um_import_err_nodata"));
+        return;
+      }
+      if (valid.length === 0) {
+        // Rows exist but passwords are missing everywhere — fail loudly
+        setCsvError(um("um_import_err_nopassword"));
         return;
       }
       stageImportRows(rows);
@@ -600,6 +613,12 @@ export default function UserManagementPage() {
     () => users.filter((u) => u.role === "user").length,
     [users]
   );
+
+  // A staged row is importable only when all three required fields were
+  // actually extracted from the file (requirement 14/15).
+  const validStagedCount = bulkRows.filter(
+    (r) => r.fullName && r.username && r.password
+  ).length;
 
   // ── Access denied ──
   if (accessDenied) {
@@ -825,12 +844,12 @@ export default function UserManagementPage() {
             </div>
           )}
 
-          {/* Step 2: rows detected → confirm import */}
+          {/* Step 2: valid rows detected → confirm import */}
           {fileStaged && (
             <div>
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-blue-600/10 border border-blue-600/30 rounded-xl px-4 py-3 mb-4">
                 <p className="text-white font-semibold text-sm tracking-wide">
-                  {fmt("um_import_detected", bulkRows.length)}
+                  {fmt("um_import_valid", validStagedCount)}
                 </p>
                 <div className="flex gap-2">
                   <button
@@ -842,7 +861,7 @@ export default function UserManagementPage() {
                   </button>
                   <button
                     onClick={handleBulkCreate}
-                    disabled={bulkCreating || bulkRows.length === 0}
+                    disabled={bulkCreating || validStagedCount === 0}
                     className="admin-btn admin-btn-primary text-sm disabled:opacity-50 flex items-center gap-2"
                   >
                     {bulkCreating ? (
@@ -851,25 +870,46 @@ export default function UserManagementPage() {
                         {um("um_import_reading")}
                       </>
                     ) : (
-                      fmt("um_import_go", bulkRows.length)
+                      fmt("um_import_go", validStagedCount)
                     )}
                   </button>
                 </div>
               </div>
-              {/* Read-only preview of detected rows (passwords masked) */}
+              {/* Read-only preview: passwords masked unless revealed */}
+              <div className="flex justify-end mb-2">
+                <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={showPasswords}
+                    onChange={(e) => setShowPasswords(e.target.checked)}
+                    className="accent-red-600"
+                  />
+                  {um("um_import_show_passwords")}
+                </label>
+              </div>
               <div className="overflow-x-auto mb-4 max-h-64 overflow-y-auto border border-white/10 rounded-xl">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0">
                     <tr className="bg-gray-800 border-b border-white/10 text-left text-gray-400 text-xs uppercase">
                       <th className="py-2 px-3">{um("um_label_full_name")}</th>
                       <th className="py-2 px-3">{um("um_th_username")}</th>
+                      <th className="py-2 px-3">{um("um_label_password")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {bulkRows.slice(0, 100).map((row, idx) => (
-                      <tr key={idx} className="border-b border-white/5">
-                        <td className="py-1.5 px-3 text-gray-200 truncate max-w-[260px]">{row.fullName || "—"}</td>
-                        <td className="py-1.5 px-3 text-gray-400 truncate max-w-[260px]">{row.username || "—"}</td>
+                      <tr key={idx} className={`border-b border-white/5 ${!(row.fullName && row.username && row.password) ? "opacity-50" : ""}`}>
+                        <td className="py-1.5 px-3 text-gray-200 truncate max-w-[240px]">{row.fullName || "—"}</td>
+                        <td className="py-1.5 px-3 text-gray-400 truncate max-w-[240px]">{row.username || "—"}</td>
+                        <td className="py-1.5 px-3 font-mono">
+                          {row.password ? (
+                            <span className={showPasswords ? "text-gray-300 break-all" : "text-gray-500"}>
+                              {showPasswords ? row.password : "••••••••••••"}
+                            </span>
+                          ) : (
+                            <span className="text-red-400 text-xs">{um("um_import_missing")}</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
