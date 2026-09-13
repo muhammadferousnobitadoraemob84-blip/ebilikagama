@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useLanguage } from "@/components/LanguageProvider";
 
 interface UserRow {
   id: string;
@@ -40,11 +41,21 @@ interface PreviewRow {
 const USER_DOMAIN = "@ebilikagamatv.com";
 const MIN_PASSWORD_LENGTH = 6;
 
+const UM_ERROR_KEYS: Record<string, string> = {
+  "Full name is required": "um_err_fullname_required",
+  "Username is required": "um_err_username_required",
+  ["Username must end with " + USER_DOMAIN]: "um_err_domain",
+  "Invalid username": "um_err_localpart",
+  "Only letters, numbers, dots, underscores and hyphens allowed": "um_err_localpart",
+  "Password is required": "um_err_password_required",
+  ["Password must be at least " + MIN_PASSWORD_LENGTH + " characters"]: "um_err_password_min",
+};
+
 function validateUsernameLocal(raw: string): string | null {
   const username = raw.trim().toLowerCase();
   if (!username) return "Username is required";
   if (!username.endsWith(USER_DOMAIN)) {
-    return `Username must end with ${USER_DOMAIN}`;
+    return "Username must end with " + USER_DOMAIN;
   }
   const localPart = username.slice(0, -USER_DOMAIN.length);
   if (!localPart || localPart.length > 64) return "Invalid username";
@@ -57,9 +68,22 @@ function validateUsernameLocal(raw: string): string | null {
 function validatePasswordLocal(pw: string): string | null {
   if (!pw) return "Password is required";
   if (pw.length < MIN_PASSWORD_LENGTH) {
-    return `Password must be at least ${MIN_PASSWORD_LENGTH} characters`;
+    return "Password must be at least " + MIN_PASSWORD_LENGTH + " characters";
   }
   return null;
+}
+
+/** Translate an API/local validation message via the key map, falling back to the raw text. */
+function translateError(um: (k: never) => string, msg: string | undefined): string {
+  if (!msg) return "";
+  const key = UM_ERROR_KEYS[msg];
+  if (key) {
+    const translate = um as unknown as (k: string) => string;
+    let out = translate(key as never);
+    out = out.replace("{n}", String(MIN_PASSWORD_LENGTH));
+    return out;
+  }
+  return msg;
 }
 
 function formatDate(iso: string | null): string {
@@ -76,6 +100,10 @@ function formatDate(iso: string | null): string {
 }
 
 export default function UserManagementPage() {
+  const { t } = useLanguage();
+  const um = t as unknown as (key: string) => string;
+  const fmt = (key: string, n: number) => um(key).replace("{n}", String(n));
+
   const [tab, setTab] = useState<"add" | "bulk" | "list">("list");
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,6 +150,14 @@ export default function UserManagementPage() {
     password: null,
   });
 
+  // Filter panel
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterRole, setFilterRole] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterSort, setFilterSort] = useState("name_asc");
+  const filterRef = useRef<HTMLDivElement>(null);
+  const filterButtonRef = useRef<HTMLButtonElement>(null);
+
   // Edit modal
   const [editModal, setEditModal] = useState<UserRow | null>(null);
   const [editName, setEditName] = useState("");
@@ -140,6 +176,59 @@ export default function UserManagementPage() {
     setTimeout(() => setToast(null), 4000);
   };
 
+  // ── Filter panel behavior ──
+  const activeFilterCount =
+    (roleFilter ? 1 : 0) + (statusFilter ? 1 : 0) + (sort !== "name_asc" ? 1 : 0);
+
+  // Draft state inside the panel: initialize from applied filters when opened
+  const openFilter = () => {
+    setFilterRole(roleFilter);
+    setFilterStatus(statusFilter);
+    setFilterSort(sort);
+    setFilterOpen(true);
+  };
+
+  const applyFilters = () => {
+    setRoleFilter(filterRole);
+    setStatusFilter(filterStatus);
+    setSort(filterSort);
+    setFilterOpen(false);
+  };
+
+  const resetFilters = () => {
+    setFilterRole("");
+    setFilterStatus("");
+    setFilterSort("name_asc");
+    // Apply reset immediately so the list updates
+    setRoleFilter("");
+    setStatusFilter("");
+    setSort("name_asc");
+  };
+
+  // Close on outside click / Escape
+  useEffect(() => {
+    if (!filterOpen) return;
+    const onPointerDown = (e: MouseEvent | TouchEvent) => {
+      if (
+        filterRef.current && !filterRef.current.contains(e.target as Node) &&
+        filterButtonRef.current && !filterButtonRef.current.contains(e.target as Node)
+      ) {
+        setFilterOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFilterOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [filterOpen]);
+
   const fetchUsers = useCallback(async () => {
     try {
       const params = new URLSearchParams();
@@ -157,7 +246,7 @@ export default function UserManagementPage() {
       const data = await res.json();
       setUsers(data);
     } catch {
-      showToast("error", "Gagal memuatkan senarai pengguna");
+      showToast("error", um("um_err_load_list"));
     } finally {
       setLoading(false);
     }
@@ -185,21 +274,21 @@ export default function UserManagementPage() {
     setCreatedUser(null);
 
     if (!formName.trim()) {
-      setFormError("Full name is required.");
+      setFormError(um("um_err_fullname_required"));
       return;
     }
     const usernameErr = validateUsernameLocal(formUsername);
     if (usernameErr) {
-      setFormError(usernameErr);
+      setFormError(translateError(um, usernameErr));
       return;
     }
     const pwErr = validatePasswordLocal(formPassword);
     if (pwErr) {
-      setFormError(pwErr);
+      setFormError(translateError(um, pwErr));
       return;
     }
     if (formPassword !== formConfirm) {
-      setFormError("Passwords do not match.");
+      setFormError(um("um_err_password_mismatch"));
       return;
     }
 
@@ -217,7 +306,7 @@ export default function UserManagementPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setFormError(data.error || "Failed to create user.");
+        setFormError(translateError(um, data.error) || um("um_err_create"));
         return;
       }
       setCreatedUser(data.user);
@@ -226,10 +315,10 @@ export default function UserManagementPage() {
       setFormPassword("");
       setFormConfirm("");
       setFormRole("user");
-      showToast("success", "User created successfully");
+      showToast("success", um("um_toast_created"));
       fetchUsers();
     } catch {
-      setFormError("Network error. Please try again.");
+      setFormError(um("um_err_network"));
     } finally {
       setCreating(false);
     }
@@ -269,12 +358,12 @@ export default function UserManagementPage() {
           parsed.push({ fullName, username, password });
         }
         if (parsed.length === 0) {
-          setCsvError("No valid rows found. Expected format: fullName,username,password");
+          setCsvError(um("um_import_err_norows"));
         } else {
           setBulkRows(parsed);
         }
       } catch {
-        setCsvError("Failed to read the CSV file.");
+        setCsvError(um("um_import_err_upload"));
       }
       // Allow re-importing the same file later
       e.target.value = "";
@@ -306,11 +395,11 @@ export default function UserManagementPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setCsvError(data.error || "Failed to parse the file.");
+        setCsvError(data.error || um("um_import_err_upload"));
         return;
       }
       if (!data.rows || data.rows.length === 0) {
-        setCsvError("No user rows found in the file.");
+        setCsvError(um("um_import_err_norows"));
         return;
       }
       setImportHeaders(data.headers || []);
@@ -323,7 +412,7 @@ export default function UserManagementPage() {
         stageImportRows(data.rows, data.mapping);
       }
     } catch {
-      setCsvError("Failed to upload the file for parsing.");
+      setCsvError(um("um_import_err_upload"));
     } finally {
       setImporting(false);
       e.target.value = "";
@@ -348,11 +437,11 @@ export default function UserManagementPage() {
   const buildBulkPreview = () => {
     const preview: PreviewRow[] = bulkRows.map((r) => {
       const fullName = r.fullName.trim();
-      if (!fullName) return { ...r, valid: false, reason: "Full name is required" };
+      if (!fullName) return { ...r, valid: false, reason: translateError(um, "Full name is required") };
       const uErr = validateUsernameLocal(r.username);
-      if (uErr) return { ...r, valid: false, reason: uErr };
+      if (uErr) return { ...r, valid: false, reason: translateError(um, uErr) };
       const pErr = validatePasswordLocal(r.password);
-      if (pErr) return { ...r, valid: false, reason: pErr };
+      if (pErr) return { ...r, valid: false, reason: translateError(um, pErr) };
       return { ...r, valid: true };
     });
     setBulkPreview(preview);
@@ -375,7 +464,7 @@ export default function UserManagementPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        showToast("error", data.error || "Bulk creation failed.");
+        showToast("error", translateError(um, data.error) || um("um_err_create"));
         return;
       }
       setBulkResult(data);
@@ -383,11 +472,11 @@ export default function UserManagementPage() {
       setBulkPreview(null);
       showToast(
         "success",
-        `Created ${data.createdCount}, skipped ${data.skippedCount}, failed ${data.failedCount}`
+        `${um("um_bulk_created")} ${data.createdCount} · ${um("um_bulk_skipped")} ${data.skippedCount} · ${um("um_bulk_failed")} ${data.failedCount}`
       );
       fetchUsers();
     } catch {
-      showToast("error", "Network error during bulk creation.");
+      showToast("error", um("um_err_network"));
     } finally {
       setBulkCreating(false);
     }
@@ -437,14 +526,14 @@ export default function UserManagementPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setEditError(data.error || "Failed to update user.");
+        setEditError(translateError(um, data.error) || um("um_err_update"));
         return;
       }
-      showToast("success", "User updated successfully");
+      showToast("success", um("um_toast_updated"));
       setEditModal(null);
       fetchUsers();
     } catch {
-      setEditError("Network error.");
+      setEditError(um("um_err_network"));
     } finally {
       setEditSaving(false);
     }
@@ -459,13 +548,13 @@ export default function UserManagementPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        showToast("error", data.error || "Failed to change status.");
+        showToast("error", translateError(um, data.error) || um("um_err_status"));
         return;
       }
-      showToast("success", u.active ? "User disabled" : "User enabled");
+      showToast("success", u.active ? um("um_toast_disabled") : um("um_toast_enabled"));
       fetchUsers();
     } catch {
-      showToast("error", "Network error.");
+      showToast("error", um("um_err_network"));
     }
   };
 
@@ -476,14 +565,14 @@ export default function UserManagementPage() {
       const res = await fetch(`/api/users/${deleteModal.id}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) {
-        showToast("error", data.error || "Failed to delete user.");
+        showToast("error", translateError(um, data.error) || um("um_err_delete"));
         return;
       }
-      showToast("success", "User deleted");
+      showToast("success", um("um_toast_deleted"));
       setDeleteModal(null);
       fetchUsers();
     } catch {
-      showToast("error", "Network error.");
+      showToast("error", um("um_err_network"));
     } finally {
       setDeleting(false);
     }
@@ -503,8 +592,8 @@ export default function UserManagementPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
         </div>
-        <h2 className="text-white text-xl font-bold mb-2">Akses Ditolak</h2>
-        <p className="text-gray-400">Anda tidak mempunyai akses ke bahagian ini.</p>
+        <h2 className="text-white text-xl font-bold mb-2">{um("um_access_denied_title")}</h2>
+        <p className="text-gray-400">{um("um_access_denied_desc")}</p>
       </div>
     );
   }
@@ -534,17 +623,17 @@ export default function UserManagementPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-white text-2xl font-bold">Pengurusan Pengguna</h1>
+          <h1 className="text-white text-2xl font-bold">{um("um_title")}</h1>
           <p className="text-gray-400 mt-1">
-            Urus akaun pengguna eBilikAgamaTV ({validUserCount} user account{validUserCount !== 1 ? "s" : ""})
+            {um("um_subtitle")} ({validUserCount} {um("um_user_count")})
           </p>
         </div>
         {/* Tabs */}
         <div className="flex gap-1 bg-gray-900 border border-white/10 rounded-xl p-1">
           {([
-            ["list", "Users"],
-            ["add", "Add User"],
-            ["bulk", "Bulk Add Users"],
+            ["list", um("um_tab_list")],
+            ["add", um("um_tab_add")],
+            ["bulk", um("um_tab_bulk")],
           ] as const).map(([key, label]) => (
             <button
               key={key}
@@ -564,7 +653,7 @@ export default function UserManagementPage() {
       {/* ═══════════ ADD USER ═══════════ */}
       {tab === "add" && (
         <div className="admin-card max-w-2xl">
-          <h2 className="text-white font-semibold text-lg mb-4">Tambah Pengguna Baru</h2>
+          <h2 className="text-white font-semibold text-lg mb-4">{um("um_add_title")}</h2>
           <form onSubmit={handleCreate} className="space-y-4">
             {formError && (
               <div className="bg-red-600/10 border border-red-600/30 text-red-400 px-4 py-3 rounded-xl text-sm">
@@ -574,28 +663,28 @@ export default function UserManagementPage() {
 
             {createdUser && (
               <div className="bg-green-600/10 border border-green-600/30 text-green-300 px-4 py-3 rounded-xl text-sm">
-                <p className="font-medium mb-1">✓ User created successfully</p>
-                <p>Name: {createdUser.fullName}</p>
-                <p>Username: {createdUser.username}</p>
-                <p>Role: {createdUser.role === "user" ? "User" : createdUser.role === "admin" ? "Admin" : "Owner"}</p>
-                <p>Status: Active</p>
+                <p className="font-medium mb-1">{um("um_created_success")}</p>
+                <p>{um("um_created_name")} {createdUser.fullName}</p>
+                <p>{um("um_created_username")} {createdUser.username}</p>
+                <p>{um("um_role_label")}: {createdUser.role === "user" ? um("um_role_user") : createdUser.role === "admin" ? um("um_role_admin") : um("um_role_owner")}</p>
+                <p>{um("um_status_label")}: {um("um_status_active")}</p>
               </div>
             )}
 
             <div>
-              <label className="block text-gray-300 text-sm font-medium mb-2">Full Name *</label>
+              <label className="block text-gray-300 text-sm font-medium mb-2">{um("um_label_full_name")} *</label>
               <input
                 type="text"
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
                 className="admin-input"
-                placeholder="Contoh: Muhammad Ahmad"
+                placeholder={um("um_placeholder_full_name")}
                 required
               />
             </div>
 
             <div>
-              <label className="block text-gray-300 text-sm font-medium mb-2">Username / Email *</label>
+              <label className="block text-gray-300 text-sm font-medium mb-2">{um("um_label_username")} *</label>
               <div className="relative">
                 <input
                   type="text"
@@ -610,31 +699,31 @@ export default function UserManagementPage() {
                 </span>
               </div>
               <p className="text-gray-500 text-xs mt-1.5">
-                Username must end with {USER_DOMAIN}
+                {um("um_domain_hint_prefix")} {USER_DOMAIN}
               </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-gray-300 text-sm font-medium mb-2">Password *</label>
+                <label className="block text-gray-300 text-sm font-medium mb-2">{um("um_label_password")} *</label>
                 <input
                   type="password"
                   value={formPassword}
                   onChange={(e) => setFormPassword(e.target.value)}
                   className="admin-input"
-                  placeholder={`Min ${MIN_PASSWORD_LENGTH} aksara`}
+                  placeholder={fmt("um_password_min", MIN_PASSWORD_LENGTH)}
                   required
                   autoComplete="new-password"
                 />
               </div>
               <div>
-                <label className="block text-gray-300 text-sm font-medium mb-2">Confirm Password *</label>
+                <label className="block text-gray-300 text-sm font-medium mb-2">{um("um_label_confirm_password")} *</label>
                 <input
                   type="password"
                   value={formConfirm}
                   onChange={(e) => setFormConfirm(e.target.value)}
                   className="admin-input"
-                  placeholder="Ulang kata laluan"
+                  placeholder={um("um_label_confirm_password")}
                   required
                   autoComplete="new-password"
                 />
@@ -642,14 +731,14 @@ export default function UserManagementPage() {
             </div>
 
             <div>
-              <label className="block text-gray-300 text-sm font-medium mb-2">Role</label>
+              <label className="block text-gray-300 text-sm font-medium mb-2">{um("um_role_label")}</label>
               <select
                 value={formRole}
                 onChange={(e) => setFormRole(e.target.value)}
                 className="admin-input"
               >
-                <option value="user">User</option>
-                {isOwner && <option value="admin">Admin</option>}
+                <option value="user">{um("um_role_user")}</option>
+                {isOwner && <option value="admin">{um("um_role_admin")}</option>}
               </select>
             </div>
 
@@ -662,10 +751,10 @@ export default function UserManagementPage() {
                 {creating ? (
                   <>
                     <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Mencipta...
+                    {um("um_btn_creating")}
                   </>
                 ) : (
-                  "Create User"
+                  um("um_btn_create")
                 )}
               </button>
               <button
@@ -673,7 +762,7 @@ export default function UserManagementPage() {
                 onClick={() => { setFormError(""); setCreatedUser(null); }}
                 className="admin-btn admin-btn-secondary"
               >
-                Clear
+                {um("um_btn_clear")}
               </button>
             </div>
           </form>
@@ -685,9 +774,9 @@ export default function UserManagementPage() {
         <div className="admin-card max-w-4xl">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
             <div>
-              <h2 className="text-white font-semibold text-lg">Tambah Pengguna Secara Pukal</h2>
+              <h2 className="text-white font-semibold text-lg">{um("um_bulk_title")}</h2>
               <p className="text-gray-400 text-sm mt-1">
-                Masukkan barisan atau import fail CSV / XLSX / DOCX (kolum: Full Name, Username, Password)
+                {um("um_bulk_desc")}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -695,7 +784,7 @@ export default function UserManagementPage() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
-                {importing ? "Parsing…" : "Import File (CSV / XLSX / DOCX)"}
+                {importing ? um("um_importing") : um("um_btn_import")}
                 <input
                   type="file"
                   accept=".csv,.xlsx,.docx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -716,15 +805,15 @@ export default function UserManagementPage() {
           {/* XLSX/DOCX column-mapping step */}
           {importNeedsMapping && (
             <div className="bg-blue-600/10 border border-blue-600/30 rounded-xl p-4 mb-4">
-              <h3 className="text-white font-semibold mb-1">Could not identify the columns automatically</h3>
+              <h3 className="text-white font-semibold mb-1">{um("um_mapping_title")}</h3>
               <p className="text-gray-400 text-sm mb-3">
                 Map the file columns to the user fields, then click Apply.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                 {(["fullName", "username", "password"] as const).map((field) => (
                   <div key={field}>
-                    <label className="block text-gray-300 text-xs font-medium mb-1 capitalize">
-                      {field === "fullName" ? "Full Name" : field}
+                    <label className="block text-gray-300 text-xs font-medium mb-1">
+                      {field === "fullName" ? um("um_label_full_name") : field === "username" ? um("um_th_username") : um("um_label_password")}
                     </label>
                     <select
                       className="admin-input"
@@ -736,10 +825,10 @@ export default function UserManagementPage() {
                         }))
                       }
                     >
-                      <option value="">— none —</option>
+                      <option value="">{um("um_mapping_none")}</option>
                       {importHeaders.map((h, i) => (
                         <option key={i} value={i}>
-                          {h.trim() || `Column ${i + 1}`}
+                          {h.trim() || fmt("um_mapping_column", i + 1)}
                         </option>
                       ))}
                     </select>
@@ -768,7 +857,7 @@ export default function UserManagementPage() {
                   disabled={importMapping.fullName === null || importMapping.username === null}
                   className="admin-btn admin-btn-primary text-sm disabled:opacity-50"
                 >
-                  Apply Mapping & Continue
+                  {um("um_mapping_apply")}
                 </button>
                 <button
                   onClick={() => {
@@ -777,7 +866,7 @@ export default function UserManagementPage() {
                   }}
                   className="admin-btn admin-btn-secondary text-sm"
                 >
-                  Cancel
+                  {um("um_btn_cancel")}
                 </button>
               </div>
             </div>
@@ -788,9 +877,9 @@ export default function UserManagementPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/10 text-left text-gray-400 text-xs uppercase">
-                  <th className="py-2 px-2">Full Name</th>
-                  <th className="py-2 px-2">Username</th>
-                  <th className="py-2 px-2">Password</th>
+                  <th className="py-2 px-2">{um("um_label_full_name")}</th>
+                  <th className="py-2 px-2">{um("um_th_username")}</th>
+                  <th className="py-2 px-2">{um("um_label_password")}</th>
                   <th className="py-2 px-2 w-10"></th>
                 </tr>
               </thead>
@@ -798,7 +887,7 @@ export default function UserManagementPage() {
                 {bulkRows.length === 0 && (
                   <tr>
                     <td colSpan={4} className="py-6 text-center text-gray-500 text-sm">
-                      Tiada barisan. Klik &quot;Add Row&quot; atau import CSV untuk bermula.
+                      {um("um_bulk_empty")}
                     </td>
                   </tr>
                 )}
@@ -858,14 +947,14 @@ export default function UserManagementPage() {
 
           <div className="flex flex-wrap gap-2 mb-4">
             <button onClick={addBulkRow} className="admin-btn admin-btn-secondary text-sm">
-              + Add Row
+              {um("um_bulk_add_row")}
             </button>
             <button
               onClick={buildBulkPreview}
               disabled={bulkRows.length === 0}
               className="admin-btn admin-btn-primary text-sm disabled:opacity-50"
             >
-              Validate & Preview
+              {um("um_bulk_validate")}
             </button>
           </div>
 
@@ -873,9 +962,9 @@ export default function UserManagementPage() {
           {bulkPreview && (
             <div className="border border-white/10 rounded-xl overflow-hidden">
               <div className="bg-gray-800 px-4 py-3 flex items-center justify-between">
-                <h3 className="text-white text-sm font-medium">Bulk User Review</h3>
+                <h3 className="text-white text-sm font-medium">{um("um_bulk_review")}</h3>
                 <p className="text-xs text-gray-400">
-                  {bulkValidCount} valid · {bulkPreview.length - bulkValidCount} invalid
+                  {bulkValidCount} {um("um_bulk_valid")} · {bulkPreview.length - bulkValidCount} {um("um_bulk_invalid")}
                 </p>
               </div>
               <div className="max-h-72 overflow-y-auto divide-y divide-white/5">
@@ -899,7 +988,7 @@ export default function UserManagementPage() {
                   onClick={() => setBulkPreview(null)}
                   className="admin-btn admin-btn-secondary text-sm"
                 >
-                  Cancel
+                  {um("um_btn_cancel")}
                 </button>
                 <button
                   onClick={handleBulkCreate}
@@ -909,10 +998,10 @@ export default function UserManagementPage() {
                   {bulkCreating ? (
                     <>
                       <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Creating...
+                      {um("um_btn_creating")}
                     </>
                   ) : (
-                    `Create Valid Users (${bulkValidCount})`
+                    fmt("um_bulk_create_valid", bulkValidCount)
                   )}
                 </button>
               </div>
@@ -923,9 +1012,9 @@ export default function UserManagementPage() {
           {bulkResult && (
             <div className="mt-4 border border-white/10 rounded-xl overflow-hidden">
               <div className="bg-gray-800 px-4 py-3">
-                <h3 className="text-white text-sm font-medium">Bulk User Creation Complete</h3>
+                <h3 className="text-white text-sm font-medium">{um("um_bulk_done")}</h3>
                 <p className="text-gray-400 text-xs mt-1">
-                  Created: {bulkResult.createdCount} · Skipped: {bulkResult.skippedCount} · Failed: {bulkResult.failedCount}
+                  {um("um_bulk_created")} {bulkResult.createdCount} · {um("um_bulk_skipped")} {bulkResult.skippedCount} · {um("um_bulk_failed")} {bulkResult.failedCount}
                 </p>
               </div>
               <div className="max-h-60 overflow-y-auto divide-y divide-white/5">
@@ -941,7 +1030,7 @@ export default function UserManagementPage() {
                   ))}
                 {bulkResult.skippedCount === 0 && bulkResult.failedCount === 0 && (
                   <div className="px-4 py-3 text-green-400 text-sm">
-                    ✓ All users created successfully.
+                    {um("um_bulk_all_ok")}
                   </div>
                 )}
               </div>
@@ -953,32 +1042,138 @@ export default function UserManagementPage() {
       {/* ═══════════ USER LIST ═══════════ */}
       {tab === "list" && (
         <div className="admin-card">
-          {/* Search + filters */}
-          <div className="flex flex-wrap gap-3 mb-4">
+          {/* Search + single Filter button */}
+          <div className="flex gap-3 mb-4">
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="admin-input flex-1 min-w-[200px]"
-              placeholder="Cari nama atau username..."
+              className="admin-input flex-1 min-w-0"
+              placeholder={um("um_search_placeholder")}
+              aria-label={um("um_search_placeholder")}
             />
-            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="admin-input w-auto">
-              <option value="">Semua Peranan</option>
-              <option value="user">User</option>
-              <option value="admin">Admin</option>
-              <option value="owner">Owner</option>
-            </select>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="admin-input w-auto">
-              <option value="">Semua Status</option>
-              <option value="active">Aktif</option>
-              <option value="disabled">Dilumpuhkan</option>
-            </select>
-            <select value={sort} onChange={(e) => setSort(e.target.value)} className="admin-input w-auto">
-              <option value="name_asc">Nama A → Z</option>
-              <option value="name_desc">Nama Z → A</option>
-              <option value="newest">Terbaharu</option>
-              <option value="oldest">Tertua</option>
-            </select>
+            <div className="relative flex-shrink-0">
+              <button
+                ref={filterButtonRef}
+                onClick={() => (filterOpen ? setFilterOpen(false) : openFilter())}
+                aria-expanded={filterOpen}
+                aria-haspopup="dialog"
+                aria-label={um("um_filter_button")}
+                className={`admin-btn admin-btn-secondary flex items-center gap-2 whitespace-nowrap ${
+                  activeFilterCount > 0 ? "ring-1 ring-red-500/60" : ""
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                <span className="hidden sm:inline">{um("um_filter_button")}</span>
+                {activeFilterCount > 0 && (
+                  <span
+                    className="bg-red-600 text-white text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center"
+                    aria-label={`${activeFilterCount}`}
+                  >
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Filter panel: popover on desktop (sm+), bottom sheet on mobile */}
+              {filterOpen && (
+                <>
+                  {/* Mobile backdrop */}
+                  <div
+                    className="fixed inset-0 bg-black/60 z-40 sm:hidden"
+                    onClick={() => setFilterOpen(false)}
+                    aria-hidden="true"
+                  />
+                  <div
+                    ref={filterRef}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={um("um_filter_title")}
+                    className="
+                      z-50 bg-gray-900 border border-white/10 rounded-2xl shadow-2xl
+                      fixed bottom-0 left-0 right-0 rounded-b-none p-5 pb-8
+                      sm:absolute sm:top-full sm:mt-2 sm:right-0 sm:left-auto sm:bottom-auto
+                      sm:w-80 sm:p-5 sm:rounded-2xl sm:pb-5
+                    "
+                  >
+                    {/* Drag handle (mobile) */}
+                    <div className="sm:hidden flex justify-center mb-3">
+                      <div className="w-10 h-1 bg-white/20 rounded-full" />
+                    </div>
+
+                    <h3 className="text-white font-semibold mb-4">{um("um_filter_title")}</h3>
+
+                    {/* Role */}
+                    <div className="mb-4">
+                      <label className="block text-gray-300 text-sm font-medium mb-2">
+                        {um("um_role_label")}
+                      </label>
+                      <select
+                        value={filterRole}
+                        onChange={(e) => setFilterRole(e.target.value)}
+                        className="admin-input"
+                      >
+                        <option value="">{um("um_role_all")}</option>
+                        <option value="user">{um("um_role_user")}</option>
+                        <option value="admin">{um("um_role_admin")}</option>
+                        <option value="owner">{um("um_role_owner")}</option>
+                      </select>
+                    </div>
+
+                    {/* Status */}
+                    <div className="mb-4">
+                      <label className="block text-gray-300 text-sm font-medium mb-2">
+                        {um("um_status_label")}
+                      </label>
+                      <select
+                        value={filterStatus}
+                        onChange={(e) => setFilterStatus(e.target.value)}
+                        className="admin-input"
+                      >
+                        <option value="">{um("um_status_all")}</option>
+                        <option value="active">{um("um_status_active")}</option>
+                        <option value="disabled">{um("um_status_disabled")}</option>
+                      </select>
+                    </div>
+
+                    {/* Sort */}
+                    <div className="mb-5">
+                      <label className="block text-gray-300 text-sm font-medium mb-2">
+                        {um("um_sort_label")}
+                      </label>
+                      <select
+                        value={filterSort}
+                        onChange={(e) => setFilterSort(e.target.value)}
+                        className="admin-input"
+                      >
+                        <option value="name_asc">{um("um_sort_name_asc")}</option>
+                        <option value="name_desc">{um("um_sort_name_desc")}</option>
+                        <option value="newest">{um("um_sort_newest")}</option>
+                        <option value="oldest">{um("um_sort_oldest")}</option>
+                      </select>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={resetFilters}
+                        className="admin-btn admin-btn-secondary flex-1"
+                      >
+                        {um("um_reset")}
+                      </button>
+                      <button
+                        onClick={applyFilters}
+                        className="admin-btn admin-btn-primary flex-1"
+                      >
+                        {um("um_apply")}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
           {loading ? (
@@ -987,20 +1182,20 @@ export default function UserManagementPage() {
             </div>
           ) : users.length === 0 ? (
             <div className="text-center py-16">
-              <p className="text-gray-400">Tiada pengguna dijumpai.</p>
+              <p className="text-gray-400">{um("um_empty")}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-white/10 text-left text-gray-400 text-xs uppercase">
-                    <th className="py-3 px-4">Name</th>
-                    <th className="py-3 px-4">Username</th>
-                    <th className="py-3 px-4">Role</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4">Created</th>
-                    <th className="py-3 px-4">Last Login</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
+                    <th className="py-3 px-4">{um("um_th_name")}</th>
+                    <th className="py-3 px-4">{um("um_th_username")}</th>
+                    <th className="py-3 px-4">{um("um_role_label")}</th>
+                    <th className="py-3 px-4">{um("um_status_label")}</th>
+                    <th className="py-3 px-4">{um("um_th_created")}</th>
+                    <th className="py-3 px-4">{um("um_th_last_login")}</th>
+                    <th className="py-3 px-4 text-right">{um("um_th_actions")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1023,7 +1218,7 @@ export default function UserManagementPage() {
                             ? "bg-blue-600/20 text-blue-400"
                             : "bg-gray-600/20 text-gray-300"
                         }`}>
-                          {u.role === "owner" ? "OWNER" : u.role === "admin" ? "ADMIN" : "USER"}
+                          {u.role === "owner" ? um("um_role_owner") : u.role === "admin" ? um("um_role_admin") : um("um_role_user")}
                         </span>
                       </td>
                       <td className="py-3 px-4">
@@ -1032,7 +1227,7 @@ export default function UserManagementPage() {
                             ? "bg-green-600/20 text-green-400"
                             : "bg-gray-600/20 text-gray-400"
                         }`}>
-                          {u.active ? "Active" : "Disabled"}
+                          {u.active ? um("um_status_active") : um("um_status_disabled")}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-gray-500 text-xs">{formatDate(u.createdAt)}</td>
@@ -1043,7 +1238,7 @@ export default function UserManagementPage() {
                             onClick={() => openEdit(u)}
                             className="px-2 py-1 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 rounded text-xs font-medium transition-colors"
                           >
-                            Edit
+                            {um("um_action_edit")}
                           </button>
                           {u.role !== "owner" && (
                             <button
@@ -1054,7 +1249,7 @@ export default function UserManagementPage() {
                                   : "bg-green-600/20 text-green-400 hover:bg-green-600/30"
                               }`}
                             >
-                              {u.active ? "Disable" : "Enable"}
+                              {u.active ? um("um_action_disable") : um("um_action_enable")}
                             </button>
                           )}
                           {u.role !== "owner" && (
@@ -1062,7 +1257,7 @@ export default function UserManagementPage() {
                               onClick={() => setDeleteModal(u)}
                               className="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/30 rounded text-xs font-medium transition-colors"
                             >
-                              Delete
+                              {um("um_action_delete")}
                             </button>
                           )}
                         </div>
@@ -1080,7 +1275,7 @@ export default function UserManagementPage() {
       {editModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 max-w-md w-full">
-            <h3 className="text-white font-semibold text-lg mb-4">Sunting Pengguna</h3>
+            <h3 className="text-white font-semibold text-lg mb-4">{um("um_edit_title")}</h3>
             <form onSubmit={handleEditSave} className="space-y-4">
               {editError && (
                 <div className="bg-red-600/10 border border-red-600/30 text-red-400 px-4 py-3 rounded-xl text-sm">
@@ -1088,7 +1283,7 @@ export default function UserManagementPage() {
                 </div>
               )}
               <div>
-                <label className="block text-gray-300 text-sm font-medium mb-2">Full Name</label>
+                <label className="block text-gray-300 text-sm font-medium mb-2">{um("um_label_full_name")}</label>
                 <input
                   type="text"
                   value={editName}
@@ -1098,7 +1293,7 @@ export default function UserManagementPage() {
                 />
               </div>
               <div>
-                <label className="block text-gray-300 text-sm font-medium mb-2">Username</label>
+                <label className="block text-gray-300 text-sm font-medium mb-2">{um("um_th_username")}</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -1114,27 +1309,27 @@ export default function UserManagementPage() {
               </div>
               <div>
                 <label className="block text-gray-300 text-sm font-medium mb-2">
-                  New Password (kosongkan jika tidak mahu tukar)
+                  {um("um_edit_password_hint")}
                 </label>
                 <input
                   type="password"
                   value={editPassword}
                   onChange={(e) => setEditPassword(e.target.value)}
                   className="admin-input"
-                  placeholder={`Min ${MIN_PASSWORD_LENGTH} aksara`}
+                  placeholder={fmt("um_password_min", MIN_PASSWORD_LENGTH)}
                   autoComplete="new-password"
                 />
               </div>
               {isOwner && editModal.role !== "owner" && (
                 <div>
-                  <label className="block text-gray-300 text-sm font-medium mb-2">Role</label>
+                  <label className="block text-gray-300 text-sm font-medium mb-2">{um("um_role_label")}</label>
                   <select
                     value={editRole}
                     onChange={(e) => setEditRole(e.target.value)}
                     className="admin-input"
                   >
-                    <option value="user">User</option>
-                    <option value="admin">Admin</option>
+                    <option value="user">{um("um_role_user")}</option>
+                    <option value="admin">{um("um_role_admin")}</option>
                   </select>
                 </div>
               )}
@@ -1145,7 +1340,7 @@ export default function UserManagementPage() {
                   className="admin-btn admin-btn-secondary"
                   disabled={editSaving}
                 >
-                  Batal
+                  {um("um_btn_cancel")}
                 </button>
                 <button
                   type="submit"
@@ -1155,7 +1350,7 @@ export default function UserManagementPage() {
                   {editSaving ? (
                     <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   ) : null}
-                  Simpan
+                  {um("um_btn_save")}
                 </button>
               </div>
             </form>
@@ -1173,13 +1368,13 @@ export default function UserManagementPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
                 </svg>
               </div>
-              <h3 className="text-white font-semibold text-lg">Padam Pengguna</h3>
+              <h3 className="text-white font-semibold text-lg">{um("um_delete_title")}</h3>
             </div>
             <p className="text-gray-400 mb-2">
-              Adakah anda pasti mahu memadamkan pengguna ini?
+              {um("um_delete_confirm")}
             </p>
             <p className="text-gray-500 text-sm mb-6">
-              &quot;{deleteModal.fullName || deleteModal.username}&quot; ({deleteModal.username}) — Tindakan ini tidak boleh dibatalkan.
+              &quot;{deleteModal.fullName || deleteModal.username}&quot; ({deleteModal.username}) — {um("um_delete_warning")}
             </p>
             <div className="flex gap-3 justify-end">
               <button
@@ -1187,7 +1382,7 @@ export default function UserManagementPage() {
                 className="admin-btn admin-btn-secondary"
                 disabled={deleting}
               >
-                Batal
+                {um("um_btn_cancel")}
               </button>
               <button
                 onClick={handleDelete}
@@ -1197,7 +1392,7 @@ export default function UserManagementPage() {
                 {deleting ? (
                   <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 ) : null}
-                Padam
+                {um("um_action_delete")}
               </button>
             </div>
           </div>
