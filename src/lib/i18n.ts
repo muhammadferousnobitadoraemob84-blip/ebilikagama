@@ -427,6 +427,9 @@ const translations = {
     um_mapping_none: "— none —",
     um_mapping_column: "Column {n}",
     um_import_err_norows: "No user rows found in the file.",
+    um_import_err_notable:
+      "File detected, but no valid user table was found. Expected columns: Full Name, Username, Password.",
+    um_import_success: "{n} users staged for import.",
     um_import_err_upload: "Failed to upload the file for parsing.",
     um_edit_title: "Edit User",
     um_edit_password_hint: "New Password (leave blank to keep current)",
@@ -853,6 +856,9 @@ const translations = {
     um_mapping_none: "— tiada —",
     um_mapping_column: "Kolum {n}",
     um_import_err_norows: "Tiada baris pengguna dijumpai dalam fail.",
+    um_import_err_notable:
+      "Fail dikesan, tetapi tiada jadual pengguna yang sah dijumpai. Kolum yang dijangka: Nama Penuh, Nama Pengguna, Kata Laluan.",
+    um_import_success: "{n} pengguna telah dimasukkan untuk diimport.",
     um_import_err_upload: "Gagal memuat naik fail untuk diproses.",
     um_edit_title: "Sunting Pengguna",
     um_edit_password_hint: "Kata Laluan Baharu (kosongkan jika tidak mahu tukar)",
@@ -1278,6 +1284,9 @@ const translations = {
     um_mapping_none: "— 无 —",
     um_mapping_column: "第 {n} 列",
     um_import_err_norows: "文件中未找到用户数据行。",
+    um_import_err_notable:
+      "已检测到文件，但未找到有效的用户表格。预期的列：全名、用户名、密码。",
+    um_import_success: "已载入 {n} 个用户待导入。",
     um_import_err_upload: "上传文件解析失败。",
     um_edit_title: "编辑用户",
     um_edit_password_hint: "新密码（留空则保持不变）",

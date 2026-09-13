@@ -56,6 +56,7 @@ export async function POST(request: NextRequest) {
       needsMapping: parsed.needsMapping,
       mapping: parsed.mapping,
       rowCount: parsed.rows.length,
+      debug: parsed.debug,
       rows: parsed.needsMapping
         ? parsed.rows.map((r) => ({ raw: r.raw })) // mapping mode: cells only
         : parsed.rows.map((r) => ({

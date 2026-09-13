@@ -344,23 +344,117 @@ export default function UserManagementPage() {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const text = String(reader.result || "");
-        const lines = text.split(/\r?\n/).filter((l) => l.trim());
-        const parsed: StagedRow[] = [];
-        for (const line of lines) {
-          // Supports: fullName,username,password (quoted or plain)
-          const match = line.match(/^\s*(?:"([^"]*)"|([^,]*))\s*,\s*(?:"([^"]*)"|([^,]*))\s*,\s*(?:"([^"]*)"|([^,]*))\s*$/);
-          if (!match) continue;
-          const fullName = (match[1] || match[2] || "").trim();
-          const username = (match[3] || match[4] || "").trim();
-          const password = (match[5] || match[6] || "").trim();
-          if (!fullName && !username) continue;
-          parsed.push({ fullName, username, password });
+        // Strip UTF-8 BOM so the first header column is not polluted
+        let text = String(reader.result || "");
+        if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+
+        // RFC-4180-style row tokenizer with quote handling
+        const parseCsvRows = (raw: string, delim: string): string[][] => {
+          const out: string[][] = [];
+          let row: string[] = [];
+          let field = "";
+          let inQuotes = false;
+          for (let i = 0; i < raw.length; i++) {
+            const ch = raw[i];
+            if (inQuotes) {
+              if (ch === '"') {
+                if (raw[i + 1] === '"') {
+                  field += '"';
+                  i++;
+                } else {
+                  inQuotes = false;
+                }
+              } else {
+                field += ch;
+              }
+            } else if (ch === '"') {
+              inQuotes = true;
+            } else if (ch === delim) {
+              row.push(field);
+              field = "";
+            } else if (ch === "\n" || ch === "\r") {
+              if (ch === "\r" && raw[i + 1] === "\n") i++;
+              row.push(field);
+              field = "";
+              out.push(row);
+              row = [];
+            } else {
+              field += ch;
+            }
+          }
+          if (field.length > 0 || row.length > 0) {
+            row.push(field);
+            out.push(row);
+          }
+          return out;
+        };
+
+        // Auto-detect delimiter from the first non-empty line
+        const firstLine = text.split(/\r?\n/).find((l) => l.trim()) || "";
+        const counts: Record<string, number> = {
+          ",": (firstLine.match(/,/g) || []).length,
+          ";": (firstLine.match(/;/g) || []).length,
+          "\t": (firstLine.match(/\t/g) || []).length,
+        };
+        const delim = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][1] > 0
+          ? Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]
+          : ",";
+        console.log(`[UserImport] CSV "${file.name}": delimiter=${JSON.stringify(delim)}`);
+
+        const allRows = parseCsvRows(text, delim).filter((r) =>
+          r.some((c) => c.trim())
+        );
+
+        // Reuse the shared header detection so "Full Name;Username;Password"
+        // headers work with any casing/spacing, and headerless 3-col files
+        // still map positionally.
+        const nameRe = /^(full[\s._-]*)?name$/i;
+        const userRe = /^(user(name)?|email)(\s*\/?\s*(email))?$/i;
+        const passRe = /^(pass(word)?|pwd|kata[\s._-]*laluan)$/i;
+        let headerIdx = -1;
+        let map = { fullName: 0, username: 1, password: 2 };
+        const limit = Math.min(allRows.length, 8);
+        for (let i = 0; i < limit; i++) {
+          const m = { fullName: -1, username: -1, password: -1 };
+          for (let c = 0; c < allRows[i].length; c++) {
+            const v = allRows[i][c].trim().toLowerCase().replace(/[*:]+$/, "").trim();
+            if (m.fullName === -1 && nameRe.test(v)) m.fullName = c;
+            else if (m.username === -1 && userRe.test(v)) m.username = c;
+            else if (m.password === -1 && passRe.test(v)) m.password = c;
+          }
+          const hits = Object.values(m).filter((x) => x !== -1).length;
+          if (hits >= 2) {
+            headerIdx = i;
+            map = {
+              fullName: m.fullName !== -1 ? m.fullName : 0,
+              username: m.username !== -1 ? m.username : 1,
+              password: m.password !== -1 ? m.password : 2,
+            };
+            if (hits === 3) break;
+          }
         }
+
+        const dataRows = headerIdx >= 0 ? allRows.slice(headerIdx + 1) : allRows;
+        const parsed: StagedRow[] = dataRows
+          .filter((r) => r.some((c) => c.trim()))
+          .map((r) => ({
+            fullName: (r[map.fullName] || "").trim(),
+            username: (r[map.username] || "").trim(),
+            // Preserve the password exactly as imported (no trim on purpose):
+            // special characters and intentional spaces stay intact.
+            password: r[map.password] || "",
+          }))
+          .filter((r) => r.fullName || r.username);
+
+        console.log(
+          `[UserImport] CSV "${file.name}": ${allRows.length} rows read, header=${headerIdx}, ${parsed.length} valid rows`
+        );
+
         if (parsed.length === 0) {
           setCsvError(um("um_import_err_norows"));
         } else {
-          setBulkRows(parsed);
+          setBulkRows(parsed); // replace placeholders with imported rows
+          showToast("success", fmt("um_import_success", parsed.length));
         }
       } catch {
         setCsvError(um("um_import_err_upload"));
@@ -385,6 +479,10 @@ export default function UserManagementPage() {
       return;
     }
 
+    console.log(
+      `[UserImport] file="${file.name}" size=${file.size} type=${file.type || "unknown"}`
+    );
+
     setImporting(true);
     try {
       const fd = new FormData();
@@ -395,21 +493,26 @@ export default function UserManagementPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setCsvError(data.error || um("um_import_err_upload"));
+        setCsvError(translateError(um, data.error) || um("um_import_err_upload"));
         return;
       }
+      console.log(
+        `[UserImport] parsed "${file.name}": sheets=${JSON.stringify(data.debug?.sheets ?? [])} selected="${data.debug?.selected ?? "?"}" rows=${data.rowCount} needsMapping=${data.needsMapping}`
+      );
       if (!data.rows || data.rows.length === 0) {
-        setCsvError(um("um_import_err_norows"));
+        setCsvError(um("um_import_err_notable"));
         return;
       }
       setImportHeaders(data.headers || []);
       if (data.needsMapping) {
-        // Show the column-mapping step before staging
+        // Columns not confidently identified → manual mapping step
         setImportNeedsMapping(true);
         setImportRows(data.rows.map((r: { raw: string[] }) => ({ ...r, fullName: "", username: "", password: "" })));
         setImportMapping(data.mapping || { fullName: null, username: null, password: null });
       } else {
+        // All required columns identified → stage rows directly (replaces placeholders)
         stageImportRows(data.rows, data.mapping);
+        showToast("success", fmt("um_import_success", data.rows.length));
       }
     } catch {
       setCsvError(um("um_import_err_upload"));
