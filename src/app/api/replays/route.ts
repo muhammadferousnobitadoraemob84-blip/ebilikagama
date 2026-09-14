@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureDatabase } from "@/lib/db-init";
+import { replayThumbUrl } from "@/lib/image-url";
 
 export const dynamic = "force-dynamic";
 
@@ -26,12 +27,14 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Version replay thumbnails with updatedAt so re-uploads bust browser/CDN cache
+    // Rewrite base64 thumbnails to lightweight, epoch-versioned image URLs.
+    // The epoch (VERCEL_DEPLOYMENT_ID) changes every deploy, so caches that
+    // stored a broken response for a previous URL can never be replayed.
     const optimized = replays.map((r) => ({
       ...r,
       thumbnail:
         r.thumbnail && r.thumbnail.startsWith("data:")
-          ? `/api/images/replay/${r.id}?v=${new Date(r.updatedAt).getTime()}`
+          ? replayThumbUrl(r.id, r.updatedAt)
           : r.thumbnail,
     }));
 

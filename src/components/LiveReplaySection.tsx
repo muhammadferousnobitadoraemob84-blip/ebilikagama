@@ -118,6 +118,15 @@ export default function LiveReplaySection() {
                       className="w-full h-full object-cover"
                       loading="lazy"
                       decoding="async"
+                      onError={(e) => {
+                        // Transient failure (e.g. DB cold start): retry once
+                        // with a cache-buster instead of leaving a broken image.
+                        const img = e.currentTarget;
+                        if (!img.dataset.retried) {
+                          img.dataset.retried = "1";
+                          img.src = `${img.src}${img.src.includes("?") ? "&" : "?"}r=${Date.now()}`;
+                        }
+                      }}
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">

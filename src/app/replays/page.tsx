@@ -113,6 +113,14 @@ export default function ReplaysPage() {
                       src={replay.thumbnail}
                       alt={replay.title}
                       className="w-full h-full object-cover"
+                      onError={(e) => {
+                        // Transient failure: retry once with a cache-buster.
+                        const img = e.currentTarget;
+                        if (!img.dataset.retried) {
+                          img.dataset.retried = "1";
+                          img.src = `${img.src}${img.src.includes("?") ? "&" : "?"}r=${Date.now()}`;
+                        }
+                      }}
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">

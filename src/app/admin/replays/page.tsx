@@ -302,6 +302,32 @@ export default function AdminReplaysPage() {
     }
   };
 
+  // ── Thumbnail repair scan (admin-only diagnostic) ────────────────────
+  interface ThumbStatus {
+    id: string;
+    title: string;
+    status: "healthy" | "missing" | "corrupt";
+    chars: number;
+    displayUrl: string | null;
+  }
+  const [thumbScan, setThumbScan] = useState<null | {
+    running: boolean;
+    error?: string;
+    result?: { total: number; healthy: number; missing: number; corrupt: number; items: ThumbStatus[] };
+  }>(null);
+
+  const runThumbScan = async () => {
+    setThumbScan({ running: true });
+    try {
+      const res = await fetch("/api/replays/thumbnails/status");
+      if (!res.ok) throw new Error("Scan failed");
+      const result = await res.json();
+      setThumbScan({ running: false, result });
+    } catch {
+      setThumbScan({ running: false, error: "Gagal mengimbas thumbnail." });
+    }
+  };
+
   // Toggle publish
   const handleTogglePublish = async (id: string, published: boolean) => {
     try {
@@ -341,6 +367,50 @@ export default function AdminReplaysPage() {
             </svg>
             Tambah Live Replay
           </button>
+        </div>
+
+        {/* Thumbnail repair / scan */}
+        <div className="bg-gray-900 border border-white/10 rounded-xl p-4 mb-6">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h2 className="font-semibold text-sm">Kesihatan Thumbnail</h2>
+              <p className="text-gray-400 text-xs mt-0.5">
+                Imbas semua rakaman untuk thumbnail rosak/tiada.
+              </p>
+            </div>
+            <button
+              onClick={runThumbScan}
+              disabled={thumbScan?.running}
+              className="bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white px-3 py-2 rounded-lg text-sm font-medium"
+            >
+              {thumbScan?.running ? "Mengimbas…" : "Imbas Thumbnail"}
+            </button>
+          </div>
+          {thumbScan?.error && (
+            <p className="text-red-400 text-sm mt-3">{thumbScan.error}</p>
+          )}
+          {thumbScan?.result && (
+            <div className="mt-4">
+              <p className="text-sm mb-2">
+                Jumlah: <b>{thumbScan.result.total}</b> · Baik: <b className="text-green-400">{thumbScan.result.healthy}</b> · Tiada: <b className="text-yellow-400">{thumbScan.result.missing}</b> · Rosak: <b className="text-red-400">{thumbScan.result.corrupt}</b>
+              </p>
+              {thumbScan.result.missing + thumbScan.result.corrupt > 0 && (
+                <ul className="text-xs text-gray-300 space-y-1 mt-2">
+                  {thumbScan.result.items.filter((i) => i.status !== "healthy").map((i) => (
+                    <li key={i.id}>
+                      <span className={i.status === "corrupt" ? "text-red-400" : "text-yellow-400"}>
+                        {i.status === "corrupt" ? "✕ Rosak" : "✕ Tiada"}
+                      </span>{" "}
+                      {i.title}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {thumbScan.result.missing + thumbScan.result.corrupt === 0 && (
+                <p className="text-green-400 text-xs mt-1">Semua thumbnail tersimpan dengan baik.</p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Success/Error Messages */}
@@ -552,7 +622,19 @@ export default function AdminReplaysPage() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-4">
                         {replay.thumbnail ? (
-                          <img src={replay.thumbnail} alt="" className="w-20 h-12 object-cover rounded" />
+                          <img
+                            src={replay.thumbnail}
+                            alt=""
+                            className="w-20 h-12 object-cover rounded"
+                            onError={(e) => {
+                              // Transient failure: retry once with a cache-buster.
+                              const img = e.currentTarget;
+                              if (!img.dataset.retried) {
+                                img.dataset.retried = "1";
+                                img.src = `${img.src}${img.src.includes("?") ? "&" : "?"}r=${Date.now()}`;
+                              }
+                            }}
+                          />
                         ) : (
                           <div className="w-20 h-12 bg-gray-800 rounded flex items-center justify-center">
                             <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -3,6 +3,59 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
+/** Small retry wrapper — Neon free tier can cold-start (2–5s) on first hit. */
+async function dbRetry<T>(fn: () => Promise<T>, attempts = 2, delayMs = 800): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
+  }
+  throw lastErr;
+}
+
+/** Load the stored base64 data URI for an image type + id. */
+async function loadBase64Image(type: string, id: string): Promise<string | null> {
+  if (type === "channel") {
+    const row = await dbRetry(() =>
+      prisma.channel.findUnique({ where: { id }, select: { thumbnail: true } })
+    );
+    return row?.thumbnail || null;
+  }
+  if (type === "radio") {
+    const row = await dbRetry(() =>
+      prisma.radio.findUnique({ where: { id }, select: { thumbnail: true } })
+    );
+    return row?.thumbnail || null;
+  }
+  if (type === "setting") {
+    const row = await dbRetry(() =>
+      prisma.setting.findUnique({ where: { key: id }, select: { value: true } })
+    );
+    return row?.value || null;
+  }
+  if (type === "program") {
+    const row = await dbRetry(() =>
+      prisma.program.findUnique({ where: { id }, select: { thumbnail: true } })
+    );
+    return row?.thumbnail || null;
+  }
+  if (type === "replay") {
+    // Live Replay thumbnails are stored as base64 data URIs and served
+    // through this endpoint (list APIs rewrite them to /api/images/replay/{id}).
+    const row = await dbRetry(() =>
+      prisma.replay.findUnique({ where: { id }, select: { thumbnail: true } })
+    );
+    return row?.thumbnail || null;
+  }
+  return null;
+}
+
 // Serve base64 images from the database with proper caching
 // This prevents megabytes of base64 data from being included in every API response
 export async function GET(
@@ -18,45 +71,24 @@ export async function GET(
     }
 
     let base64Data: string | null = null;
-
-    if (type === "channel") {
-      const channel = await prisma.channel.findUnique({
-        where: { id },
-        select: { thumbnail: true },
-      });
-      base64Data = channel?.thumbnail || null;
-    } else if (type === "radio") {
-      const radio = await prisma.radio.findUnique({
-        where: { id },
-        select: { thumbnail: true },
-      });
-      base64Data = radio?.thumbnail || null;
-    } else if (type === "setting") {
-      const setting = await prisma.setting.findUnique({
-        where: { key: id },
-        select: { value: true },
-      });
-      base64Data = setting?.value || null;
-    } else if (type === "program") {
-      const program = await prisma.program.findUnique({
-        where: { id },
-        select: { thumbnail: true },
-      });
-      base64Data = program?.thumbnail || null;
-    } else if (type === "replay") {
-      // Live Replay thumbnails are stored as base64 data URIs and served
-      // through this endpoint (the list APIs rewrite them to URLs like
-      // /api/images/replay/{id}?v=updatedAt). Without this case every
-      // replay thumbnail request 404'd.
-      const replay = await prisma.replay.findUnique({
-        where: { id },
-        select: { thumbnail: true },
-      });
-      base64Data = replay?.thumbnail || null;
+    try {
+      base64Data = await loadBase64Image(type, id);
+    } catch (dbError) {
+      // DB unreachable (e.g. cold start). Must be no-store so the CDN and
+      // browser never cache this transient failure.
+      console.error("[IMAGES] DB error:", dbError instanceof Error ? dbError.message : dbError);
+      return NextResponse.json(
+        { error: "Image temporarily unavailable" },
+        { status: 503, headers: { "Cache-Control": "no-store" } }
+      );
     }
 
     if (!base64Data) {
-      return NextResponse.json({ error: "Image not found" }, { status: 404 });
+      // Genuinely missing reference — cacheable negative response.
+      return NextResponse.json(
+        { error: "Image not found" },
+        { status: 404, headers: { "Cache-Control": "public, max-age=60" } }
+      );
     }
 
     // Parse the data URI to get content type and binary data
@@ -64,15 +96,21 @@ export async function GET(
     const dataPrefix = ";base64,";
     const prefixEnd = base64Data.indexOf(dataPrefix);
     if (prefixEnd === -1) {
-      return NextResponse.json({ error: "Invalid image data format" }, { status: 500 });
+      return NextResponse.json(
+        { error: "Invalid image data format" },
+        { status: 500, headers: { "Cache-Control": "no-store" } }
+      );
     }
     const contentType = base64Data.substring(5, prefixEnd); // Skip "data:"
     const base64 = base64Data.substring(prefixEnd + dataPrefix.length);
-    
+
     if (!contentType.startsWith("image/")) {
-      return NextResponse.json({ error: "Invalid image content type" }, { status: 500 });
+      return NextResponse.json(
+        { error: "Invalid image content type" },
+        { status: 500, headers: { "Cache-Control": "no-store" } }
+      );
     }
-    
+
     const buffer = Buffer.from(base64, "base64");
 
     return new NextResponse(buffer, {
@@ -85,7 +123,7 @@ export async function GET(
   } catch {
     return NextResponse.json(
       { error: "Failed to load image" },
-      { status: 500 }
+      { status: 500, headers: { "Cache-Control": "no-store" } }
     );
   }
 }
