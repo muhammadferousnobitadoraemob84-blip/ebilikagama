@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getAdminSession } from "@/lib/auth";
 import { notifyProgramChange } from "@/lib/program-events";
 import { getThumbnailMeta, dataThumbUrl } from "@/lib/thumb-meta";
+import { isDbUnavailableError, serviceUnavailable } from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +57,10 @@ export async function GET(request: NextRequest) {
         };
       });
       return NextResponse.json(optimized);
-    } catch {
+    } catch (error) {
+      if (isDbUnavailableError(error)) {
+        return serviceUnavailable([]);
+      }
       return NextResponse.json([], { status: 500 });
     }
   }

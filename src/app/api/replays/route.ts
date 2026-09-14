@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureDatabase } from "@/lib/db-init";
 import { replayThumbUrl } from "@/lib/image-url";
 import { getThumbnailMeta } from "@/lib/thumb-meta";
+import { isDbUnavailableError, serviceUnavailable } from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +83,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(optimized);
   } catch (error) {
     console.error("[REPLAYS] Error:", error);
+    if (isDbUnavailableError(error)) {
+      return serviceUnavailable({ error: "Gagal memuatkan rakaman" });
+    }
     return NextResponse.json(
       { error: "Gagal memuatkan rakaman" },
       { status: 500 }

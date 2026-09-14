@@ -101,14 +101,16 @@ export default function Header() {
       // Server-side session check: the edge proxy only verifies the JWT
       // signature, but a revoked session (logout/password reset/disable)
       // fails deep validation in the API. If the server says logged-out
-      // while we are on a protected page, the token is stale — leave.
+      // while we are on a PROTECTED page, the token is stale — leave.
+      // Public pages (homepage, channels, radio, replays, schedule) now
+      // allow guests: a visitor without a session simply stays as a guest
+      // and the header shows the Sign In button.
       if (!p.loggedIn) {
         const path = window.location.pathname;
-        const isPublicPage =
-          path === "/sign-in" ||
-          path === "/admin/login" ||
-          path.startsWith("/blocked");
-        if (!isPublicPage) {
+        const isProtectedPage =
+          path === "/admin" ||
+          (path.startsWith("/admin/") && path !== "/admin/login");
+        if (isProtectedPage) {
           window.location.replace("/sign-in?loggedOut=1");
         }
       }

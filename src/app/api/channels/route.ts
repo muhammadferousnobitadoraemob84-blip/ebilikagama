@@ -5,6 +5,7 @@ import { getAdminSession } from "@/lib/auth";
 import { notifyChannelChange } from "@/lib/channel-events";
 import { ensureDatabase } from "@/lib/db-init";
 import { getThumbnailMeta, dataThumbUrl } from "@/lib/thumb-meta";
+import { isDbUnavailableError, serviceUnavailable } from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -87,7 +88,10 @@ export async function GET(request: NextRequest) {
       };
     });
     return NextResponse.json(optimized);
-  } catch {
+  } catch (error) {
+    if (isDbUnavailableError(error)) {
+      return serviceUnavailable({ error: "Gagal memuatkan saluran" });
+    }
     return NextResponse.json(
       { error: "Gagal memuatkan saluran" },
       { status: 500 }

@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession, getAdminSession } from "@/lib/auth";
 import { getThumbnailMeta, dataThumbUrl } from "@/lib/thumb-meta";
+import { isDbUnavailableError, serviceUnavailable } from "@/lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,9 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     console.error("[RADIOS] GET error:", msg);
+    if (isDbUnavailableError(error)) {
+      return serviceUnavailable({ error: "Gagal memuatkan radio" });
+    }
     return NextResponse.json(
       { error: "Gagal memuatkan radio" },
       { status: 500 }

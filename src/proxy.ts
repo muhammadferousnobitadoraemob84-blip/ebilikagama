@@ -25,14 +25,27 @@ async function getEdgeSessionRole(
 //   1. Static/exempt paths pass through.
 //   2. GEO-BLOCK: Malaysia-only access (Vercel geo header). Exemptions:
 //      /admin, /api, /blocked, static assets. No geo data → allow.
-//   3. AUTH GATE: unauthenticated visitors are redirected to /sign-in for
-//      every page except the public allowlist. Authenticated users pass
-//      through; role authorization (admin vs user) is enforced server-side
-//      in each API route via getSession() — never in the browser.
+//   3. AUTH GATE: the public site is open to guests (no forced sign-in).
+//      Unauthenticated visitors browse /, /channels, /radio, /replay*,
+//      /schedule freely. /admin/* requires a valid admin/owner session
+//      (redirects to sign-in otherwise). Role authorization (admin vs user)
+//      is enforced server-side in each API route via getSession() — never
+//      in the browser.
 // ─────────────────────────────────────────────────────────────────────
 
-// Publicly reachable paths without a session
+// Publicly reachable paths without a session.
+// The public site (homepage, channels, radio, replays, schedule) is open to
+// guests: unauthenticated visitors are treated as public/guest users and the
+// homepage must never force a sign-in. Protected /admin/* pages and every
+// privileged API still enforce authentication + role server-side below and
+// inside each API route via getSession().
 const PUBLIC_PATHS = [
+  "/",
+  "/channels",
+  "/radio",
+  "/replay",
+  "/replays",
+  "/schedule",
   "/sign-in",
   "/admin/login",
   "/blocked",
@@ -136,6 +149,9 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // No session: public routes pass through as guest traffic. Anything not
+  // public has no page of its own (page routes above are all public; only
+  // /admin/* requires a session, handled above) — send those to sign-in.
   if (!isPublic) {
     const loginUrl = new URL("/sign-in", request.url);
     loginUrl.searchParams.set("redirect", path);
