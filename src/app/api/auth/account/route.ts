@@ -32,7 +32,7 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    const updateData: Record<string, string> = {};
+    const updateData: Record<string, string | { increment: number }> = {};
 
     // Change username
     if (newUsername && newUsername !== session.username) {
@@ -55,6 +55,9 @@ export async function PUT(request: NextRequest) {
         );
       }
       updateData.passwordHash = await bcrypt.hash(newPassword, 10);
+      // Invalidate other outstanding sessions for this user (the current
+      // browser gets a fresh token below when the username changed).
+      updateData.tokenVersion = { increment: 1 };
     }
 
     if (Object.keys(updateData).length === 0) {
@@ -75,11 +78,15 @@ export async function PUT(request: NextRequest) {
       username: updatedUser.username,
     });
 
-    if (updateData.username) {
+    // Re-issue the current session after any change: a password change bumps
+    // tokenVersion (killing other sessions), so this browser needs a fresh
+    // token carrying the new version to stay signed in.
+    if (updateData.username || updateData.passwordHash) {
       const newToken = await createToken({
         userId: updatedUser.id,
         username: updatedUser.username,
         role: updatedUser.role,
+        tokenVersion: updatedUser.tokenVersion,
       });
       response.cookies.set("admin-token", newToken, {
         httpOnly: true,

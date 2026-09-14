@@ -56,6 +56,8 @@ export async function PUT(
 
     if (active !== undefined && existing.role !== "owner") {
       updateData.active = active;
+      // Disable/enable takes effect immediately via session revocation.
+      updateData.tokenVersion = { increment: 1 };
     }
 
     if (newPassword) {
@@ -66,6 +68,7 @@ export async function PUT(
         );
       }
       updateData.passwordHash = await bcrypt.hash(newPassword, 10);
+      updateData.tokenVersion = { increment: 1 };
     }
 
     if (Object.keys(updateData).length === 0) {

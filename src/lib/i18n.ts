@@ -47,6 +47,10 @@ const translations = {
     admin_access_only: "Administrator access only",
     invalid_role_message: "Your account does not have administrator access.",
     logout_confirmation: "Signed out successfully. Redirecting to sign-in...",
+    logout_confirm_message: "Are you sure you want to log out?",
+    logout_cancel: "Cancel",
+    logout_loading: "Logging out...",
+    logout_success: "You have been logged out successfully.",
 
     // Hero
     hero_badge: "Live Broadcast",
@@ -505,6 +509,10 @@ const translations = {
     admin_access_only: "Akses pentadbir sahaja",
     invalid_role_message: "Akaun anda tidak mempunyai akses pentadbir.",
     logout_confirmation: "Keluaran berjaya. Arahkan semula ke log masuk...",
+    logout_confirm_message: "Adakah anda pasti mahu log keluar?",
+    logout_cancel: "Batal",
+    logout_loading: "Sedang log keluar...",
+    logout_success: "Anda telah berjaya log keluar.",
 
     // Hero
     hero_badge: "Siaran Langsung",
@@ -963,6 +971,10 @@ const translations = {
     admin_access_only: "仅管理员访问",
     invalid_role_message: "您的账户没有管理员访问权限。",
     logout_confirmation: "退出成功。正在重定向到登录页面...",
+    logout_confirm_message: "确定要退出登录吗？",
+    logout_cancel: "取消",
+    logout_loading: "正在退出登录...",
+    logout_success: "您已成功退出登录。",
 
     // Hero
     hero_badge: "直播中",

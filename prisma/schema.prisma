@@ -15,6 +15,10 @@ model User {
   profilePhoto  String?   @db.Text
   role          String    @default("admin")
   active        Boolean   @default(true)
+  // Server-side session revocation: embedded in the JWT at login, verified
+  // against this column on every authenticated request. Incremented on
+  // logout / password reset / disable to invalidate outstanding tokens.
+  tokenVersion  Int       @default(1)
   lastLogin     DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt

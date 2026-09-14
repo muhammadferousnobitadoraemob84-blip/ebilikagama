@@ -21,6 +21,9 @@ export default function SignInPage() {
   const [loading, setLoading] = useState(false);
   const [adminView, setAdminView] = useState(false);
 
+  // Post-logout confirmation: Header redirects here with ?loggedOut=1
+  const loggedOutNotice = searchParams.get("loggedOut") === "1";
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return; // no duplicate submissions
@@ -82,6 +85,17 @@ export default function SignInPage() {
 
         {/* Login Form */}
         <form onSubmit={handleSubmit} className="space-y-5 bg-gray-900 rounded-xl border border-white/10 p-6">
+          {loggedOutNotice && (
+            <div
+              className="bg-green-600/10 border border-green-600/30 text-green-400 px-4 py-3 rounded-xl text-sm flex items-center gap-2"
+              role="status"
+            >
+              <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {t("logout_success")}
+            </div>
+          )}
           {error && (
             <div className="bg-red-600/10 border border-red-600/30 text-red-400 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
               <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

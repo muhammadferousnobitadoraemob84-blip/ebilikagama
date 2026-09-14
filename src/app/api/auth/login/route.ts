@@ -60,6 +60,14 @@ export async function POST(request: NextRequest) {
       user = await withRetry(() =>
         prisma.user.findFirst({ where: { username: normalized } })
       );
+      if (user && typeof user.tokenVersion !== "number") {
+        // Legacy row predating the tokenVersion column — normalize it so the
+        // token and future revocations always agree.
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { tokenVersion: 1 },
+        });
+      }
     } catch (dbError) {
       console.error("[LOGIN] Database query failed:", dbError);
       return NextResponse.json(
@@ -122,6 +130,7 @@ export async function POST(request: NextRequest) {
         userId: user.id,
         username: user.username,
         role: user.role,
+        tokenVersion: user.tokenVersion,
       });
     } catch (tokenError) {
       console.error("[LOGIN] Token creation failed:", tokenError);

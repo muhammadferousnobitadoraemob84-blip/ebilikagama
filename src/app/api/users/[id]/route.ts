@@ -71,13 +71,15 @@ export async function PUT(
       data.username = username;
     }
 
-    // Password reset — never returns or logs the password
+    // Password reset — never returns or logs the password. Bumping
+    // tokenVersion also invalidates every outstanding session for this user.
     if (body.newPassword) {
       const passwordError = validatePassword(String(body.newPassword));
       if (passwordError) {
         return NextResponse.json({ error: passwordError }, { status: 400 });
       }
       data.passwordHash = await bcrypt.hash(String(body.newPassword), 10);
+      data.tokenVersion = { increment: 1 };
     }
 
     // Account status
@@ -96,6 +98,9 @@ export async function PUT(
         );
       }
       data.active = Boolean(body.active);
+      // Disable/enable must take effect immediately: bump the version so any
+      // outstanding token for this user is rejected on the next request.
+      data.tokenVersion = { increment: 1 };
     }
 
     // Role change — owner only
@@ -117,6 +122,8 @@ export async function PUT(
         return NextResponse.json({ error: "Invalid role" }, { status: 400 });
       }
       data.role = newRole;
+      // Role change (e.g. admin → user) must apply immediately.
+      data.tokenVersion = { increment: 1 };
     }
 
     if (Object.keys(data).length === 0) {

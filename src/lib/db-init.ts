@@ -5,7 +5,7 @@ let _initPromise: Promise<boolean> | null = null;
 
 // Bump when runMigrations() changes so cold instances re-apply migrations
 // exactly once, then skip them entirely (17+ DDL round-trips otherwise).
-const SCHEMA_VERSION = "3";
+const SCHEMA_VERSION = "4";
 
 async function getSchemaVersion(): Promise<string | null> {
   try {
@@ -120,6 +120,7 @@ async function createTables() {
       "profilePhoto" TEXT,
       "role" TEXT NOT NULL DEFAULT 'admin',
       "active" BOOLEAN NOT NULL DEFAULT true,
+      "tokenVersion" INTEGER NOT NULL DEFAULT 1,
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" TIMESTAMP(3) NOT NULL,
       CONSTRAINT "User_username_key" UNIQUE ("username")
@@ -230,6 +231,16 @@ async function createTables() {
 }
 
 async function runMigrations() {
+  // Add tokenVersion column to User table (server-side session revocation).
+  // Default 1 = instantly invalidates every token issued before this change.
+  try {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "tokenVersion" INTEGER NOT NULL DEFAULT 1;`
+    );
+  } catch {
+    // Column might already exist
+  }
+
   // Add profilePhoto column to User table if it doesn't exist
   try {
     await prisma.$executeRawUnsafe(`
