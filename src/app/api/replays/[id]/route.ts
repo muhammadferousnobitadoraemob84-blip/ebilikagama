@@ -46,6 +46,16 @@ export async function PUT(
     const body = await request.json();
     const { title, description, date, googleDriveId, googleDriveUrl, thumbnail, published } = body;
 
+    // Guard against data loss: the admin form prefills the thumbnail field
+    // with the API's rewritten URL (/api/images/replay/{id}?v=...). Saving
+    // without re-uploading used to overwrite the stored base64 image with
+    // that URL string, corrupting the record. A same-record images URL is
+    // never real thumbnail data — ignore it (undefined = don't touch).
+    const isSelfReferenceUrl =
+      typeof thumbnail === "string" &&
+      thumbnail.startsWith(`/api/images/replay/${id}`);
+    const thumbnailUpdate = isSelfReferenceUrl ? undefined : thumbnail;
+
     const replay = await prisma.replay.findUnique({
       where: { id },
     });
@@ -68,7 +78,7 @@ export async function PUT(
           videoUrl: `https://drive.google.com/file/d/${googleDriveId}/preview`,
         }),
         ...(googleDriveUrl !== undefined && { googleDriveUrl }),
-        ...(thumbnail !== undefined && { thumbnail }),
+        ...(thumbnailUpdate !== undefined && { thumbnail: thumbnailUpdate }),
         ...(published !== undefined && { published }),
       },
     });

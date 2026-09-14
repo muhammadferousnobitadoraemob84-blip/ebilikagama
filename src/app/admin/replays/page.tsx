@@ -196,15 +196,25 @@ export default function AdminReplaysPage() {
       }
 
       // Create or update replay
-      const replayData = {
+      const replayData: Record<string, unknown> = {
         title: title.trim(),
         description: description.trim() || null,
         date,
         googleDriveId: fileId,
         googleDriveUrl: googleDriveLink,
-        thumbnail: finalThumbnailUrl,
         published: publish,
       };
+
+      // Only send a thumbnail when there is genuinely NEW image data. The
+      // edit form prefills thumbnailUrl with the display URL
+      // (/api/images/replay/{id}) — sending that back would overwrite the
+      // stored base64 image with a URL string. Omitting `thumbnail` leaves
+      // the existing image untouched.
+      if (thumbnailFile && finalThumbnailUrl) {
+        replayData.thumbnail = finalThumbnailUrl;
+      } else if (!editingReplay && finalThumbnailUrl) {
+        replayData.thumbnail = finalThumbnailUrl;
+      }
 
       let res;
       if (editingReplay) {

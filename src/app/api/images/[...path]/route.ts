@@ -43,6 +43,16 @@ export async function GET(
         select: { thumbnail: true },
       });
       base64Data = program?.thumbnail || null;
+    } else if (type === "replay") {
+      // Live Replay thumbnails are stored as base64 data URIs and served
+      // through this endpoint (the list APIs rewrite them to URLs like
+      // /api/images/replay/{id}?v=updatedAt). Without this case every
+      // replay thumbnail request 404'd.
+      const replay = await prisma.replay.findUnique({
+        where: { id },
+        select: { thumbnail: true },
+      });
+      base64Data = replay?.thumbnail || null;
     }
 
     if (!base64Data) {
