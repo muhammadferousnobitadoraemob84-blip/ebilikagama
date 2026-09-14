@@ -1,30 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma, withRetry } from "@/lib/prisma";
 import { getAdminSession } from "@/lib/auth";
 import { notifyChannelChange } from "@/lib/channel-events";
 import { ensureDatabase } from "@/lib/db-init";
+import { getThumbnailMeta, dataThumbUrl } from "@/lib/thumb-meta";
 
 export const dynamic = "force-dynamic";
-
-// Helper: convert base64 data URI to an API image URL
-// The URL is versioned with the record's updatedAt so that a newly uploaded
-// thumbnail gets a fresh URL — browsers/CDNs then treat it as a new resource
-// instead of serving the stale cached old image.
-function toImageUrl(
-  base64Data: string | null,
-  type: string,
-  id: string,
-  updatedAt?: Date | string
-): string | null {
-  if (!base64Data || !base64Data.startsWith("data:")) return null;
-  let v = 0;
-  try {
-    v = updatedAt ? new Date(updatedAt).getTime() : 0;
-  } catch {
-    v = 0;
-  }
-  return `/api/images/${type}/${id}?v=${v}`;
-}
 
 // GET all channels (public — only active)
 export async function GET(request: NextRequest) {
@@ -43,6 +25,11 @@ export async function GET(request: NextRequest) {
       where.category = category;
     }
 
+    // Select everything EXCEPT the base64 thumbnail column. Transferring the
+    // blobs from the database on every list request consumed the Neon free
+    // tier's monthly transfer quota (5.5 GB), which took the whole site's
+    // database layer down. Thumbnails are classified with a cheap projection
+    // instead (see lib/thumb-meta.ts) and served via /api/images/... .
     const channels = await withRetry(() =>
       prisma.channel.findMany({
         where,
@@ -52,7 +39,6 @@ export async function GET(request: NextRequest) {
           name: true,
           category: true,
           twitchUsername: true,
-          thumbnail: true,
           description: true,
           liveStatus: true,
           displayOrder: true,
@@ -62,18 +48,45 @@ export async function GET(request: NextRequest) {
         },
       })
     );
+    const meta = await getThumbnailMeta(
+      "Channel",
+      all === "true" ? Prisma.sql`true` : Prisma.sql`"active" = true`
+    );
 
     // For public API: replace base64 thumbnails with lightweight URLs
     if (raw !== "true") {
-      const optimized = channels.map((ch) => ({
-        ...ch,
-        thumbnail: toImageUrl(ch.thumbnail, "channel", ch.id, ch.updatedAt),
-      }));
+      const optimized = channels.map((ch) => {
+        const m = meta.get(ch.id);
+        return {
+          ...ch,
+          thumbnail:
+            m?.kind === "data"
+              ? dataThumbUrl("channel", ch.id, ch.updatedAt)
+              : m?.kind === "url"
+                ? m.url
+                : null,
+        };
+      });
       return NextResponse.json(optimized);
     }
 
-    // Admin API: return full data including base64
-    return NextResponse.json(channels);
+    // Admin API (raw=true): metadata only — the base64 blob is no longer
+    // transferred over the wire. Editors that need bytes fetch the single
+    // record or the /api/images/... URL.
+    const optimized = channels.map((ch) => {
+      const m = meta.get(ch.id);
+      return {
+        ...ch,
+        hasStoredThumbnail: m?.kind === "data",
+        thumbnail:
+          m?.kind === "data"
+            ? dataThumbUrl("channel", ch.id, ch.updatedAt)
+            : m?.kind === "url"
+              ? m.url
+              : null,
+      };
+    });
+    return NextResponse.json(optimized);
   } catch {
     return NextResponse.json(
       { error: "Gagal memuatkan saluran" },

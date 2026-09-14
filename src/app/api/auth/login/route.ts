@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, withRetry } from "@/lib/prisma";
 import { createToken } from "@/lib/auth";
-import { ensureDatabase } from "@/lib/db-init";
+import { ensureDatabase, getDbFatalError } from "@/lib/db-init";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
@@ -36,16 +36,27 @@ export async function POST(request: NextRequest) {
       dbReady = false;
     }
     if (!dbReady) {
-      console.error(`[LOGIN] DB init not ready after 5s cap (total ${Date.now() - t0}ms)`);
+      const fatal = getDbFatalError();
+      console.error(
+        `[LOGIN] DB unavailable (total ${Date.now() - t0}ms)` +
+          (fatal ? ` — fatal: ${fatal}` : " — init timed out (cold start?)")
+      );
       if (!process.env.DATABASE_URL) {
         return NextResponse.json(
           { error: "DATABASE_URL belum disediakan. Sila tambah DATABASE_URL di Vercel → Settings → Environment Variables." },
           { status: 500 }
         );
       }
+      // Permanent failure (e.g. Neon transfer quota exhausted): tell clients
+      // to back off for minutes, not spin on instant retries. The public
+      // message stays generic; only a coarse reason code is exposed.
+      const headers = fatal ? { "Retry-After": "300" } : { "Retry-After": "5" };
       return NextResponse.json(
-        { error: "Perkhidmatan pengesahan tidak tersedia buat sementara. Sila cuba lagi sebentar." },
-        { status: 503 }
+        {
+          error: "Perkhidmatan pengesahan tidak tersedia buat sementara. Sila cuba lagi sebentar.",
+          ...(fatal ? { reason: "database_unavailable" } : {}),
+        },
+        { status: 503, headers }
       );
     }
 

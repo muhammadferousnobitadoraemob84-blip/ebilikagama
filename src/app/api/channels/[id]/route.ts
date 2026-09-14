@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAdminSession } from "@/lib/auth";
 import { notifyChannelChange } from "@/lib/channel-events";
+import { isSelfImageUrl } from "@/lib/thumb-meta";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +70,8 @@ export async function PUT(
         ...(name !== undefined && { name }),
         ...(category !== undefined && { category }),
         ...(twitchUsername !== undefined && { twitchUsername }),
-        ...(thumbnail !== undefined && { thumbnail }),
+        ...(thumbnail !== undefined &&
+          !isSelfImageUrl(thumbnail, "channel", id) && { thumbnail }),
         ...(description !== undefined && { description }),
         ...(displayOrder !== undefined && { displayOrder }),
         ...(active !== undefined && { active }),

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession, getAdminSession } from "@/lib/auth";
+import { getThumbnailMeta, dataThumbUrl } from "@/lib/thumb-meta";
 
 export const dynamic = "force-dynamic";
 
@@ -10,20 +12,41 @@ export async function GET(request: NextRequest) {
     const session = await getAdminSession();
     const isAdmin = !!session;
 
+    // Select everything EXCEPT the base64 thumbnail column (transferring
+    // blobs from the DB on every request exhausts the transfer quota).
     const radios = await prisma.radio.findMany({
       where: isAdmin ? {} : { enabled: true },
       orderBy: { displayOrder: "asc" },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        twitchUsername: true,
+        category: true,
+        enabled: true,
+        displayOrder: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
+    const meta = await getThumbnailMeta(
+      "Radio",
+      isAdmin ? Prisma.sql`true` : Prisma.sql`"enabled" = true`
+    );
 
-    // For public, strip stream URL to avoid exposure — actually keep it for the player
-    // But strip thumbnail base64 to keep response small, serve via API
-    const optimized = radios.map((radio) => ({
-      ...radio,
-      thumbnail:
-        radio.thumbnail && radio.thumbnail.startsWith("data:")
-          ? `/api/images/radio/${radio.id}?v=${new Date(radio.updatedAt).getTime()}`
-          : radio.thumbnail,
-    }));
+    // Public sees only enabled radios; thumbnails served via /api/images/...
+    const optimized = radios.map((radio) => {
+      const m = meta.get(radio.id);
+      return {
+        ...radio,
+        thumbnail:
+          m?.kind === "data"
+            ? dataThumbUrl("radio", radio.id, radio.updatedAt)
+            : m?.kind === "url"
+              ? m.url
+              : null,
+      };
+    });
 
     return NextResponse.json(optimized);
   } catch (error) {

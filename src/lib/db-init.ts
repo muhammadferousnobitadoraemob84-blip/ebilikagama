@@ -1,7 +1,14 @@
-import { prisma, withRetry } from "@/lib/prisma";
+import { prisma, withRetry, isNonRetryableDbError } from "@/lib/prisma";
 
 let _initialized = false;
 let _initPromise: Promise<boolean> | null = null;
+// Last permanent (non-retryable) DB failure reason, for diagnostics.
+let _fatalError: string | null = null;
+
+/** Human-readable reason for the last permanent DB failure, if any. */
+export function getDbFatalError(): string | null {
+  return _fatalError;
+}
 
 // Bump when runMigrations() changes so cold instances re-apply migrations
 // exactly once, then skip them entirely (17+ DDL round-trips otherwise).
@@ -37,11 +44,20 @@ async function setSchemaVersion(): Promise<void> {
 export function ensureDatabase(): Promise<boolean> {
   if (_initialized) return Promise.resolve(true);
   if (!_initPromise) {
-    _initPromise = initDatabase().catch((err) => {
-      // Allow the next request to retry a failed init
-      _initPromise = null;
-      throw err;
-    });
+    _initPromise = initDatabase()
+      .then((ok) => {
+        if (!ok) {
+          // Failed init must not be memoized forever — a later request may
+          // succeed (e.g. Neon quota resets / compute resumes).
+          _initPromise = null;
+        }
+        return ok;
+      })
+      .catch((err) => {
+        // Allow the next request to retry a failed init
+        _initPromise = null;
+        throw err;
+      });
   }
   return _initPromise;
 }
@@ -75,7 +91,15 @@ async function initDatabase(): Promise<boolean> {
     console.log("[DB-INIT] Database ready.");
     return true;
   } catch (err) {
-    console.error("[DB-INIT] Tables check failed:", err);
+    console.error("[DB-INIT] Tables check failed:", err instanceof Error ? err.message : err);
+    // Permanent failures (exhausted transfer quota, suspended/restricted
+    // project) will fail migrations and table creation too — fail fast
+    // instead of burning through three more rounds of doomed DDL.
+    if (isNonRetryableDbError(err)) {
+      _fatalError = err instanceof Error ? err.message : String(err);
+      console.error("[DB-INIT] Non-retryable database failure:", _fatalError);
+      return false;
+    }
     // The check can fail due to a missing NEW column (schema drift between
     // the deployed database and the current Prisma client). Apply migrations
     // before giving up — runMigrations() uses idempotent IF NOT EXISTS DDL.

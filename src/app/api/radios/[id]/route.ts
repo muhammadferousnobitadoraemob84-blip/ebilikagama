@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAdminSession } from "@/lib/auth";
+import { isSelfImageUrl } from "@/lib/thumb-meta";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +66,8 @@ export async function PUT(
       data: {
         ...(name !== undefined && { name }),
         ...(description !== undefined && { description }),
-        ...(thumbnail !== undefined && { thumbnail }),
+        ...(thumbnail !== undefined &&
+          !isSelfImageUrl(thumbnail, "radio", id) && { thumbnail }),
         ...(twitchUsername !== undefined && { twitchUsername: twitchUsername || null }),
         ...(category !== undefined && { category }),
         ...(enabled !== undefined && { enabled }),

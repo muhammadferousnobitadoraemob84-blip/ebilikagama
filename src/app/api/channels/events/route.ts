@@ -1,5 +1,7 @@
 import { subscribe } from "@/lib/channel-events";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
+import { getThumbnailMeta, dataThumbUrl } from "@/lib/thumb-meta";
 
 export const dynamic = "force-dynamic";
 
@@ -14,19 +16,39 @@ export async function GET() {
       const send = async () => {
         if (closed) return;
         try {
+          // No base64 blobs over the wire: select without the thumbnail
+          // column and classify thumbnails with a cheap projection query.
           const channels = await prisma.channel.findMany({
             where: { active: true },
             orderBy: { displayOrder: "asc" },
+            select: {
+              id: true,
+              name: true,
+              category: true,
+              twitchUsername: true,
+              description: true,
+              liveStatus: true,
+              displayOrder: true,
+              updatedAt: true,
+            },
           });
           if (!closed) {
-            // Strip base64 thumbnails to keep SSE payload small
-            const optimized = channels.map((ch) => ({
-              ...ch,
-              thumbnail:
-                ch.thumbnail && ch.thumbnail.startsWith("data:")
-                  ? `/api/images/channel/${ch.id}?v=${new Date(ch.updatedAt).getTime()}`
-                  : ch.thumbnail,
-            }));
+            const meta = await getThumbnailMeta(
+              "Channel",
+              Prisma.sql`"active" = true`
+            );
+            const optimized = channels.map((ch) => {
+              const m = meta.get(ch.id);
+              return {
+                ...ch,
+                thumbnail:
+                  m?.kind === "data"
+                    ? dataThumbUrl("channel", ch.id, ch.updatedAt)
+                    : m?.kind === "url"
+                      ? m.url
+                      : null,
+              };
+            });
             const data = `data: ${JSON.stringify(optimized)}\n\n`;
             controller.enqueue(encoder.encode(data));
           }

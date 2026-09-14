@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ensureDatabase } from "@/lib/db-init";
 import { replayThumbUrl } from "@/lib/image-url";
+import { getThumbnailMeta } from "@/lib/thumb-meta";
 
 export const dynamic = "force-dynamic";
 
@@ -15,28 +17,67 @@ export async function GET(request: NextRequest) {
 
     let replays;
     if (all) {
-      // Admin view - get all replays
+      // Admin view - get all replays. The base64 thumbnail column is NOT
+      // selected — transferring blobs on every list request exhausted the
+      // Neon transfer quota. Thumbnails are classified with a cheap query.
       replays = await prisma.replay.findMany({
         orderBy: { date: "desc" },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          videoUrl: true,
+          googleDriveId: true,
+          googleDriveUrl: true,
+          duration: true,
+          fileSize: true,
+          date: true,
+          published: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       });
     } else {
-      // Public view - get only published replays
+      // Public view - get only published replays (same no-blob selection).
       replays = await prisma.replay.findMany({
         where: { published: true },
         orderBy: { date: "desc" },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          videoUrl: true,
+          googleDriveId: true,
+          googleDriveUrl: true,
+          duration: true,
+          fileSize: true,
+          date: true,
+          published: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       });
     }
+
+    // Classify thumbnails without reading blob bytes (data URI vs external
+    // URL vs none).
+    const meta = await getThumbnailMeta("Replay", Prisma.sql`true`);
 
     // Rewrite base64 thumbnails to lightweight, epoch-versioned image URLs.
     // The epoch (VERCEL_DEPLOYMENT_ID) changes every deploy, so caches that
     // stored a broken response for a previous URL can never be replayed.
-    const optimized = replays.map((r) => ({
-      ...r,
-      thumbnail:
-        r.thumbnail && r.thumbnail.startsWith("data:")
-          ? replayThumbUrl(r.id, r.updatedAt)
-          : r.thumbnail,
-    }));
+    const optimized = replays.map((r) => {
+      const m = meta.get(r.id);
+      return {
+        ...r,
+        thumbnail:
+          m?.kind === "data"
+            ? replayThumbUrl(r.id, r.updatedAt)
+            : m?.kind === "url"
+              ? m.url
+              : null,
+      };
+    });
 
     return NextResponse.json(optimized);
   } catch (error) {

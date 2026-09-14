@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAdminSession } from "@/lib/auth";
 import { notifyProgramChange } from "@/lib/program-events";
+import { getThumbnailMeta, dataThumbUrl } from "@/lib/thumb-meta";
 
 export const dynamic = "force-dynamic";
 
@@ -16,19 +18,43 @@ export async function GET(request: NextRequest) {
   // Public endpoint: filter by channelId + date
   if (channelId && date) {
     try {
+      // Select WITHOUT the base64 thumbnail column; classify via cheap query
+      // so blobs are never transferred from the database.
       const programs = await prisma.program.findMany({
         where: { channelId, date },
-        include: { channel: { select: { id: true, name: true } } },
         orderBy: { startTime: "asc" },
+        select: {
+          id: true,
+          channelId: true,
+          title: true,
+          date: true,
+          startTime: true,
+          endTime: true,
+          description: true,
+          status: true,
+          youtubeBroadcastId: true,
+          youtubeUrl: true,
+          createdAt: true,
+          updatedAt: true,
+          channel: { select: { id: true, name: true } },
+        },
       });
-      // Strip base64 thumbnails from public response
-      const optimized = programs.map((p) => ({
-        ...p,
-        thumbnail:
-          p.thumbnail && p.thumbnail.startsWith("data:")
-            ? `/api/images/program/${p.id}?v=${new Date(p.updatedAt).getTime()}`
-            : p.thumbnail,
-      }));
+      const meta = await getThumbnailMeta(
+        "Program",
+        Prisma.sql`"channelId" = ${channelId} AND "date" = ${date}`
+      );
+      const optimized = programs.map((p) => {
+        const m = meta.get(p.id);
+        return {
+          ...p,
+          thumbnail:
+            m?.kind === "data"
+              ? dataThumbUrl("program", p.id, p.updatedAt)
+              : m?.kind === "url"
+                ? m.url
+                : null,
+        };
+      });
       return NextResponse.json(optimized);
     } catch {
       return NextResponse.json([], { status: 500 });

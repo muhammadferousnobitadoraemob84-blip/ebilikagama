@@ -14,16 +14,12 @@ const nextConfig: NextConfig = {
           },
         ],
       },
-      {
-        // Cache images with long-lived headers
-        source: "/api/images/:path*",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800",
-          },
-        ],
-      },
+      // NOTE: /api/images must NOT be cached via a global header rule.
+      // A blanket Cache-Control here was applied to ERROR responses too
+      // (503/404), letting the CDN and browsers store broken-image answers
+      // for 24h — the mechanism behind the replay-thumbnail cache-poisoning
+      // incident. The route handler sets per-response headers: long cache on
+      // success, no-store on every error path.
       {
         // Cache channel API with short stale-while-revalidate
         source: "/api/channels",
