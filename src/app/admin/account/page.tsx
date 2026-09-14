@@ -328,7 +328,7 @@ export default function AccountSettings() {
                   type={showCurrentPassword ? "text" : "password"}
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="admin-input pr-10"
+                  className="admin-input pr-10!"
                   placeholder="Enter current password"
                   required
                   autoComplete="current-password"
@@ -367,7 +367,7 @@ export default function AccountSettings() {
                   type={showNewPassword ? "text" : "password"}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="admin-input pr-10"
+                  className="admin-input pr-10!"
                   placeholder="Enter new password (min 6 characters)"
                   autoComplete="new-password"
                 />

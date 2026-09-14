@@ -176,7 +176,7 @@ export default function SignInPage() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full admin-input pl-10"
+                className="w-full admin-input pl-10!"
                 placeholder={adminView ? "Admin username" : "username / email"}
                 required
                 autoComplete="username"
@@ -199,7 +199,7 @@ export default function SignInPage() {
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full admin-input pl-10 pr-10"
+                className="w-full admin-input pl-10! pr-10!"
                 placeholder="••••••••"
                 required
                 autoComplete="current-password"

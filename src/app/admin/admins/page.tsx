@@ -314,7 +314,7 @@ export default function AdminManagement() {
                     type={showPassword ? "text" : "password"}
                     value={formPassword}
                     onChange={(e) => setFormPassword(e.target.value)}
-                    className="admin-input pr-10"
+                    className="admin-input pr-10!"
                     placeholder="Min 6 aksara"
                     required
                   />
@@ -514,7 +514,7 @@ export default function AdminManagement() {
                     type={showEditPassword ? "text" : "password"}
                     value={editNewPassword}
                     onChange={(e) => setEditNewPassword(e.target.value)}
-                    className="admin-input pr-10"
+                    className="admin-input pr-10!"
                     placeholder="Min 6 aksara"
                   />
                   <button

@@ -735,7 +735,7 @@ export default function UserManagementPage() {
                   type="text"
                   value={formUsername}
                   onChange={(e) => setFormUsername(e.target.value)}
-                  className="admin-input pr-44"
+                  className="admin-input pr-44!"
                   placeholder="muhammad"
                   required
                 />
@@ -1283,7 +1283,7 @@ export default function UserManagementPage() {
                     type="text"
                     value={editUsername.replace(USER_DOMAIN, "")}
                     onChange={(e) => setEditUsername(e.target.value + USER_DOMAIN)}
-                    className="admin-input pr-44"
+                    className="admin-input pr-44!"
                     required
                   />
                   <span className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 text-sm pointer-events-none">

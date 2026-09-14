@@ -119,7 +119,7 @@ export default function AdminLogin() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="admin-input pl-10"
+                className="admin-input pl-10!"
                 placeholder="Masukkan username"
                 required
                 autoComplete="username"
@@ -142,7 +142,7 @@ export default function AdminLogin() {
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="admin-input pl-10 pr-10"
+                className="admin-input pl-10! pr-10!"
                 placeholder="Masukkan kata laluan"
                 required
                 autoComplete="current-password"
