@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLanguage } from "@/components/LanguageProvider";
 
@@ -20,6 +20,32 @@ export default function SignInPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [adminView, setAdminView] = useState(false);
+
+  // Live database status: when the backend database is down (e.g. exhausted
+  // hosting transfer quota), sign-in cannot succeed — so say so plainly and
+  // show live recovery status instead of a misleading "invalid credentials"
+  // style error after every attempt.
+  const [dbStatus, setDbStatus] = useState<"unknown" | "ok" | "down">("unknown");
+  const [checkingDb, setCheckingDb] = useState(false);
+
+  const checkDb = useCallback(async () => {
+    setCheckingDb(true);
+    try {
+      const r = await fetch("/api/health/db", { cache: "no-store" });
+      const j = await r.json().catch(() => ({}));
+      setDbStatus(j?.database === "reachable" ? "ok" : "down");
+    } catch {
+      setDbStatus("down");
+    } finally {
+      setCheckingDb(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkDb();
+    const id = setInterval(checkDb, 60_000); // poll until service returns
+    return () => clearInterval(id);
+  }, [checkDb]);
 
   // Post-logout confirmation: Header redirects here with ?loggedOut=1
   const loggedOutNotice = searchParams.get("loggedOut") === "1";
@@ -50,6 +76,7 @@ export default function SignInPage() {
       }
 
       if (!res.ok) {
+        if (res.status === 503) checkDb(); // database outage — refresh the banner
         setError(data.error || t("sign_in_error_generic"));
         return; // finally resets loading
       }
@@ -96,7 +123,37 @@ export default function SignInPage() {
               {t("logout_success")}
             </div>
           )}
-          {error && (
+          {dbStatus === "down" && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4" role="alert">
+              <div className="flex items-start gap-3">
+                <svg className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <div className="flex-1 min-w-0">
+                  <p className="text-amber-400 text-sm font-semibold">{t("service_disruption_title")}</p>
+                  <p className="text-amber-200/70 text-xs mt-1 leading-relaxed">{t("service_disruption_detail")}</p>
+                  <div className="flex items-center gap-3 mt-2.5">
+                    <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
+                      {t("service_disruption_status")}:
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border border-red-500/30 bg-red-500/10 text-red-400 text-[11px] font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                        {t("service_status_down")}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={checkDb}
+                      disabled={checkingDb}
+                      className="text-xs text-amber-400 hover:text-amber-300 underline underline-offset-2 disabled:opacity-50"
+                    >
+                      {checkingDb ? t("service_disruption_retrying") : t("service_disruption_retry")}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          {error && dbStatus !== "down" && (
             <div className="bg-red-600/10 border border-red-600/30 text-red-400 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
               <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />

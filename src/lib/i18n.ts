@@ -52,6 +52,15 @@ const translations = {
     logout_loading: "Logging out...",
     logout_success: "You have been logged out successfully.",
 
+    // Service disruption (database outage) — shown instead of a retry-forever error
+    service_disruption_title: "Authentication service temporarily unavailable",
+    service_disruption_detail: "The website's database is temporarily offline (hosting transfer quota). Sign-in will work again automatically once it is restored — no password reset is needed and no data is lost.",
+    service_disruption_status: "Live status",
+    service_disruption_retry: "Retry now",
+    service_disruption_retrying: "Checking…",
+    service_status_ok: "Online",
+    service_status_down: "Offline",
+
     // Hero
     hero_badge: "Live Broadcast",
     hero_cta: "Start Watching",
@@ -514,6 +523,15 @@ const translations = {
     logout_loading: "Sedang log keluar...",
     logout_success: "Anda telah berjaya log keluar.",
 
+    // Service disruption (database outage) — shown instead of a retry-forever error
+    service_disruption_title: "Perkhidmatan pengesahan tidak tersedia buat sementara",
+    service_disruption_detail: "Pangkalan data laman web tidak tersedia buat sementara (kuota pemindahan pengehosan). Log masuk akan berfungsi semula secara automatik selepas dipulihkan — tiada penetapan semula kata laluan diperlukan dan tiada data hilang.",
+    service_disruption_status: "Status semasa",
+    service_disruption_retry: "Cuba semula sekarang",
+    service_disruption_retrying: "Menyemak…",
+    service_status_ok: "Dalam talian",
+    service_status_down: "Luar talian",
+
     // Hero
     hero_badge: "Siaran Langsung",
     hero_cta: "Mula Menonton",
@@ -975,6 +993,15 @@ const translations = {
     logout_cancel: "取消",
     logout_loading: "正在退出登录...",
     logout_success: "您已成功退出登录。",
+
+    // Service disruption (database outage) — shown instead of a retry-forever error
+    service_disruption_title: "认证服务暂时不可用",
+    service_disruption_detail: "网站数据库暂时离线（托管流量配额）。恢复后登录将自动恢复正常——无需重置密码，数据不会丢失。",
+    service_disruption_status: "实时状态",
+    service_disruption_retry: "立即重试",
+    service_disruption_retrying: "正在检查…",
+    service_status_ok: "在线",
+    service_status_down: "离线",
 
     // Hero
     hero_badge: "直播中",
