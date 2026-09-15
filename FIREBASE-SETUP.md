@@ -2,6 +2,12 @@
 
 ## Status
 
+Firestore backend is LIVE on production (deployed from `main`). If
+`/api/health/db` reports `firebase_not_configured`, the deployment build
+did not capture `FIREBASE_SERVICE_ACCOUNT` — verify the variable name and
+that it is enabled for the **Production** environment, then redeploy
+(Vercel snapshots env vars at build time).
+
 The application data layer (`src/lib/prisma.ts`) is now a **Firestore-backed
 adapter** that preserves the Prisma call shape — all API routes, auth, and
 pages work unchanged. Data lives in Firestore; oversized image blobs live in
