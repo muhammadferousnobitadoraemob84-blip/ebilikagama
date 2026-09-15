@@ -13,9 +13,11 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const started = Date.now();
 
-  // Breaker open: the DB was just proven down — report instantly without a
-  // doomed probe, using the stored (secret-free) fatal reason.
+  // Breaker open: the DB was recently proven down — report instantly from
+  // the stored (secret-free) state instead of a doomed 4s+ probe.
   if (isDatabaseDown()) {
+    // Suppress a stale breaker if the cooldown just expired: fall through to
+    // a live probe once, then the breaker re-arms itself if still down.
     const message = getDbFatalError() ?? "";
     const quotaExceeded =
       message.includes("data transfer quota") || message.includes("53000");

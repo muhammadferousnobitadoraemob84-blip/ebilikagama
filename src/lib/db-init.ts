@@ -111,13 +111,18 @@ async function initDatabase(): Promise<boolean> {
     console.log("[DB-INIT] Database ready.");
     return true;
   } catch (err) {
-    console.error("[DB-INIT] Tables check failed:", err instanceof Error ? err.message : err);
-    // Permanent failures (exhausted transfer quota, suspended/restricted
-    // project) will fail migrations and table creation too — fail fast
-    // instead of burning through three more rounds of doomed DDL.
-    if (isNonRetryableDbError(err)) {
-      openBreaker(err instanceof Error ? err.message : String(err));
-      console.error("[DB-INIT] Non-retryable database failure:", _fatalError);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[DB-INIT] Tables check failed:", msg);
+    // Open the breaker on ANY init failure unless the error specifically
+    // indicates schema drift (fixable by migrations). Connection-level
+    // failures are NOT retryable: re-running the 17+ statement migration
+    // sequence per request made cold renders hang for 25-60s during the
+    // provider outage. The 60s breaker cooldown auto-retries recovery.
+    const looksLikeSchemaDrift =
+      /column|relation .* does not exist|table .* does not exist|type .* does not exist/i.test(msg);
+    if (isNonRetryableDbError(err) || !looksLikeSchemaDrift) {
+      openBreaker(msg);
+      console.error("[DB-INIT] Breaker opened after init failure:", msg);
       return false;
     }
     // The check can fail due to a missing NEW column (schema drift between
@@ -149,6 +154,7 @@ async function initDatabase(): Promise<boolean> {
     return true;
   } catch (err) {
     console.error("[DB-INIT] Table creation failed:", err);
+    openBreaker(err instanceof Error ? err.message : String(err));
     return false;
   }
 }
