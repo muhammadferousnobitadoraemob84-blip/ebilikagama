@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { ensureDatabase, isDatabaseDown } from "@/lib/db-init";
 import { getThumbnailMeta, dataThumbUrl } from "@/lib/thumb-meta";
-import { Prisma } from "@prisma/client";
 import HomePageClient from "@/components/HomePageClient";
 // Force dynamic — never cache this page statically
 export const dynamic = "force-dynamic";
@@ -23,20 +22,23 @@ async function getSettings() {
       "site_logo",
       "hero_image",
     ];
-    const imageKeys = ["site_logo", "hero_image"];
+    const imageKeys = new Set(["site_logo", "hero_image"]);
 
-    // Text settings: exclude any value that is a base64 data URI so blobs
-    // are never transferred from the database.
-    const textRows = await prisma.$queryRaw<
-      { key: string; value: string }[]
-    >`SELECT "key", "value" FROM "Setting"
-       WHERE "key" IN (${Prisma.join(keys)}) AND ("value" NOT LIKE 'data:%')`;
+    // Text settings: one projection that never touches image values.
+    const textRows = await prisma.setting.findMany({
+      where: {
+        key: { in: keys.filter((k) => !imageKeys.has(k)) },
+        valueKind: "url",
+      },
+      select: { id: true, key: true, value: true, updatedAt: true },
+    });
 
-    // Image settings: fetch only existence + timestamp, never the blob.
-    const imageRows = await prisma.$queryRaw<
-      { key: string; "updatedAt": Date | null }[]
-    >`SELECT "key", "updatedAt" FROM "Setting"
-       WHERE "key" IN (${Prisma.join(imageKeys)}) AND ("value" LIKE 'data:%')`;
+    // Image settings: projection over the derived fields only — the blob is
+    // never read from the database (served via /api/images/setting/<key>).
+    const imageRows = await prisma.setting.findMany({
+      where: { key: { in: [...imageKeys] }, valueKind: "data" },
+      select: { id: true, key: true, updatedAt: true },
+    });
 
     const map: Record<string, string> = {};
     for (const s of textRows) {
@@ -76,7 +78,7 @@ async function getChannels() {
         updatedAt: true,
       },
     });
-    const meta = await getThumbnailMeta("Channel", Prisma.sql`"active" = true`);
+    const meta = await getThumbnailMeta("channels", { active: true });
 
     return channels.map((c) => {
       const m = meta.get(c.id);
@@ -89,7 +91,7 @@ async function getChannels() {
           m?.kind === "data"
             ? dataThumbUrl("channel", c.id, c.updatedAt)
             : m?.kind === "url"
-              ? m.url
+              ? (m.url ?? null)
               : null,
         description: c.description,
         liveStatus: c.liveStatus,

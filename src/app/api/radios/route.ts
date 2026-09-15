@@ -33,8 +33,8 @@ export async function GET(request: NextRequest) {
       },
     });
     const meta = await getThumbnailMeta(
-      "Radio",
-      isAdmin ? Prisma.sql`true` : Prisma.sql`"enabled" = true`
+      "radios",
+      isAdmin ? {} : { enabled: true }
     );
 
     // Public sees only enabled radios; thumbnails served via /api/images/...

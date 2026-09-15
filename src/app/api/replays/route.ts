@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
 
     // Classify thumbnails without reading blob bytes (data URI vs external
     // URL vs none).
-    const meta = await getThumbnailMeta("Replay", Prisma.sql`true`);
+    const meta = await getThumbnailMeta("replays", {});
 
     // Rewrite base64 thumbnails to lightweight, epoch-versioned image URLs.
     // The epoch (VERCEL_DEPLOYMENT_ID) changes every deploy, so caches that
