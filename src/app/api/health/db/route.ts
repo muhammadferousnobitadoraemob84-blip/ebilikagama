@@ -38,12 +38,20 @@ export async function GET() {
     const permanent = isNonRetryableDbError(error) || !!getDbFatalError();
 
     console.error("[HEALTH] Firestore check failed:", message);
+    // Boolean presence only — never the values — so a misconfigured
+    // variable NAME or environment scope is diagnosable from the outside.
     return NextResponse.json(
       {
         status: "degraded",
         database: "unreachable",
         backend: "firestore",
         permanent,
+        env: {
+          hasFirebaseServiceAccount: !!process.env.FIREBASE_SERVICE_ACCOUNT,
+          hasGoogleApplicationCredentials:
+            !!process.env.GOOGLE_APPLICATION_CREDENTIALS,
+          hasStorageBucket: !!process.env.FIREBASE_STORAGE_BUCKET,
+        },
         reason: /not configured|FIREBASE_SERVICE_ACCOUNT/i.test(message)
           ? "firebase_not_configured"
           : "firestore_unreachable",
