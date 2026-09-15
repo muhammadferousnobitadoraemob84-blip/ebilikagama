@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { ensureDatabase } from "@/lib/db-init";
+import { ensureDatabase, isDatabaseDown } from "@/lib/db-init";
 import { replayThumbUrl } from "@/lib/image-url";
 import { getThumbnailMeta } from "@/lib/thumb-meta";
 import { isDbUnavailableError, serviceUnavailable } from "@/lib/api-errors";
@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 // GET - List replays
 export async function GET(request: NextRequest) {
   try {
+    if (isDatabaseDown()) return serviceUnavailable({ error: "Gagal memuatkan rakaman" });
     await ensureDatabase();
 
     const { searchParams } = new URL(request.url);

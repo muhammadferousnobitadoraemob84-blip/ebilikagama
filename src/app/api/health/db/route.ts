@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma, isNonRetryableDbError } from "@/lib/prisma";
-import { ensureDatabase, getDbFatalError } from "@/lib/db-init";
+import { ensureDatabase, getDbFatalError, isDatabaseDown } from "@/lib/db-init";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +12,30 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   const started = Date.now();
+
+  // Breaker open: the DB was just proven down — report instantly without a
+  // doomed probe, using the stored (secret-free) fatal reason.
+  if (isDatabaseDown()) {
+    const message = getDbFatalError() ?? "";
+    const quotaExceeded =
+      message.includes("data transfer quota") || message.includes("53000");
+    return NextResponse.json(
+      {
+        status: "degraded",
+        database: "unreachable",
+        permanent: true,
+        reason: quotaExceeded
+          ? "database_transfer_quota_exhausted"
+          : "database_unreachable",
+        detail: quotaExceeded
+          ? "The database provider's data-transfer quota is exhausted. Queries will fail until the quota resets or the plan is upgraded."
+          : "The database could not be reached. It may be starting up or temporarily unavailable.",
+        latencyMs: 0,
+        checkedAt: new Date().toISOString(),
+      },
+      { status: 503, headers: { "Cache-Control": "no-store" } }
+    );
+  }
 
   // Fast single-row probe; do NOT run migrations or any write here.
   try {

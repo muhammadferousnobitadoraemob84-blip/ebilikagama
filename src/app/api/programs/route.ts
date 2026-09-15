@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAdminSession } from "@/lib/auth";
 import { notifyProgramChange } from "@/lib/program-events";
+import { isDatabaseDown } from "@/lib/db-init";
 import { getThumbnailMeta, dataThumbUrl } from "@/lib/thumb-meta";
 import { isDbUnavailableError, serviceUnavailable } from "@/lib/api-errors";
 
@@ -18,6 +19,7 @@ export async function GET(request: NextRequest) {
 
   // Public endpoint: filter by channelId + date
   if (channelId && date) {
+    if (isDatabaseDown()) return serviceUnavailable([]);
     try {
       // Select WITHOUT the base64 thumbnail column; classify via cheap query
       // so blobs are never transferred from the database.

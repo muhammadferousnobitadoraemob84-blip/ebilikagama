@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getSession, getAdminSession } from "@/lib/auth";
+import { getAdminSession } from "@/lib/auth";
+import { isDatabaseDown } from "@/lib/db-init";
 import { getThumbnailMeta, dataThumbUrl } from "@/lib/thumb-meta";
 import { isDbUnavailableError, serviceUnavailable } from "@/lib/api-errors";
 
@@ -10,6 +11,7 @@ export const dynamic = "force-dynamic";
 // GET - List radios (public sees only enabled, admin sees all)
 export async function GET(request: NextRequest) {
   try {
+    if (isDatabaseDown()) return serviceUnavailable({ error: "Gagal memuatkan radio" });
     const session = await getAdminSession();
     const isAdmin = !!session;
 

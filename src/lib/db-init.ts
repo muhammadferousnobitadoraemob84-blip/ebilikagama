@@ -4,10 +4,29 @@ let _initialized = false;
 let _initPromise: Promise<boolean> | null = null;
 // Last permanent (non-retryable) DB failure reason, for diagnostics.
 let _fatalError: string | null = null;
+// Circuit breaker: when the provider (e.g. Neon transfer quota / suspended
+// compute) refuses everything, remember it briefly so hot paths fail in
+// microseconds instead of re-hanging for 25-60s per request. The breaker
+// auto-reopens after the cooldown so recovery is detected automatically.
+const BREAKER_COOLDOWN_MS = 60_000;
+let _breakerOpenUntil = 0;
 
 /** Human-readable reason for the last permanent DB failure, if any. */
 export function getDbFatalError(): string | null {
   return _fatalError;
+}
+
+/**
+ * True while the breaker is open (recently proven down). Callers should
+ * degrade gracefully instead of issuing doomed queries.
+ */
+export function isDatabaseDown(): boolean {
+  return Date.now() < _breakerOpenUntil;
+}
+
+function openBreaker(reason: string | null) {
+  _fatalError = reason;
+  _breakerOpenUntil = Date.now() + BREAKER_COOLDOWN_MS;
 }
 
 // Bump when runMigrations() changes so cold instances re-apply migrations
@@ -43,6 +62,7 @@ async function setSchemaVersion(): Promise<void> {
  */
 export function ensureDatabase(): Promise<boolean> {
   if (_initialized) return Promise.resolve(true);
+  if (isDatabaseDown()) return Promise.resolve(false);
   if (!_initPromise) {
     _initPromise = initDatabase()
       .then((ok) => {
@@ -96,7 +116,7 @@ async function initDatabase(): Promise<boolean> {
     // project) will fail migrations and table creation too — fail fast
     // instead of burning through three more rounds of doomed DDL.
     if (isNonRetryableDbError(err)) {
-      _fatalError = err instanceof Error ? err.message : String(err);
+      openBreaker(err instanceof Error ? err.message : String(err));
       console.error("[DB-INIT] Non-retryable database failure:", _fatalError);
       return false;
     }

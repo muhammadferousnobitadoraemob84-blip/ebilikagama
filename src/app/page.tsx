@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { ensureDatabase } from "@/lib/db-init";
+import { ensureDatabase, isDatabaseDown } from "@/lib/db-init";
 import { getThumbnailMeta, dataThumbUrl } from "@/lib/thumb-meta";
 import { Prisma } from "@prisma/client";
 import HomePageClient from "@/components/HomePageClient";
@@ -13,7 +13,8 @@ export const dynamic = "force-dynamic";
 
 async function getSettings() {
   try {
-    await ensureDatabase();
+    // Breaker open (provider down) → degrade instantly; never hang the render.
+    if (!(await ensureDatabase()) || isDatabaseDown()) return {};
     const keys = [
       "hero_title",
       "hero_description",
@@ -58,7 +59,7 @@ async function getSettings() {
 
 async function getChannels() {
   try {
-    await ensureDatabase();
+    if (!(await ensureDatabase()) || isDatabaseDown()) return [];
     // Select channel fields WITHOUT the base64 thumbnail column; classify
     // thumbnails with a cheap side query (see lib/thumb-meta.ts).
     const channels = await prisma.channel.findMany({

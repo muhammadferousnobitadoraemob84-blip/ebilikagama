@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma, withRetry } from "@/lib/prisma";
 import { getAdminSession } from "@/lib/auth";
 import { notifyChannelChange } from "@/lib/channel-events";
-import { ensureDatabase } from "@/lib/db-init";
+import { ensureDatabase, isDatabaseDown } from "@/lib/db-init";
 import { getThumbnailMeta, dataThumbUrl } from "@/lib/thumb-meta";
 import { isDbUnavailableError, serviceUnavailable } from "@/lib/api-errors";
 
@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
 // GET all channels (public — only active)
 export async function GET(request: NextRequest) {
   try {
+    if (isDatabaseDown()) return serviceUnavailable({ error: "Gagal memuatkan saluran" });
     await ensureDatabase();
     const { searchParams } = new URL(request.url);
     const category = searchParams.get("category");
