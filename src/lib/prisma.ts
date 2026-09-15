@@ -51,18 +51,23 @@ const g = globalThis as unknown as GlobalExt;
 function getApp(): App {
   if (g.__ebatFirebaseApp) return g.__ebatFirebaseApp;
   const rawJson = process.env.FIREBASE_SERVICE_ACCOUNT;
-  const bucket = process.env.FIREBASE_STORAGE_BUCKET || undefined;
+  // Canonical project identity; a service account from a different project
+  // still initializes (its own project_id wins) — these fallbacks matter for
+  // ADC/metadata-server credentials on Google infrastructure.
+  const projectId = process.env.FIREBASE_PROJECT_ID || "ebilikagama-broadcast";
+  const bucket =
+    process.env.FIREBASE_STORAGE_BUCKET || `${projectId}.firebasestorage.app`;
   let app: App;
   if (rawJson) {
     const json =
       rawJson.trim().startsWith("{")
         ? rawJson
         : Buffer.from(rawJson, "base64").toString("utf8");
-    app = initializeApp({ credential: cert(JSON.parse(json)), storageBucket: bucket });
+    app = initializeApp({ credential: cert(JSON.parse(json)), projectId, storageBucket: bucket });
   } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
     // Application Default Credentials (e.g. GOOGLE_APPLICATION_CREDENTIALS
     // path or platform-provided identity).
-    app = initializeApp({ storageBucket: bucket });
+    app = initializeApp({ projectId, storageBucket: bucket });
   } else {
     throw new FirebaseNotConfiguredError();
   }
