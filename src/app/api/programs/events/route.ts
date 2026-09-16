@@ -43,14 +43,14 @@ export async function GET(request: NextRequest) {
             },
           });
           const meta = await getThumbnailMeta(
-            "programs",
+            "Program",
             channelId
               ? date
-                ? { channelId, date }
-                : { channelId }
+                ? Prisma.sql`"channelId" = ${channelId} AND "date" = ${date}`
+                : Prisma.sql`"channelId" = ${channelId}`
               : date
-                ? { date }
-                : {}
+                ? Prisma.sql`"date" = ${date}`
+                : Prisma.sql`true`
           );
           const optimized = programs.map((p) => {
             const m = meta.get(p.id);

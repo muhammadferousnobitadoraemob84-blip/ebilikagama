@@ -1,65 +1,99 @@
-// Thumbnail classification WITHOUT reading blob bytes.
-//
-// On write, the data layer (lib/prisma.ts) stores derived fields
-// thumbKind ("data" | "url" | null) and thumbIsBlob alongside every record
-// with a thumbnail. This module issues cheap Firestore projections over
-// those fields to build id→meta maps, so list endpoints never transfer
-// image bytes — the egress pattern that exhausted the previous provider.
-import { getDb } from "@/lib/prisma";
-
-export type ThumbKind = "data" | "url" | null;
-
-export interface ThumbnailMeta {
-  kind: ThumbKind;
-  url?: string;
-}
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 
 /**
- * Returns id → { kind, url } for a collection using only the tiny derived
- * fields. `filters` are extra equality constraints (e.g. active flag).
+ * Thumbnail classification WITHOUT transferring base64 blobs.
+ *
+ * Historically, list endpoints selected full rows (including multi-megabyte
+ * base64 `thumbnail` columns) only to rewrite them into `/api/images/...`
+ * URLs. That transfers the entire blob from the database on every request —
+ * on Neon free tier this consumed the monthly data-transfer (egress) quota,
+ * after which EVERY query fails with code 53000 and the whole site's
+ * database layer goes down.
+ *
+ * Instead: classify each row's thumbnail with a cheap SQL projection
+ * (never selecting the blob itself):
+ *   - "data" → stored as a data URI → serve via /api/images/{type}/{id}
+ *   - "url"  → stored as an external URL → pass through (fetched in a tiny
+ *              second query touching only those rows)
+ *   - absent → no thumbnail
  */
+export type ThumbMeta = { kind: "data" } | { kind: "url"; url: string };
+
+const TABLES = {
+  Channel: "Channel",
+  Radio: "Radio",
+  Program: "Program",
+  Replay: "Replay",
+} as const;
+
+export type ThumbTable = keyof typeof TABLES;
+
 export async function getThumbnailMeta(
-  collection: string,
-  filters: Record<string, unknown> = {}
-): Promise<Map<string, ThumbnailMeta>> {
-  const out = new Map<string, ThumbnailMeta>();
-  let q: FirebaseFirestore.Query = getDb().collection(collection);
-  for (const [k, v] of Object.entries(filters)) {
-    q = q.where(k, "==", v);
-  }
-  const snap = await q.select("thumbKind", "thumbnail").get();
-  for (const doc of snap.docs) {
-    const data = doc.data();
-    const kind = (data.thumbKind ?? null) as ThumbKind;
-    if (kind === "url" && typeof data.thumbnail === "string") {
-      out.set(doc.id, { kind: "url", url: data.thumbnail });
-    } else if (kind === "data") {
-      out.set(doc.id, { kind: "data" });
-    } else {
-      out.set(doc.id, { kind: null });
+  table: ThumbTable,
+  where: Prisma.Sql
+): Promise<Map<string, ThumbMeta>> {
+  const rows = await prisma.$queryRaw<{ id: string; kind: string | null }[]>`
+    SELECT "id",
+      CASE
+        WHEN "thumbnail" LIKE 'data:%' THEN 'data'
+        WHEN "thumbnail" IS NOT NULL AND "thumbnail" <> '' THEN 'url'
+        ELSE NULL
+      END AS "kind"
+    FROM ${Prisma.raw(`"${TABLES[table]}"`)}
+    WHERE ${where}`;
+
+  const meta = new Map<string, ThumbMeta>();
+  const urlIds: string[] = [];
+  for (const r of rows) {
+    if (r.kind === "data") {
+      meta.set(r.id, { kind: "data" });
+    } else if (r.kind === "url") {
+      meta.set(r.id, { kind: "url", url: "" });
+      urlIds.push(r.id);
     }
   }
-  return out;
+
+  // External (non-data) thumbnails are rare and tiny — fetch their actual
+  // values in one small query, touching only those rows.
+  if (urlIds.length > 0) {
+    const urlRows = await prisma.$queryRaw<{ id: string; thumbnail: string }[]>`
+      SELECT "id", "thumbnail"
+      FROM ${Prisma.raw(`"${TABLES[table]}"`)}
+      WHERE "id" IN (${Prisma.join(urlIds)})`;
+    for (const u of urlRows) {
+      meta.set(u.id, { kind: "url", url: u.thumbnail });
+    }
+  }
+
+  return meta;
 }
 
-/**
- * True when `value` is this record's own display URL
- * (/api/images/<type>/<id>) — such echoes must never overwrite stored
- * image data.
- */
-export function isSelfImageUrl(value: unknown, type: string, id: string): boolean {
-  if (typeof value !== "string") return false;
-  return value.startsWith(`/api/images/${type}/${id}`);
-}
-
-/** Internal display URL served by /api/images/<type>/<id>. */
+/** URL for a data-URI thumbnail served through the images endpoint. */
 export function dataThumbUrl(
-  type: string,
+  type: "channel" | "radio" | "program" | "replay" | "setting",
   id: string,
   updatedAt?: Date | string | null
 ): string {
-  const epoch =
-    process.env.VERCEL_DEPLOYMENT_ID ||
-    (updatedAt ? new Date(updatedAt).getTime().toString(36) : "0");
-  return `/api/images/${type}/${id}?v=${epoch}`;
+  let v = 0;
+  try {
+    v = updatedAt ? new Date(updatedAt).getTime() : 0;
+  } catch {
+    v = 0;
+  }
+  return `/api/images/${type}/${id}?v=${v}`;
+}
+
+/**
+ * Guard for PUT routes: detect a thumbnail value that is merely this
+ * record's own display URL. An admin form echoing the list-API value back
+ * must never overwrite the stored base64 image with the URL string.
+ */
+export function isSelfImageUrl(
+  value: unknown,
+  type: "channel" | "radio" | "program" | "replay",
+  id: string
+): boolean {
+  if (typeof value !== "string") return false;
+  return value.startsWith(`/api/images/${type}/${id}`);
 }

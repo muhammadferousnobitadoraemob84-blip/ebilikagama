@@ -51,8 +51,8 @@ export async function GET(request: NextRequest) {
       })
     );
     const meta = await getThumbnailMeta(
-      "channels",
-      all === "true" ? {} : { active: true }
+      "Channel",
+      all === "true" ? Prisma.sql`true` : Prisma.sql`"active" = true`
     );
 
     // For public API: replace base64 thumbnails with lightweight URLs

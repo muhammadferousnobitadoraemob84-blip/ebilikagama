@@ -34,8 +34,8 @@ export async function GET() {
           });
           if (!closed) {
             const meta = await getThumbnailMeta(
-              "channels",
-              { active: true }
+              "Channel",
+              Prisma.sql`"active" = true`
             );
             const optimized = channels.map((ch) => {
               const m = meta.get(ch.id);
