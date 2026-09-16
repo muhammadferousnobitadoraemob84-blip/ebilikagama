@@ -49,7 +49,12 @@ async function main() {
       try {
         const rows = await fn();
         const file = path.join(outDir, `${name}.json`);
-        fs.writeFileSync(file, JSON.stringify(rows, null, 2), "utf8");
+        // BigInt (BigInt columns) is not JSON-serializable — emit as string.
+        fs.writeFileSync(
+          file,
+          JSON.stringify(rows, (_k, v) => (typeof v === "bigint" ? v.toString() : v), 2),
+          "utf8"
+        );
         summary.push({ table: name, rows: rows.length, file: path.basename(file) });
         console.log(`[BACKUP] ${name}: ${rows.length} rows → ${path.basename(file)}`);
       } catch (e) {
