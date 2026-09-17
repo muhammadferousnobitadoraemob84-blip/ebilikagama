@@ -125,6 +125,13 @@ export default function Header() {
 
   const authenticated = profile?.loggedIn === true;
   const admin = authenticated && isAdminRole(profile?.role);
+  // Guest (or session-unknown): suppress prefetching of protected routes.
+  // While logged out, prefetching "/" (logo/nav links) stores a cached 307
+  // redirect to /sign-in in the client router cache; after a later login a
+  // client-side navigation to "/" replays that cached redirect and strands
+  // the newly signed-in user on the sign-in page with the PREVIOUS user's
+  // header identity. Prefetching is safe only for authenticated sessions.
+  const isGuest = profile?.loggedIn !== true;
 
   useEffect(() => {
     getSettings().then(setSettings);
@@ -263,7 +270,7 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14 sm:h-16">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2.5 group" prefetch={true}>
+          <Link href="/" className="flex items-center gap-2.5 group" prefetch={!isGuest}>
             {settings.site_logo ? (
               <img
                 src={settings.site_logo}
@@ -285,35 +292,35 @@ export default function Header() {
             <Link
               href="/"
               className="text-gray-300 hover:text-white transition-colors text-sm font-medium"
-              prefetch={true}
+              prefetch={!isGuest}
             >
               {t("nav_home")}
             </Link>
             <Link
               href="/#saluran-tv"
               className="text-gray-300 hover:text-white transition-colors text-sm font-medium"
-              prefetch={true}
+              prefetch={!isGuest}
             >
               {t("nav_saluran_tv")}
             </Link>
             <Link
               href="/radio"
               className="text-gray-300 hover:text-white transition-colors text-sm font-medium"
-              prefetch={true}
+              prefetch={!isGuest}
             >
               {t("nav_radio")}
             </Link>
             <Link
               href="/#saluran-khas"
               className="text-gray-300 hover:text-white transition-colors text-sm font-medium"
-              prefetch={true}
+              prefetch={!isGuest}
             >
               {t("nav_saluran_khas")}
             </Link>
             <Link
               href="/schedule"
               className="text-gray-300 hover:text-white transition-colors text-sm font-medium"
-              prefetch={true}
+              prefetch={!isGuest}
             >
               {t("nav_schedule")}
             </Link>
@@ -467,7 +474,7 @@ export default function Header() {
             href="/"
             onClick={() => setMobileMenuOpen(false)}
             className="text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium px-4 py-3 rounded-lg"
-            prefetch={true}
+            prefetch={!isGuest}
           >
             {t("nav_home")}
           </Link>
@@ -475,7 +482,7 @@ export default function Header() {
             href="/#saluran-tv"
             onClick={() => setMobileMenuOpen(false)}
             className="text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium px-4 py-3 rounded-lg"
-            prefetch={true}
+            prefetch={!isGuest}
           >
             {t("nav_saluran_tv")}
           </Link>
@@ -483,7 +490,7 @@ export default function Header() {
             href="/radio"
             onClick={() => setMobileMenuOpen(false)}
             className="text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium px-4 py-3 rounded-lg"
-            prefetch={true}
+            prefetch={!isGuest}
           >
             {t("nav_radio")}
           </Link>
@@ -491,7 +498,7 @@ export default function Header() {
             href="/#saluran-khas"
             onClick={() => setMobileMenuOpen(false)}
             className="text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium px-4 py-3 rounded-lg"
-            prefetch={true}
+            prefetch={!isGuest}
           >
             {t("nav_saluran_khas")}
           </Link>
@@ -499,7 +506,7 @@ export default function Header() {
             href="/schedule"
             onClick={() => setMobileMenuOpen(false)}
             className="text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium px-4 py-3 rounded-lg"
-            prefetch={true}
+            prefetch={!isGuest}
           >
             {t("nav_schedule")}
           </Link>
@@ -518,7 +525,7 @@ export default function Header() {
                   href="/admin"
                   onClick={() => setMobileMenuOpen(false)}
                   className="text-gray-200 hover:text-white transition-all text-sm font-medium px-4 py-2.5 rounded-lg"
-                  prefetch={true}
+                  prefetch={!isGuest}
                 >
                   {t("admin_panel")}
                 </Link>
@@ -542,7 +549,7 @@ export default function Header() {
               href="/sign-in"
               onClick={() => setMobileMenuOpen(false)}
               className="text-gray-500 hover:text-gray-300 transition-all text-xs font-medium px-4 py-2 rounded-lg"
-              prefetch={true}
+              prefetch={!isGuest}
             >
               {t("sign_in_button")}
             </Link>

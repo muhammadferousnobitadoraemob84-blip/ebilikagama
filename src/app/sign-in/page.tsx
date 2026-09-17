@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useLanguage } from "@/components/LanguageProvider";
 
 // Login must fail visibly instead of spinning forever if the backend or
@@ -9,7 +9,6 @@ import { useLanguage } from "@/components/LanguageProvider";
 const LOGIN_TIMEOUT_MS = 15_000;
 
 export default function SignInPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") || "/";
   const { t } = useLanguage();
@@ -82,10 +81,19 @@ export default function SignInPage() {
       }
 
       console.log("[LOGIN] success → redirect", redirect || "/");
-      // Authentication succeeded: clear the spinner state immediately so the
-      // button never stays stuck while the next page loads.
+      // Authentication succeeded: navigate with a FULL document load.
+      // router.push() uses the client router cache, which may contain a
+      // prefetch of the target made *before* login (while logged out, "/" is
+      // cached as a 307 to /sign-in?redirect=%2F). The push then "succeeds"
+      // by replaying that cached redirect — user stays stranded on the
+      // sign-in route while the previous user's header identity keeps
+      // rendering (multi-user contamination). A full load makes the server
+      // evaluate the fresh session cookie directly and cannot be poisoned
+      // by pre-login cache entries. It is also typically faster than a
+      // client-side push here, because no stale RSC round-trip precedes it.
       setLoading(false);
-      router.push(redirect || "/");
+      window.location.replace(redirect || "/");
+      return;
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         setError(t("sign_in_error_timeout"));

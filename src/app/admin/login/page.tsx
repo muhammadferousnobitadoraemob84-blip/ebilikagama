@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useLanguage } from "@/components/LanguageProvider";
 
 // Login must fail visibly instead of spinning forever if the backend or
@@ -9,7 +9,6 @@ import { useLanguage } from "@/components/LanguageProvider";
 const LOGIN_TIMEOUT_MS = 15_000;
 
 export default function AdminLogin() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") || "/admin";
   const { language, setLanguage, t } = useLanguage();
@@ -51,7 +50,10 @@ export default function AdminLogin() {
 
       console.log("[LOGIN] admin success → redirect", redirect);
       setLoading(false);
-      router.push(redirect);
+      // Full document load: the client router cache may hold a pre-login
+      // prefetch of the target that was captured as a 307 redirect to the
+      // sign-in page; replaying it would strand the admin after login.
+      window.location.replace(redirect);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         setError(t("sign_in_error_timeout"));
