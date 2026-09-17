@@ -66,6 +66,55 @@ export async function getSession(): Promise<VerifiedSession | null> {
   return verifyToken(token);
 }
 
+export type SessionCheck =
+  | { status: "authenticated"; session: VerifiedSession }
+  | { status: "no-session" }
+  | { status: "invalid-session" }
+  | { status: "transient-error" };
+
+/**
+ * Detailed session check for endpoints that must distinguish "the user has
+ * no/invalid session" from "the session store is temporarily unreachable".
+ * Authorization stays fail-closed in both cases (both return null-ish), but
+ * UX flows that would otherwise evict a logged-in user on a transient DB
+ * blip can use `transient-error` to respond 503 instead of "logged out".
+ */
+export async function getSessionWithStatus(): Promise<SessionCheck> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE)?.value;
+  if (!token) return { status: "no-session" };
+
+  let payload: SessionPayload;
+  try {
+    const result = await jwtVerify(token, SECRET);
+    payload = result.payload as unknown as SessionPayload;
+  } catch {
+    return { status: "invalid-session" };
+  }
+  if (!payload?.userId) return { status: "invalid-session" };
+
+  let user: { active: boolean; tokenVersion: number } | null;
+  try {
+    user = await withRetry(() =>
+      prisma.user.findUnique({
+        where: { id: payload.userId },
+        select: { active: true, tokenVersion: true },
+      })
+    );
+  } catch {
+    // DB unreachable right now — the token may well be perfectly valid.
+    return { status: "transient-error" };
+  }
+  if (!user || !user.active) return { status: "invalid-session" };
+  if (typeof payload.tokenVersion !== "number") return { status: "invalid-session" };
+  if (user.tokenVersion !== payload.tokenVersion) return { status: "invalid-session" };
+
+  return {
+    status: "authenticated",
+    session: { ...payload, tokenVersion: payload.tokenVersion as number },
+  };
+}
+
 /** True for admin or owner sessions. */
 export function isAdminRole(role: string | undefined | null): boolean {
   return role === "admin" || role === "owner";

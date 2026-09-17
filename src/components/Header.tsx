@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useLanguage } from "@/components/LanguageProvider";
 import LanguageSelector from "@/components/LanguageSelector";
 
@@ -17,6 +17,10 @@ interface UserProfile {
   fullName?: string;
   profilePhoto?: string | null;
   role?: string;
+  // True only when the server itself responded 200 and positively said the
+  // user is logged out. A network failure or 5xx leaves this undefined —
+  // ambiguous — and must never evict an authenticated user mid-session.
+  definitive?: boolean;
 }
 
 // Cross-tab logout: bumped in localStorage when any tab logs out. Other
@@ -68,6 +72,33 @@ function getProfile(): Promise<UserProfile> {
   return profileFetchPromise;
 }
 
+// Always hits the server (cache is cleared by the caller). Distinguishes a
+// definitive "logged out" verdict (200) from an ambiguous failure (network
+// error / 5xx) so transient outages never evict a valid session.
+async function getProfileFresh(): Promise<UserProfile> {
+  try {
+    const res = await fetch("/api/auth/admin-profile", { cache: "no-store" });
+    if (res.status === 503 || res.status === 502 || res.status === 504) {
+      // Auth check temporarily unavailable — keep current UI state, do not
+      // evict. On the very first load (no cached profile yet) show logged-out
+      // chrome rather than spinning forever; no redirect happens because
+      // definitive is false.
+      return { loggedIn: false };
+    }
+    const data = await res.json();
+    if (res.ok) {
+      const profile: UserProfile = { ...data, definitive: !data.loggedIn };
+      cachedProfile = profile;
+      return profile;
+    }
+    // Unexpected non-OK response: ambiguous, keep current state.
+    return { loggedIn: false };
+  } catch {
+    // Network error: ambiguous, keep current state.
+    return { loggedIn: false };
+  }
+}
+
 function clearProfileCache() {
   cachedProfile = null;
   profileFetchPromise = null;
@@ -89,6 +120,7 @@ export default function Header() {
   const menuRef = useRef<HTMLDivElement>(null);
   const logoutInFlight = useRef(false);
   const router = useRouter();
+  const pathname = usePathname();
   const { t } = useLanguage();
 
   const authenticated = profile?.loggedIn === true;
@@ -96,13 +128,47 @@ export default function Header() {
 
   useEffect(() => {
     getSettings().then(setSettings);
-    getProfile().then((p) => {
+
+    const handleSettingsChanged = () => {
+      clearSettingsCache();
+      getSettings().then(setSettings);
+    };
+    window.addEventListener("settings-changed", handleSettingsChanged);
+    return () =>
+      window.removeEventListener("settings-changed", handleSettingsChanged);
+  }, []);
+
+  // Session state must track navigation. The Header lives in the root layout
+  // and does NOT remount on client-side route changes, so a profile cached
+  // while viewing /sign-in would otherwise stick after a successful login
+  // pushes to "/" (user stuck appearing logged out). Re-verify whenever the
+  // pathname changes, and only treat a *definitive* server verdict as
+  // "logged out" — never a network/5xx blip, which must not evict an
+  // authenticated user mid-session.
+  useEffect(() => {
+    let cancelled = false;
+
+    // Never trust the module cache across navigation boundaries: clear it so
+    // getProfile() performs a real server check for the new page. On the
+    // sign-in pages there is nothing to verify — the user just logged out or
+    // has not logged in yet.
+    const onSignInPage =
+      pathname === "/sign-in" || pathname === "/admin/login";
+    if (!onSignInPage) {
+      clearProfileCache();
+    }
+
+    const apply = (p: UserProfile) => {
+      if (cancelled) return;
       setProfile(p);
       // Server-side session check: the edge proxy only verifies the JWT
       // signature, but a revoked session (logout/password reset/disable)
-      // fails deep validation in the API. If the server says logged-out
-      // while we are on a protected page, the token is stale — leave.
-      if (!p.loggedIn) {
+      // fails deep validation in the API. If the server definitively says
+      // logged-out while we are on a protected page, the token is stale —
+      // leave. A failed/ambiguous fetch (network error, 5xx) resolves to
+      // loggedIn:false too, so only evict when the response was genuinely
+      // a 200 with loggedIn:false (isDefinitive below).
+      if (!p.loggedIn && p.definitive === true) {
         const path = window.location.pathname;
         const isPublicPage =
           path === "/sign-in" ||
@@ -112,15 +178,18 @@ export default function Header() {
           window.location.replace("/sign-in?loggedOut=1");
         }
       }
-    });
-
-    const handleSettingsChanged = () => {
-      clearSettingsCache();
-      getSettings().then(setSettings);
     };
-    window.addEventListener("settings-changed", handleSettingsChanged);
-    return () => window.removeEventListener("settings-changed", handleSettingsChanged);
-  }, []);
+
+    if (onSignInPage) {
+      getProfile().then(apply);
+    } else {
+      getProfileFresh().then(apply);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
 
   // Close the account menu on outside click / Escape
   useEffect(() => {
