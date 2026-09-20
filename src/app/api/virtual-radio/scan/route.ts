@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
-import { getVirtualRadioState, saveRadioPlaylist, ensureRadioEpoch } from "@/lib/virtual-radio-store";
+import {
+  getVirtualRadioState,
+  saveRadioPlaylist,
+  saveRadioPending,
+  ensureRadioEpoch,
+} from "@/lib/virtual-radio-store";
 import { probeAudioDuration } from "@/lib/audio-duration";
 import { getValidDriveToken } from "@/lib/google-drive";
+import type { VirtualRadioPendingTrack } from "@/lib/virtual-radio";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -17,6 +23,11 @@ export const maxDuration = 120;
 // The epoch is created lazily on the FIRST successful scan and never moved
 // afterwards, so rescans don't desync listeners.
 const TIMELINE_SAFE_EXTENSIONS = /\.(mp3|m4a|aac)$/i;
+
+// Same set, but for classification: anything the stream proxy can serve as
+// audio (the browser decodes mp3/m4a natively; the others play but can't be
+// timed server-side).
+const AUDIO_EXTENSIONS_BROAD = /\.(mp3|m4a|aac|ogg|wav|webm|flac|opus)$/i;
 
 interface DriveFile {
   id: string;
@@ -60,6 +71,42 @@ async function listFolderFiles(accessToken: string, folderId: string): Promise<D
   return files;
 }
 
+/**
+ * Lightweight accessibility check: can the file actually be served as audio?
+ * This is the "playable" leg of the playable-vs-duration distinction.
+ * Reuses the same sources as the stream proxy (authed API → anonymous).
+ */
+async function checkFileAccessible(
+  accessToken: string,
+  driveId: string
+): Promise<{ playable: boolean; error?: string }> {
+  try {
+    // Ranged read of the very first bytes through the authed API.
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(driveId)}?alt=media`,
+      { headers: { Authorization: `Bearer ${accessToken}`, Range: "bytes=0-1023" } }
+    );
+    if (res.ok || res.status === 206) {
+      const ct = (res.headers.get("Content-Type") || "").toLowerCase();
+      if (ct.includes("text/html")) {
+        return { playable: false, error: "Drive returned an HTML page instead of audio (permission/interstitial)" };
+      }
+      const buf = await res.arrayBuffer();
+      if (buf.byteLength === 0) {
+        return { playable: false, error: "File content is empty" };
+      }
+      return { playable: true };
+    }
+    if (res.status === 404) return { playable: false, error: "File not found on Drive (deleted or moved)" };
+    if (res.status === 401 || res.status === 403) {
+      return { playable: false, error: "Access denied by Drive (file permissions)" };
+    }
+    return { playable: false, error: `Drive returned HTTP ${res.status}` };
+  } catch (err) {
+    return { playable: false, error: `Network error reaching Drive: ${err instanceof Error ? err.message : "unknown"}` };
+  }
+}
+
 export async function POST(request: NextRequest) {
   const session = await getAdminSession();
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -83,15 +130,14 @@ export async function POST(request: NextRequest) {
 
     const allFiles = await listFolderFiles(token.accessToken, state.folderId);
 
-    // Timeline-safe audio only (durations must be parseable for sync math).
+    // Audio classification: Drive audio MIME or a known audio extension.
     // Subfolders are intentionally NOT recursed: the radio library is flat.
     const audioFiles = allFiles
       .filter((f) => f.mimeType !== "application/vnd.google-apps.folder")
       .filter(
         (f) =>
-          f.mimeType?.startsWith("audio/") || TIMELINE_SAFE_EXTENSIONS.test(f.name)
-      )
-      .filter((f) => TIMELINE_SAFE_EXTENSIONS.test(f.name));
+          f.mimeType?.startsWith("audio/") || AUDIO_EXTENSIONS_BROAD.test(f.name)
+      );
 
     const totalFiles = allFiles.length;
     const skipped = totalFiles - audioFiles.length;
@@ -100,6 +146,7 @@ export async function POST(request: NextRequest) {
     audioFiles.sort((a, b) => naturalCompare(a.name, b.name));
 
     const tracks: { driveId: string; fileName: string; duration: number; size: number | null; mimeType: string }[] = [];
+    const pending: VirtualRadioPendingTrack[] = [];
     const errors: { fileName: string; error: string }[] = [];
     let noDuration = 0;
 
@@ -111,6 +158,7 @@ export async function POST(request: NextRequest) {
     const results: (
       | { ok: true; track: { driveId: string; fileName: string; duration: number; size: number | null; mimeType: string } }
       | { ok: false; fileName: string; error: string }
+      | { ok: false; pending: VirtualRadioPendingTrack }
     )[] = new Array(audioFiles.length);
 
     let cursor = 0;
@@ -118,6 +166,12 @@ export async function POST(request: NextRequest) {
       while (cursor < audioFiles.length) {
         const idx = cursor++;
         const file = audioFiles[idx];
+        const base = {
+          driveId: file.id,
+          fileName: file.name,
+          size: file.size ? Number(file.size) : null,
+          mimeType: file.mimeType || "audio/mpeg",
+        };
         try {
           const meta = await probeAudioDuration(accessToken, {
             driveId: file.id,
@@ -137,18 +191,49 @@ export async function POST(request: NextRequest) {
               },
             };
           } else {
+            // Duration unknown ≠ unplayable. Verify the file is actually
+            // reachable before filing it as duration-pending.
+            const access = await checkFileAccessible(accessToken, file.id);
+            if (access.playable) {
+              results[idx] = {
+                ok: false,
+                pending: {
+                  ...base,
+                  reason:
+                    meta?.detected && meta.detected !== "none"
+                      ? `Timing header incomplete (${meta.detected}) — needs browser verification`
+                      : "Duration could not be determined from file headers — needs browser verification",
+                  addedAt: new Date().toISOString(),
+                },
+              };
+            } else {
+              results[idx] = {
+                ok: false,
+                fileName: file.name,
+                error: access.error || "File is not accessible for playback",
+              };
+            }
+          }
+        } catch (err) {
+          // A thrown probe error is NOT proof of unplayability either — check
+          // accessibility before classifying as a hard failure.
+          const access = await checkFileAccessible(accessToken, file.id);
+          if (access.playable) {
+            results[idx] = {
+              ok: false,
+              pending: {
+                ...base,
+                reason: `Duration probe failed (${err instanceof Error ? err.message : "unknown"}) — needs browser verification`,
+                addedAt: new Date().toISOString(),
+              },
+            };
+          } else {
             results[idx] = {
               ok: false,
               fileName: file.name,
-              error: "Duration could not be detected (unsupported encoding or damaged header)",
+              error: access.error || (err instanceof Error ? err.message : "Probe failed"),
             };
           }
-        } catch (err) {
-          results[idx] = {
-            ok: false,
-            fileName: file.name,
-            error: err instanceof Error ? err.message : "Probe failed",
-          };
         }
       }
     }
@@ -157,22 +242,34 @@ export async function POST(request: NextRequest) {
     // audioFiles is already natural-sorted; results[] preserves that order.
     for (const r of results) {
       if (!r) continue;
-      if (r.ok) tracks.push(r.track);
-      else {
+      if (r.ok) {
+        tracks.push(r.track);
+      } else if ("pending" in r) {
+        pending.push(r.pending);
+      } else {
         noDuration++;
         errors.push({ fileName: r.fileName, error: r.error });
       }
     }
 
+    // Persist the pending list alongside the playlist.
+    await saveRadioPending(pending);
+
     if (tracks.length === 0) {
+      // Genuinely nothing playable-and-timed. Distinguish the cases clearly:
+      const msg =
+        pending.length > 0
+          ? `No tracks with server-measurable durations were found. ${pending.length} accessible audio file(s) are pending browser duration verification — open the admin page to verify them.`
+          : errors[0]?.error
+            ? `No playable tracks found. First error: ${errors[0].fileName} — ${errors[0].error}`
+            : "No MP3/M4A audio files with detectable durations were found in the folder.";
       return NextResponse.json(
         {
-          error:
-            errors[0]?.error
-              ? `No playable tracks found. First error: ${errors[0].fileName} — ${errors[0].error}`
-              : "No MP3/M4A audio files with detectable durations were found in the folder.",
+          error: msg,
           totalFiles,
           skipped,
+          pendingCount: pending.length,
+          pendingFiles: pending.map((p) => p.fileName).slice(0, 10),
         },
         { status: 422 }
       );
@@ -189,6 +286,8 @@ export async function POST(request: NextRequest) {
       indexed: tracks.length,
       skipped,
       noDuration,
+      pendingCount: pending.length,
+      pendingFiles: pending.map((p) => p.fileName),
       errors: errors.slice(0, 10),
       totalDuration,
       epoch,

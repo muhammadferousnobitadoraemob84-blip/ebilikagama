@@ -25,6 +25,22 @@ export interface VirtualRadioTrack {
   mimeType: string;
 }
 
+/**
+ * A discovered, accessible track whose duration couldn't be determined
+ * server-side (yet). PLAYABLE ≠ duration-known: these are kept apart from
+ * the synchronized playlist (which needs exact durations for the timeline
+ * math) until a duration is measured (browser metadata fallback or rescan).
+ */
+export interface VirtualRadioPendingTrack {
+  driveId: string;
+  fileName: string;
+  size: number | null;
+  mimeType: string;
+  /** Why server-side detection failed (duration only — accessibility held). */
+  reason: string;
+  addedAt: string; // ISO timestamp of the scan that produced it
+}
+
 export interface VirtualRadioState {
   enabled: boolean;
   folderId: string | null;
@@ -33,6 +49,8 @@ export interface VirtualRadioState {
   tracks: VirtualRadioTrack[];
   totalDuration: number; // seconds, sum of track durations
   lastScanAt: string | null;
+  /** Accessible tracks with unknown duration — NOT part of the timeline. */
+  pending: VirtualRadioPendingTrack[];
 }
 
 export const EMPTY_RADIO_STATE: VirtualRadioState = {
@@ -43,7 +61,14 @@ export const EMPTY_RADIO_STATE: VirtualRadioState = {
   tracks: [],
   totalDuration: 0,
   lastScanAt: null,
+  pending: [],
 };
+
+/** Timeline-safe slice of a state: only tracks with real durations. */
+export function playlistWithoutPending(state: VirtualRadioState): VirtualRadioState {
+  if (!state.pending?.length) return state;
+  return { ...state, tracks: state.tracks, totalDuration: state.totalDuration };
+}
 
 // ─── Timeline math (pure, deterministic, shared by every client) ────
 

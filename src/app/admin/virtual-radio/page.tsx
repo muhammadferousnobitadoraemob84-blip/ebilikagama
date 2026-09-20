@@ -12,6 +12,74 @@ import {
   type VirtualRadioState,
 } from "@/lib/virtual-radio";
 
+// Browser-side duration verification for pending tracks (HTML5 metadata).
+interface PendingRow {
+  driveId: string;
+  fileName: string;
+  size: number | null;
+  mimeType: string;
+  reason: string;
+}
+interface FileDiag {
+  fileName: string;
+  driveId: string;
+  mimeType: string;
+  size: number | null;
+  extension: string | null;
+  proxyPath: string;
+  httpStatus: number | null;
+  contentType: string | null;
+  contentLength: string | null;
+  acceptRanges: string | null;
+  rangeWorks: boolean | null;
+  servedVia: string | null;
+  bytesReceived: number;
+  serverParse?: string;
+  serverDuration?: number | null;
+  serverTagBytes?: number;
+  finalClassification?: string;
+  error?: string;
+}
+
+/**
+ * Measure one track's duration with a plain HTMLAudioElement + preload
+ * "metadata" + loadedmetadata/durationchange. Fetches only the metadata
+ * the browser needs (usually the first few KB via range requests against
+ * the stream proxy) — never the whole file.
+ */
+function measureDuration(src: string, timeoutMs = 20000): Promise<number | null> {
+  return new Promise((resolve) => {
+    const audio = new Audio();
+    let settled = false;
+    const done = (value: number | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      audio.removeAttribute("src");
+      audio.load(); // release the network fetch
+      resolve(value);
+    };
+    const timer = setTimeout(() => done(null), timeoutMs);
+    audio.preload = "metadata";
+    audio.onloadedmetadata = () => {
+      const d = audio.duration;
+      if (Number.isFinite(d) && d > 0) done(d);
+      // durationchange may still fire with the real value later (some
+      // webm/estimating streams start with Infinity) — wait briefly.
+    };
+    audio.ondurationchange = () => {
+      const d = audio.duration;
+      if (Number.isFinite(d) && d > 0) done(d);
+    };
+    audio.onerror = () => done(null);
+    audio.onstalled = () => {
+      /* keep waiting until timeout */
+    };
+    audio.src = src;
+    audio.load();
+  });
+}
+
 interface FolderItem {
   id: string;
   name: string;
@@ -24,6 +92,8 @@ interface ScanResult {
   indexed?: number;
   skipped?: number;
   noDuration?: number;
+  pendingCount?: number;
+  pendingFiles?: string[];
   errors?: { fileName: string; error: string }[];
   totalDuration?: number;
   epoch?: number;
@@ -70,6 +140,17 @@ export default function AdminVirtualRadio() {
   const [, tick] = useState(0);
   const sentAtRef = useRef<number>(0);
 
+  // Duration verification state
+  const [verifying, setVerifying] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<null | {
+    promoted: { fileName: string; duration: number }[];
+    stillPending: string[];
+    rejected: { fileName: string; reason: string }[];
+  }>(null);
+  // Per-file HTTP diagnostics: driveId → FileDiag
+  const [fileDiags, setFileDiags] = useState<Record<string, FileDiag>>({});
+  const [diagLoading, setDiagLoading] = useState<Record<string, boolean>>({});
+
   const loadState = useCallback(async () => {
     try {
       const res = await fetch("/api/virtual-radio/config", { cache: "no-store" });
@@ -104,6 +185,63 @@ export default function AdminVirtualRadio() {
     loadState();
     loadDiag();
   }, [loadState, loadDiag]);
+
+  /**
+   * Browser HTML5 metadata fallback: measure every pending track through the
+   * stream proxy and post verified durations. Only runs when the admin clicks.
+   */
+  const handleVerifyDurations = async () => {
+    if (!state?.pending?.length) return;
+    setVerifying(true);
+    setVerifyResult(null);
+    setPageError(null);
+    try {
+      const durations: Record<string, number> = {};
+      // Sequential on purpose: parallel audio decodes contend for the same
+      // network path and skew timings; metadata loads are fast.
+      for (const p of state.pending) {
+        const src = `/api/virtual-radio/stream?id=${encodeURIComponent(p.driveId)}`;
+        const d = await measureDuration(src);
+        if (d != null) durations[p.driveId] = d;
+      }
+      if (Object.keys(durations).length === 0) {
+        setVerifyResult({ promoted: [], stillPending: state.pending.map((p) => p.fileName), rejected: [] });
+        await loadState();
+        return;
+      }
+      const res = await fetch("/api/virtual-radio/verify-durations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ durations }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPageError(data.error || "Verification failed");
+      } else {
+        setVerifyResult(data);
+      }
+      await loadState();
+    } catch {
+      setPageError("Verification failed");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const loadFileDiag = async (driveId: string) => {
+    setDiagLoading((m) => ({ ...m, [driveId]: true }));
+    try {
+      const res = await fetch(`/api/virtual-radio/file-diagnostic?id=${encodeURIComponent(driveId)}`, {
+        cache: "no-store",
+      });
+      const data: FileDiag = await res.json();
+      setFileDiags((m) => ({ ...m, [driveId]: data }));
+    } catch {
+      setFileDiags((m) => ({ ...m, [driveId]: { fileName: "?", driveId, error: "Diagnostic request failed" } as FileDiag }));
+    } finally {
+      setDiagLoading((m) => ({ ...m, [driveId]: false }));
+    }
+  };
 
   // 1s diagnostics refresh (cheap: one tiny admin JSON call)
   useEffect(() => {
@@ -266,7 +404,12 @@ export default function AdminVirtualRadio() {
           </div>
           <div>
             <p className="text-gray-500 text-xs">{t("vr_admin_tracks")}</p>
-            <p className="text-white text-sm font-semibold">{state?.tracks.length ?? 0}</p>
+            <p className="text-white text-sm font-semibold">
+              {state?.tracks.length ?? 0}
+              {state?.pending?.length ? (
+                <span className="text-yellow-400 text-xs font-normal"> +{state.pending.length} {t("vr_admin_pending_short")}</span>
+              ) : null}
+            </p>
           </div>
           <div>
             <p className="text-gray-500 text-xs">{t("vr_admin_total_duration")}</p>
@@ -312,17 +455,32 @@ export default function AdminVirtualRadio() {
             <>
               <p className="font-semibold">
                 Scan complete: {scanResult.indexed}/{scanResult.discovered} tracks indexed
-                {scanResult.noDuration ? `, ${scanResult.noDuration} skipped (no duration)` : ""}
+                {scanResult.pendingCount
+                  ? `, ${scanResult.pendingCount} playable but duration-pending`
+                  : ""}
+                {scanResult.noDuration ? `, ${scanResult.noDuration} failed` : ""}
               </p>
               <p className="mt-1 opacity-80">
                 Total duration {formatDuration(scanResult.totalDuration ?? 0)} · epoch set · radio timeline is live
               </p>
               {(scanResult.errors?.length ?? 0) > 0 && (
                 <details className="mt-2">
-                  <summary className="cursor-pointer opacity-70">{scanResult.errors!.length} warnings</summary>
+                  <summary className="cursor-pointer opacity-70">{scanResult.errors!.length} errors (inaccessible files)</summary>
                   <ul className="mt-1 space-y-0.5 text-xs opacity-80">
                     {scanResult.errors!.map((e, i) => (
                       <li key={i}>• {e.fileName}: {e.error}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+              {(scanResult.pendingFiles?.length ?? 0) > 0 && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer opacity-70">
+                    {scanResult.pendingFiles!.length} file(s) pending duration verification
+                  </summary>
+                  <ul className="mt-1 space-y-0.5 text-xs opacity-80">
+                    {scanResult.pendingFiles!.map((n, i) => (
+                      <li key={i}>• {n} — playable, duration not measured yet</li>
                     ))}
                   </ul>
                 </details>
@@ -331,6 +489,84 @@ export default function AdminVirtualRadio() {
           ) : (
             <p>{scanInfo || "Scan failed"}</p>
           )}
+        </div>
+      )}
+
+      {/* Duration-pending tracks: non-blocking warning + browser verification */}
+      {state?.pending && state.pending.length > 0 && (
+        <div className="bg-yellow-900/10 border border-yellow-600/30 rounded-xl p-4 text-sm">
+          <div className="flex items-start justify-between flex-wrap gap-3">
+            <div>
+              <p className="text-yellow-300 font-semibold">
+                Some tracks need duration verification ({state.pending.length})
+              </p>
+              <p className="text-gray-400 text-xs mt-1 max-w-xl">
+                These files are accessible and playable, but their duration couldn't be measured
+                server-side, so they can't participate in the synchronized timeline math yet.
+                Verify below (browser metadata check, a few KB per file — never a full download)
+                or rescan after re-saving them without large embedded album art.
+              </p>
+            </div>
+            <button
+              onClick={handleVerifyDurations}
+              disabled={verifying}
+              className="bg-yellow-600/90 hover:bg-yellow-500 disabled:bg-gray-700 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors flex-shrink-0"
+            >
+              {verifying ? t("vr_admin_verifying") : t("vr_admin_verify_durations")}
+            </button>
+          </div>
+          <ul className="mt-3 space-y-1">
+            {state.pending.map((p) => (
+              <li key={p.driveId} className="text-gray-300 text-xs flex items-center justify-between gap-3">
+                <span className="truncate">
+                  • {p.fileName} — {p.reason}
+                </span>
+                <button
+                  onClick={() => loadFileDiag(p.driveId)}
+                  className="text-red-400 hover:text-red-300 flex-shrink-0 underline"
+                >
+                  {t("vr_admin_diag_file")}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {verifyResult && (
+            <div className="mt-3 border-t border-yellow-600/20 pt-3 text-xs space-y-1">
+              {verifyResult.promoted.length > 0 && (
+                <p className="text-green-300">
+                  ✓ Verified &amp; added to playlist: {verifyResult.promoted.map((p) => `${p.fileName} (${formatDuration(p.duration)})`).join(", ")}
+                </p>
+              )}
+              {verifyResult.rejected.length > 0 && (
+                <p className="text-red-300">
+                  ✗ Could not verify: {verifyResult.rejected.map((r) => `${r.fileName} (${r.reason})`).join(", ")}
+                </p>
+              )}
+              {verifyResult.stillPending.length > 0 && (
+                <p className="text-gray-400">Still pending: {verifyResult.stillPending.join(", ")}</p>
+              )}
+            </div>
+          )}
+          {/* Per-file HTTP diagnostics (admin only) */}
+          {Object.entries(fileDiags).map(([id, d]) => (
+            <div key={id} className="mt-3 bg-black/30 rounded-lg p-3 text-xs font-mono text-gray-300 overflow-x-auto">
+              <p className="text-white font-semibold">{d.fileName || id}</p>
+              {d.error ? (
+                <p className="text-red-300">Error: {d.error}</p>
+              ) : (
+                <>
+                  <p>Drive ID: {d.driveId}</p>
+                  <p>MIME: {d.mimeType} · ext: {d.extension} · size: {d.size ?? "?"} B</p>
+                  <p>Proxy: {d.proxyPath}</p>
+                  <p>HTTP {d.httpStatus} · {d.contentType} · len {d.contentLength} · ranges {d.rangeWorks ? "OK" : "NO"} · via {d.servedVia}</p>
+                  <p>Server parse: {d.serverParse} · duration {d.serverDuration ?? "—"}s · tag {d.serverTagBytes ?? "?"} B</p>
+                  <p className={d.finalClassification?.startsWith("PLAYABLE +") ? "text-green-300" : "text-yellow-300"}>
+                    Final: {d.finalClassification}
+                  </p>
+                </>
+              )}
+            </div>
+          ))}
         </div>
       )}
 

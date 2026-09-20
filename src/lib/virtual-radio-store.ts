@@ -13,6 +13,7 @@ import {
   EMPTY_RADIO_STATE,
   type VirtualRadioState,
   type VirtualRadioTrack,
+  type VirtualRadioPendingTrack,
 } from "@/lib/virtual-radio";
 
 // Setting keys (prefixed to avoid collisions with existing keys)
@@ -21,6 +22,7 @@ const K_FOLDER_ID = "virtual_radio_folder_id";
 const K_FOLDER_NAME = "virtual_radio_folder_name";
 const K_EPOCH = "virtual_radio_epoch";
 const K_PLAYLIST = "virtual_radio_playlist"; // JSON: VirtualRadioTrack[]
+const K_PENDING = "virtual_radio_pending"; // JSON: VirtualRadioPendingTrack[]
 const K_LAST_SCAN = "virtual_radio_last_scan";
 
 // Short-TTL cache: the public status endpoint may be hit by every visitor;
@@ -71,18 +73,42 @@ function parsePlaylist(raw: string | null): VirtualRadioTrack[] {
   }
 }
 
+function parsePending(raw: string | null): VirtualRadioPendingTrack[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (t): t is VirtualRadioPendingTrack =>
+          t && typeof t.driveId === "string" && typeof t.fileName === "string"
+      )
+      .map((t) => ({
+        driveId: t.driveId,
+        fileName: t.fileName,
+        size: t.size == null ? null : Number(t.size),
+        mimeType: typeof t.mimeType === "string" ? t.mimeType : "audio/mpeg",
+        reason: typeof t.reason === "string" ? t.reason : "Duration pending",
+        addedAt: typeof t.addedAt === "string" ? t.addedAt : new Date(0).toISOString(),
+      }));
+  } catch {
+    return [];
+  }
+}
+
 /** Read the full radio state (cached ~5s). Cheap: a few KV reads. */
 export async function getVirtualRadioState(): Promise<VirtualRadioState> {
   if (_cache && Date.now() - _cache.at < CACHE_TTL_MS) return _cache.state;
 
   try {
-    const [enabledRaw, folderId, folderName, epochRaw, playlistRaw, lastScan] =
+    const [enabledRaw, folderId, folderName, epochRaw, playlistRaw, pendingRaw, lastScan] =
       await Promise.all([
         readSetting(K_ENABLED),
         readSetting(K_FOLDER_ID),
         readSetting(K_FOLDER_NAME),
         readSetting(K_EPOCH),
         readSetting(K_PLAYLIST),
+        readSetting(K_PENDING),
         readSetting(K_LAST_SCAN),
       ]);
 
@@ -97,6 +123,7 @@ export async function getVirtualRadioState(): Promise<VirtualRadioState> {
       tracks,
       totalDuration,
       lastScanAt: lastScan || null,
+      pending: parsePending(pendingRaw),
     };
 
     _cache = { state, at: Date.now() };
@@ -115,8 +142,9 @@ export async function getVirtualRadioState(): Promise<VirtualRadioState> {
 export async function saveRadioFolder(folderId: string, folderName: string | null): Promise<void> {
   await writeSetting(K_FOLDER_ID, folderId);
   if (folderName != null) await writeSetting(K_FOLDER_NAME, folderName);
-  // New folder → previous playlist/epoch no longer applies.
+  // New folder → previous playlist/pending list/epoch no longer applies.
   await writeSetting(K_PLAYLIST, "[]");
+  await writeSetting(K_PENDING, "[]");
   invalidateCache();
 }
 
@@ -124,6 +152,12 @@ export async function saveRadioFolder(folderId: string, folderName: string | nul
 export async function saveRadioPlaylist(tracks: VirtualRadioTrack[]): Promise<void> {
   await writeSetting(K_PLAYLIST, JSON.stringify(tracks));
   await writeSetting(K_LAST_SCAN, new Date().toISOString());
+  invalidateCache();
+}
+
+/** Persist the duration-pending track list (accessible but unmeasured). */
+export async function saveRadioPending(tracks: VirtualRadioPendingTrack[]): Promise<void> {
+  await writeSetting(K_PENDING, JSON.stringify(tracks));
   invalidateCache();
 }
 

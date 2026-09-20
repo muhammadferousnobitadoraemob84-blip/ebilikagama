@@ -49,6 +49,10 @@ const translations = {
     vr_admin_last_scan: "Last scan",
     vr_admin_playlist: "Playlist (deterministic order)",
     vr_admin_never: "Never",
+    vr_admin_verifying: "Verifying…",
+    vr_admin_verify_durations: "Verify durations in browser",
+    vr_admin_diag_file: "diagnose",
+    vr_admin_pending_short: "pending",
     vr_admin_diag: "Synchronization diagnostics",
     vr_admin_diag_hint:
       "Client values are computed from the synced clock; server values come straight from the API. Small offsets (<1s) are normal.",
@@ -793,6 +797,10 @@ const translations = {
     vr_admin_last_scan: "Last scan",
     vr_admin_playlist: "Playlist (deterministic order)",
     vr_admin_never: "Never",
+    vr_admin_verifying: "Verifying…",
+    vr_admin_verify_durations: "Verify durations in browser",
+    vr_admin_diag_file: "diagnose",
+    vr_admin_pending_short: "pending",
     vr_admin_diag: "Synchronization diagnostics",
     vr_admin_diag_hint:
       "Client values are computed from the synced clock; server values come straight from the API. Small offsets (<1s) are normal.",
@@ -1306,6 +1314,10 @@ const translations = {
     vr_admin_last_scan: "Last scan",
     vr_admin_playlist: "Playlist (deterministic order)",
     vr_admin_never: "Never",
+    vr_admin_verifying: "Verifying…",
+    vr_admin_verify_durations: "Verify durations in browser",
+    vr_admin_diag_file: "diagnose",
+    vr_admin_pending_short: "pending",
     vr_admin_diag: "Synchronization diagnostics",
     vr_admin_diag_hint:
       "Client values are computed from the synced clock; server values come straight from the API. Small offsets (<1s) are normal.",
