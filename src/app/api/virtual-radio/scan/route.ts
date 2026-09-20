@@ -103,36 +103,63 @@ export async function POST(request: NextRequest) {
     const errors: { fileName: string; error: string }[] = [];
     let noDuration = 0;
 
-    // Sequential probing keeps Drive quota gentle; folders are small.
-    for (const file of audioFiles) {
-      try {
-        const meta = await probeAudioDuration(token.accessToken, {
-          driveId: file.id,
-          fileName: file.name,
-          mimeType: file.mimeType,
-          size: file.size ?? null,
-        });
+    // Bounded-concurrency probing (6 at a time): fast enough to finish large
+    // folders inside the function timeout while staying gentle on Drive quota.
+    // Results are collected per original index, then re-sorted deterministically.
+    const CONCURRENCY = 6;
+    const results: (
+      | { ok: true; track: { driveId: string; fileName: string; duration: number; size: number | null; mimeType: string } }
+      | { ok: false; fileName: string; error: string }
+    )[] = new Array(audioFiles.length);
 
-        if (meta?.duration && meta.duration > 0) {
-          tracks.push({
+    let cursor = 0;
+    async function worker() {
+      while (cursor < audioFiles.length) {
+        const idx = cursor++;
+        const file = audioFiles[idx];
+        try {
+          const meta = await probeAudioDuration(token.accessToken, {
             driveId: file.id,
             fileName: file.name,
-            duration: Math.round(meta.duration * 1000) / 1000,
-            size: file.size ? Number(file.size) : null,
-            mimeType: file.mimeType || "audio/mpeg",
+            mimeType: file.mimeType,
+            size: file.size ?? null,
           });
-        } else {
-          noDuration++;
-          errors.push({
+          if (meta?.duration && meta.duration > 0) {
+            results[idx] = {
+              ok: true,
+              track: {
+                driveId: file.id,
+                fileName: file.name,
+                duration: Math.round(meta.duration * 1000) / 1000,
+                size: file.size ? Number(file.size) : null,
+                mimeType: file.mimeType || "audio/mpeg",
+              },
+            };
+          } else {
+            results[idx] = {
+              ok: false,
+              fileName: file.name,
+              error: "Duration could not be detected (unsupported encoding or damaged header)",
+            };
+          }
+        } catch (err) {
+          results[idx] = {
+            ok: false,
             fileName: file.name,
-            error: "Duration could not be detected (unsupported encoding or damaged header)",
-          });
+            error: err instanceof Error ? err.message : "Probe failed",
+          };
         }
-      } catch (err) {
-        errors.push({
-          fileName: file.name,
-          error: err instanceof Error ? err.message : "Probe failed",
-        });
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, audioFiles.length) }, worker));
+
+    // audioFiles is already natural-sorted; results[] preserves that order.
+    for (const r of results) {
+      if (!r) continue;
+      if (r.ok) tracks.push(r.track);
+      else {
+        noDuration++;
+        errors.push({ fileName: r.fileName, error: r.error });
       }
     }
 
