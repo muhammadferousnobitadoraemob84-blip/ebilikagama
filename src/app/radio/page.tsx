@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useLanguage } from "@/components/LanguageProvider";
 import RadioPlayer, { type RadioStation } from "@/components/RadioPlayer";
 import RadioMiniPlayer from "@/components/RadioMiniPlayer";
+import VirtualRadioPlayer from "@/components/VirtualRadioPlayer";
 import { useNowPlaying } from "@/lib/useNowPlaying";
 
 export default function RadioPage() {
@@ -115,6 +116,13 @@ export default function RadioPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-24">
+        {/* Virtual Radio (Drive-powered synchronized prototype) */}
+        <div className="mb-8 flex justify-center">
+          <div className="w-full max-w-xl">
+            <VirtualRadioPlayer />
+          </div>
+        </div>
+
         {/* Active Player */}
         {activeStation && (
           <div className="mb-8">
