@@ -106,6 +106,7 @@ export async function POST(request: NextRequest) {
     // Bounded-concurrency probing (6 at a time): fast enough to finish large
     // folders inside the function timeout while staying gentle on Drive quota.
     // Results are collected per original index, then re-sorted deterministically.
+    const accessToken = token.accessToken;
     const CONCURRENCY = 6;
     const results: (
       | { ok: true; track: { driveId: string; fileName: string; duration: number; size: number | null; mimeType: string } }
@@ -118,7 +119,7 @@ export async function POST(request: NextRequest) {
         const idx = cursor++;
         const file = audioFiles[idx];
         try {
-          const meta = await probeAudioDuration(token.accessToken, {
+          const meta = await probeAudioDuration(accessToken, {
             driveId: file.id,
             fileName: file.name,
             mimeType: file.mimeType,
