@@ -106,18 +106,44 @@ export async function GET(request: NextRequest) {
     diag.bytesReceived = headBuf?.byteLength ?? 0;
 
     // ── Server-side parse result on what we received ──
+    // Mirrors the scanner's two-pass strategy: if the head window is entirely
+    // inside an oversized ID3 tag, fetch a second window starting past the
+    // tag so the diagnostic reports what the scanner actually measured.
     if (headBuf) {
       const ct = (contentType || "").toLowerCase();
       if (ct.includes("text/html")) {
         diag.serverDuration = null;
         diag.serverParse = "HTML interstitial received instead of audio";
       } else {
-        const meta = parseMp3HeadFromBuffer(headBuf);
-        diag.serverDuration = meta.duration;
-        diag.serverBitrate = meta.bitrate;
-        diag.serverSampleRate = meta.sampleRate;
-        diag.serverParse = meta.detected;
-        diag.serverTagBytes = meta.tagBytes ?? 0;
+        const parseWindow = async (buf: ArrayBuffer) => {
+          const meta = parseMp3HeadFromBuffer(buf);
+          diag.serverDuration = meta.duration;
+          diag.serverBitrate = meta.bitrate;
+          diag.serverSampleRate = meta.sampleRate;
+          diag.serverParse = meta.detected;
+          diag.serverTagBytes = meta.tagBytes ?? 0;
+          return meta;
+        };
+        let meta = await parseWindow(headBuf);
+        if (meta.detected === "none" && meta.tagBytes && meta.tagBytes >= (headBuf?.byteLength ?? 0)) {
+          // Head window was swallowed by the tag — read past it.
+          const token2 = token; // reuse authed source
+          const start = meta.tagBytes;
+          const res2 = token2
+            ? await fetch(
+                `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media`,
+                { headers: { Authorization: `Bearer ${token2.accessToken}`, Range: `bytes=${start}-${start + 65535}` } }
+              ).catch(() => null)
+            : null;
+          if (res2 && (res2.ok || res2.status === 206)) {
+            const buf2 = await res2.arrayBuffer().catch(() => null);
+            if (buf2) {
+              diag.audioWindowBytes = buf2.byteLength;
+              diag.audioWindowStart = start;
+              meta = await parseWindow(buf2);
+            }
+          }
+        }
       }
     } else {
       diag.serverParse = "no bytes received";
