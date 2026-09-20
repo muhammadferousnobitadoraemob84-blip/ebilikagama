@@ -53,7 +53,12 @@ export default function VirtualRadioPlayer() {
         const res = await fetch("/api/virtual-radio/status", { cache: "no-store" });
         if (!res.ok) throw new Error(`status ${res.status}`);
         const data: VirtualRadioState = await res.json();
-        if (!cancelled) setState(data);
+        if (!cancelled) {
+          setState(data);
+          // Leave "loading" once the timeline is in hand — otherwise the
+          // play button stays disabled forever (browser-tested deadlock).
+          setStatus((s) => (s === "loading" ? "paused" : s));
+        }
       } catch {
         if (!cancelled) {
           setStatus("error");
