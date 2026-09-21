@@ -70,6 +70,10 @@ const translations = {
     prayer_asar: "Asar",
     prayer_maghrib: "Maghrib",
     prayer_isyak: "Isyak",
+    pt_today_title: "Prayer Times",
+    pt_imsak: "Imsak",
+    pt_syuruk: "Syuruk",
+    pt_next: "Next",
     azan_last_update: "Updated",
     // Virtual Radio (prototype) — admin/diagnostic strings; the public
     // player reuses the existing radio_* keys.
@@ -642,6 +646,10 @@ const translations = {
     prayer_asar: "Asar",
     prayer_maghrib: "Maghrib",
     prayer_isyak: "Isyak",
+    pt_today_title: "Waktu Solat",
+    pt_imsak: "Imsak",
+    pt_syuruk: "Syuruk",
+    pt_next: "Seterusnya",
     azan_last_update: "Dikemas kini",
     // Header
     nav_home: "Utama",
@@ -1213,6 +1221,10 @@ const translations = {
     prayer_asar: "晡礼",
     prayer_maghrib: "昏礼",
     prayer_isyak: "宵礼",
+    pt_today_title: "礼拜时间",
+    pt_imsak: "晨礼前",
+    pt_syuruk: "日出",
+    pt_next: "下一个",
     azan_last_update: "更新于",
     // Header
     nav_home: "首页",

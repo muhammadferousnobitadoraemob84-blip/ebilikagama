@@ -7,6 +7,7 @@ import ChannelSection from "@/components/ChannelSection";
 import LiveReplaySection from "@/components/LiveReplaySection";
 import QuranAudioSection from "@/components/QuranAudioSection";
 import NowPlayingWidget from "@/components/NowPlayingWidget";
+import PrayerTimesCard from "@/components/PrayerTimesCard";
 import SubscribeSection from "@/components/SubscribeSection";
 
 interface Channel {
@@ -211,6 +212,9 @@ export default function HomePageClient({
 
       {/* Virtual Radio — now playing (hidden when radio is off) */}
       <NowPlayingWidget />
+
+      {/* Prayer times — today's JAKIM schedule (hidden when unconfigured) */}
+      <PrayerTimesCard />
 
       {/* Saluran TV */}
       <ChannelSection

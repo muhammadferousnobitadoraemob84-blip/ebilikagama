@@ -538,3 +538,40 @@ export function parseJakimPdfText(text: string): PdfParseResult {
 
   return { detectedYear, detectedMonth, rows, warnings };
 }
+
+// ─── Public next-prayer computation (homepage card) ─────────────────
+
+export interface NextPrayerInfo {
+  prayer: AzanPrayer;
+  /** unix ms of the next prayer time (today or tomorrow, Malaysia local) */
+  startsAt: number;
+  /** "HH:MM" Malaysia-local label for the next prayer */
+  timeLabel: string;
+}
+
+/**
+ * The NEXT prayer strictly after `nowMs` (active-azan windows don't matter
+ * here — a countdown must count toward the upcoming prayer even mid-azan).
+ * Scans today first, then tomorrow; returns null only when no prayer-time
+ * data covers either day. Pure: identical for every caller at the same instant.
+ */
+export function computeNextPrayerFromTimes(
+  nowMs: number,
+  times: PrayerTimesData | null
+): NextPrayerInfo | null {
+  if (!times) return null;
+  const today = msToMalaysiaDate(nowMs);
+  for (const delta of [0, 1]) {
+    const dateStr = shiftMalaysiaDate(today, delta);
+    const day = times.days[dateStr];
+    if (!day) continue;
+    for (const prayer of AZAN_PRAYERS) {
+      const hhmm = day[prayer];
+      if (!hhmm) continue;
+      const startMs = prayerTimeToMs(dateStr, hhmm);
+      if (startMs == null || startMs <= nowMs) continue;
+      return { prayer, startsAt: startMs, timeLabel: hhmm };
+    }
+  }
+  return null;
+}
