@@ -19,6 +19,7 @@ import {
   type AzanPrayer,
   type PdfParseResult,
 } from "@/lib/azan";
+import type { TranslationKey } from "@/lib/i18n";
 
 // Browser-side duration verification for pending tracks (HTML5 metadata).
 interface PendingRow {
@@ -883,14 +884,14 @@ export default function AdminVirtualRadio() {
               ) : (
                 <>
                   <p className="font-semibold">
-                    {azanScanResult.azanCount} azan file(s) detected
-                    {azanScanResult.pendingCount ? `, ${azanScanResult.pendingCount} duration-pending` : ""}
-                    {azanScanResult.errors.length ? `, ${azanScanResult.errors.length} failed` : ""}
+                    {t("azan_scan_done").replace("{done}", String(azanScanResult.azanCount))}
+                    {azanScanResult.pendingCount ? `, ${azanScanResult.pendingCount} ${t("azan_pending_suffix")}` : ""}
+                    {azanScanResult.errors.length ? `, ${azanScanResult.errors.length} ${t("azan_failed_suffix")}` : ""}
                   </p>
                   {azanScanResult.ignoredMusic.length > 0 && (
                     <details className="mt-1.5">
                       <summary className="cursor-pointer opacity-70">
-                        {t("azan_ignored")} ({azanScanResult.ignoredMusic.length})
+                        {t("azan_ignored_count")} ({azanScanResult.ignoredMusic.length})
                       </summary>
                       <ul className="mt-1 space-y-0.5 text-xs opacity-80">
                         {azanScanResult.ignoredMusic.slice(0, 15).map((n, i) => (
@@ -910,10 +911,10 @@ export default function AdminVirtualRadio() {
               <table className="w-full text-xs">
                 <thead className="bg-white/5">
                   <tr className="text-left text-gray-500 uppercase tracking-wider">
-                    <th className="px-3 py-1.5 font-semibold">File</th>
-                    <th className="px-3 py-1.5 font-semibold">MIME</th>
-                    <th className="px-3 py-1.5 font-semibold text-right">Duration</th>
-                    <th className="px-3 py-1.5 font-semibold">Status</th>
+                    <th className="px-3 py-1.5 font-semibold">{t("azan_col_file")}</th>
+                    <th className="px-3 py-1.5 font-semibold">{t("azan_col_mime")}</th>
+                    <th className="px-3 py-1.5 font-semibold text-right">{t("azan_col_duration")}</th>
+                    <th className="px-3 py-1.5 font-semibold">{t("azan_col_status")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -929,11 +930,11 @@ export default function AdminVirtualRadio() {
                       </td>
                       <td className="px-3 py-1.5">
                         {f.unavailable ? (
-                          <span className="text-red-400">unavailable</span>
+                          <span className="text-red-400">{t("azan_status_unavailable")}</span>
                         ) : f.durationPending ? (
-                          <span className="text-yellow-400">duration pending</span>
+                          <span className="text-yellow-400">{t("azan_pending_suffix")}</span>
                         ) : (
-                          <span className="text-green-400">✓ ready</span>
+                          <span className="text-green-400">✓ {t("azan_status_ready")}</span>
                         )}
                       </td>
                     </tr>
@@ -952,7 +953,7 @@ export default function AdminVirtualRadio() {
               <p className="text-gray-400 text-xs uppercase tracking-wider font-semibold">{t("azan_role")}</p>
               {AZAN_PRAYERS.map((prayer) => (
                 <div key={prayer} className="flex items-center gap-3">
-                  <span className="text-gray-300 text-sm w-20 capitalize flex-shrink-0">{prayer}</span>
+                  <span className="text-gray-300 text-sm w-20 flex-shrink-0">{t(`prayer_${prayer}` as TranslationKey)}</span>
                   <select
                     value={azanAssign[prayer] ?? ""}
                     onChange={(e) =>
@@ -989,21 +990,28 @@ export default function AdminVirtualRadio() {
         <div className="space-y-3 pt-3 border-t border-white/5">
           <p className="text-gray-300 text-sm font-semibold">{t("azan_source_title")}</p>
 
-          <div className="flex items-center gap-3 flex-wrap">
-            <label className="text-gray-400 text-xs">{t("azan_zone")}</label>
-            <select
-              value={JAKIM_ZONES.some((z) => z.code === zone) ? zone : ""}
-              onChange={(e) => setZone(e.target.value)}
-              className="bg-gray-800 border border-white/10 rounded-lg text-sm text-white px-3 py-1.5"
-            >
-              <option value="">— {t("azan_zone")} —</option>
-              {JAKIM_ZONES.map((z) => (
-                <option key={z.code} value={z.code}>
-                  {z.code} — {z.name}
-                </option>
-              ))}
-            </select>
-            <p className="text-gray-600 text-xs">{t("azan_zone_hint")}</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <label htmlFor="azan-zone-select" className="text-gray-400 text-xs flex-shrink-0">
+              {t("azan_zone")}
+            </label>
+            {/* Wrapper constrains the native select (which otherwise sizes to
+                its longest option text and overflows the card). */}
+            <div className="w-full min-w-0 sm:w-auto sm:flex-1 sm:max-w-sm">
+              <select
+                id="azan-zone-select"
+                value={JAKIM_ZONES.some((z) => z.code === zone) ? zone : ""}
+                onChange={(e) => setZone(e.target.value)}
+                className="w-full max-w-full box-border bg-gray-800 border border-white/10 rounded-lg text-sm text-white px-3 py-1.5"
+              >
+                <option value="">— {t("azan_zone")} —</option>
+                {JAKIM_ZONES.map((z) => (
+                  <option key={z.code} value={z.code}>
+                    {z.code} — {z.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="text-gray-600 text-xs basis-full sm:basis-auto">{t("azan_zone_hint")}</p>
           </div>
 
           {/* Option B: JAKIM API */}
@@ -1022,16 +1030,19 @@ export default function AdminVirtualRadio() {
           <div className="space-y-2">
             <p className="text-gray-400 text-xs uppercase tracking-wider font-semibold">{t("azan_pdf_title")}</p>
             <div className="flex items-center gap-3 flex-wrap">
+              <div className="min-w-0 flex-1 sm:max-w-md">
               <input
                 ref={pdfFileRef}
                 type="file"
                 accept="application/pdf"
-                className="text-xs text-gray-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-white/10 file:text-white file:text-xs file:cursor-pointer"
+                aria-label={t("azan_choose_file")}
+                className="w-full max-w-full box-border text-xs text-gray-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-white/10 file:text-white file:text-xs file:cursor-pointer"
               />
+              </div>
               <button
                 onClick={handlePdfParse}
                 disabled={pdfBusy}
-                className="bg-white/10 hover:bg-white/20 disabled:bg-gray-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                className="bg-white/10 hover:bg-white/20 disabled:bg-gray-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors flex-shrink-0"
               >
                 {pdfBusy ? t("azan_pdf_parsing") : t("azan_pdf_parse")}
               </button>
@@ -1170,8 +1181,8 @@ export default function AdminVirtualRadio() {
               className="bg-gray-800 border border-white/10 rounded-lg text-sm text-white px-3 py-1.5"
             >
               {AZAN_PRAYERS.map((p) => (
-                <option key={p} value={p} className="capitalize">
-                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                <option key={p} value={p}>
+                  {t(`prayer_${p}` as TranslationKey)}
                 </option>
               ))}
             </select>
