@@ -11,6 +11,14 @@ import {
   getRadioPosition,
   type VirtualRadioState,
 } from "@/lib/virtual-radio";
+import {
+  AZAN_PRAYERS,
+  JAKIM_ZONES,
+  type AzanAssignments,
+  type AzanFile,
+  type AzanPrayer,
+  type PdfParseResult,
+} from "@/lib/azan";
 
 // Browser-side duration verification for pending tracks (HTML5 metadata).
 interface PendingRow {
@@ -116,6 +124,40 @@ interface Diagnostic {
   } | null;
 }
 
+// Azan admin snapshot (GET /api/virtual-radio/azan)
+interface AzanSnapshot {
+  serverTime: number;
+  files: AzanFile[];
+  assignments: AzanAssignments;
+  prayerZone: string | null;
+  prayerTimes: {
+    zone: string;
+    source: "pdf" | "jakim_api";
+    updatedAt: string;
+    dayCount: number;
+    today: {
+      imsak: string | null;
+      subuh: string;
+      syuruk: string;
+      zohor: string;
+      asar: string;
+      maghrib: string;
+      isyak: string;
+    } | null;
+  } | null;
+  schedule: {
+    active: {
+      prayer: string;
+      fileName: string;
+      startedAt: number;
+      endsAt: number;
+      offset: number;
+      duration: number;
+    } | null;
+    next: { prayer: string; fileName: string; startsAt: number } | null;
+  };
+}
+
 export default function AdminVirtualRadio() {
   const { t } = useLanguage();
   const [state, setState] = useState<VirtualRadioState | null>(null);
@@ -151,6 +193,34 @@ export default function AdminVirtualRadio() {
   const [fileDiags, setFileDiags] = useState<Record<string, FileDiag>>({});
   const [diagLoading, setDiagLoading] = useState<Record<string, boolean>>({});
 
+  // ── AZAN & PRAYER TIMES state ─────────────────────────────────────
+  const [azanState, setAzanState] = useState<AzanSnapshot | null>(null);
+  const [azanScanning, setAzanScanning] = useState(false);
+  const [azanScanResult, setAzanScanResult] = useState<null | {
+    azanCount: number;
+    azanFiles: AzanFile[];
+    ignoredMusic: string[];
+    errors: { fileName: string; error: string }[];
+    pendingCount: number;
+    error?: string;
+  }>(null);
+  const [azanAssign, setAzanAssign] = useState<AzanAssignments | null>(null);
+  const [azanSaving, setAzanSaving] = useState(false);
+  const [azanSavedMsg, setAzanSavedMsg] = useState(false);
+  const [zone, setZone] = useState("");
+  const [jakimBusy, setJakimBusy] = useState(false);
+  const [jakimResult, setJakimResult] = useState<string | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfPreview, setPdfPreview] = useState<(PdfParseResult & { fileName: string }) | null>(null);
+  const [pdfBusyConfirm, setPdfBusyConfirm] = useState(false);
+  const [pdfResult, setPdfResult] = useState<string | null>(null);
+  const pdfFileRef = useRef<HTMLInputElement | null>(null);
+  const [testPrayer, setTestPrayer] = useState<AzanPrayer>("subuh");
+  const [testMsg, setTestMsg] = useState<string | null>(null);
+  const testAudioRef = useRef<HTMLAudioElement | null>(null);
+  // 1s tick drives the countdown re-render
+  const [, azanTick] = useState(0);
+
   const loadState = useCallback(async () => {
     try {
       const res = await fetch("/api/virtual-radio/config", { cache: "no-store" });
@@ -160,6 +230,19 @@ export default function AdminVirtualRadio() {
       setPageError("Config load failed");
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const loadAzan = useCallback(async () => {
+    try {
+      const res = await fetch("/api/virtual-radio/azan", { cache: "no-store" });
+      if (!res.ok) return;
+      const data: AzanSnapshot = await res.json();
+      setAzanState(data);
+      setAzanAssign((prev) => prev ?? data.assignments);
+      setZone((prev) => prev || data.prayerZone || "");
+    } catch {
+      // transient
     }
   }, []);
 
@@ -184,7 +267,14 @@ export default function AdminVirtualRadio() {
   useEffect(() => {
     loadState();
     loadDiag();
-  }, [loadState, loadDiag]);
+    loadAzan();
+  }, [loadState, loadDiag, loadAzan]);
+
+  // 1s tick for the azan countdown
+  useEffect(() => {
+    const id = setInterval(() => azanTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   /**
    * Browser HTML5 metadata fallback: measure every pending track through the
@@ -328,6 +418,156 @@ export default function AdminVirtualRadio() {
       await loadState();
     } finally {
       setBusy(false);
+    }
+  };
+
+  // ── AZAN handlers ─────────────────────────────────────────────────
+  const handleAzanScan = async () => {
+    setAzanScanning(true);
+    setAzanScanResult(null);
+    try {
+      const res = await fetch("/api/virtual-radio/azan/scan", { method: "POST" });
+      const data = await res.json();
+      setAzanScanResult(data);
+      await loadAzan();
+    } catch {
+      setAzanScanResult({ azanCount: 0, azanFiles: [], ignoredMusic: [], errors: [], pendingCount: 0, error: "Scan request failed" });
+    } finally {
+      setAzanScanning(false);
+    }
+  };
+
+  const handleSaveAssignments = async () => {
+    if (!azanAssign) return;
+    setAzanSaving(true);
+    setAzanSavedMsg(false);
+    try {
+      const res = await fetch("/api/virtual-radio/azan/assignments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(azanAssign),
+      });
+      if (res.ok) {
+        setAzanSavedMsg(true);
+        setTimeout(() => setAzanSavedMsg(false), 2500);
+        await loadAzan();
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setPageError(d.error || "Failed to save assignments");
+      }
+    } finally {
+      setAzanSaving(false);
+    }
+  };
+
+  const handleJakimSync = async () => {
+    const z = zone.trim().toUpperCase();
+    if (!z) {
+      setPageError("Choose a prayer zone first");
+      return;
+    }
+    setJakimBusy(true);
+    setJakimResult(null);
+    try {
+      const res = await fetch("/api/virtual-radio/prayer-times/jakim-sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ zone: z, period: "year" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setJakimResult(
+          `✓ ${data.dayCount} days stored (${data.from} → ${data.to}), skipped ${data.rowsSkipped}`
+        );
+      } else {
+        setJakimResult(`✗ ${data.error || "Sync failed"}`);
+      }
+      await loadAzan();
+    } catch {
+      setJakimResult("✗ Sync request failed");
+    } finally {
+      setJakimBusy(false);
+    }
+  };
+
+  const handlePdfParse = async () => {
+    const f = pdfFileRef.current?.files?.[0];
+    if (!f) {
+      setPageError("Choose a JAKIM PDF first");
+      return;
+    }
+    setPdfBusy(true);
+    setPdfPreview(null);
+    setPdfResult(null);
+    try {
+      const form = new FormData();
+      form.append("file", f);
+      const res = await fetch("/api/virtual-radio/prayer-times/pdf", { method: "POST", body: form });
+      const data = await res.json();
+      if (res.ok) setPdfPreview(data);
+      else setPageError(data.error || "PDF parse failed");
+    } catch {
+      setPageError("PDF parse request failed");
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
+  const handlePdfConfirm = async () => {
+    if (!pdfPreview) return;
+    const z = zone.trim().toUpperCase();
+    if (!z) {
+      setPageError("Choose a prayer zone first");
+      return;
+    }
+    setPdfBusyConfirm(true);
+    try {
+      const res = await fetch("/api/virtual-radio/prayer-times/pdf-confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          zone: z,
+          year: pdfPreview.detectedYear,
+          month: pdfPreview.detectedMonth,
+          rows: pdfPreview.rows,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPdfResult(`✓ ${data.savedDays} days saved for ${z}`);
+        setPdfPreview(null);
+        if (pdfFileRef.current) pdfFileRef.current.value = "";
+      } else {
+        setPdfResult(`✗ ${data.error || "Save failed"}`);
+      }
+      await loadAzan();
+    } catch {
+      setPdfResult("✗ Save request failed");
+    } finally {
+      setPdfBusyConfirm(false);
+    }
+  };
+
+  const handleTestAzan = async () => {
+    setTestMsg(null);
+    testAudioRef.current?.pause();
+    try {
+      const res = await fetch("/api/virtual-radio/azan/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prayer: testPrayer }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTestMsg(`✗ ${data.error}`);
+        return;
+      }
+      const audio = new Audio(data.streamUrl);
+      testAudioRef.current = audio;
+      audio.play().catch(() => setTestMsg("Browser blocked playback — click again"));
+      setTestMsg(`▶ ${data.fileName}`);
+    } catch {
+      setTestMsg("✗ Test request failed");
     }
   };
 
@@ -609,6 +849,342 @@ export default function AdminVirtualRadio() {
           </div>
         </div>
       )}
+
+      {/* ══ AZAN & PRAYER TIMES ══ */}
+      <div className="bg-gray-900 border border-white/10 rounded-xl p-5 space-y-5">
+        <h2 className="text-white font-bold tracking-wide">{t("azan_section")} &amp; {t("azan_source_title")}</h2>
+
+        {/* ── AZAN AUDIO ── */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <p className="text-gray-300 text-sm font-semibold">{t("azan_section")}</p>
+            <button
+              onClick={handleAzanScan}
+              disabled={azanScanning || !state?.folderId}
+              className="bg-red-600 hover:bg-red-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            >
+              {azanScanning ? t("azan_scanning") : t("azan_scan")}
+            </button>
+          </div>
+          {!state?.folderId && (
+            <p className="text-gray-500 text-xs">{t("vr_admin_folder_none")}</p>
+          )}
+
+          {azanScanResult && (
+            <div
+              className={`rounded-lg border p-3 text-sm ${
+                azanScanResult.error
+                  ? "bg-red-900/20 border-red-600/30 text-red-300"
+                  : "bg-green-900/10 border-green-600/30 text-green-200"
+              }`}
+            >
+              {azanScanResult.error ? (
+                <p>{azanScanResult.error}</p>
+              ) : (
+                <>
+                  <p className="font-semibold">
+                    {azanScanResult.azanCount} azan file(s) detected
+                    {azanScanResult.pendingCount ? `, ${azanScanResult.pendingCount} duration-pending` : ""}
+                    {azanScanResult.errors.length ? `, ${azanScanResult.errors.length} failed` : ""}
+                  </p>
+                  {azanScanResult.ignoredMusic.length > 0 && (
+                    <details className="mt-1.5">
+                      <summary className="cursor-pointer opacity-70">
+                        {t("azan_ignored")} ({azanScanResult.ignoredMusic.length})
+                      </summary>
+                      <ul className="mt-1 space-y-0.5 text-xs opacity-80">
+                        {azanScanResult.ignoredMusic.slice(0, 15).map((n, i) => (
+                          <li key={i}>• {n}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Detected azan files */}
+          {azanState && azanState.files.length > 0 && (
+            <div className="border border-white/5 rounded-lg overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-white/5">
+                  <tr className="text-left text-gray-500 uppercase tracking-wider">
+                    <th className="px-3 py-1.5 font-semibold">File</th>
+                    <th className="px-3 py-1.5 font-semibold">MIME</th>
+                    <th className="px-3 py-1.5 font-semibold text-right">Duration</th>
+                    <th className="px-3 py-1.5 font-semibold">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {azanState.files.map((f) => (
+                    <tr key={f.driveId} className="border-t border-white/5">
+                      <td className="px-3 py-1.5 text-white">
+                        {f.fileName}
+                        <span className="block text-gray-600 font-mono text-[10px]">{f.driveId}</span>
+                      </td>
+                      <td className="px-3 py-1.5 text-gray-400">{f.mimeType}</td>
+                      <td className="px-3 py-1.5 text-gray-400 text-right font-mono">
+                        {f.duration > 0 ? formatDuration(f.duration) : "—"}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        {f.unavailable ? (
+                          <span className="text-red-400">unavailable</span>
+                        ) : f.durationPending ? (
+                          <span className="text-yellow-400">duration pending</span>
+                        ) : (
+                          <span className="text-green-400">✓ ready</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {azanState && azanState.files.length === 0 && (
+            <p className="text-gray-500 text-xs">{t("azan_none_found")}</p>
+          )}
+
+          {/* Role mapping */}
+          {azanState && azanState.files.length > 0 && azanAssign && (
+            <div className="space-y-2 pt-1">
+              <p className="text-gray-400 text-xs uppercase tracking-wider font-semibold">{t("azan_role")}</p>
+              {AZAN_PRAYERS.map((prayer) => (
+                <div key={prayer} className="flex items-center gap-3">
+                  <span className="text-gray-300 text-sm w-20 capitalize flex-shrink-0">{prayer}</span>
+                  <select
+                    value={azanAssign[prayer] ?? ""}
+                    onChange={(e) =>
+                      setAzanAssign((a) => ({ ...a!, [prayer]: e.target.value || null }))
+                    }
+                    className="bg-gray-800 border border-white/10 rounded-lg text-sm text-white px-3 py-1.5 flex-1 min-w-0"
+                  >
+                    <option value="">— {t("azan_unassigned")} —</option>
+                    {azanState.files
+                      .filter((f) => !f.unavailable)
+                      .map((f) => (
+                        <option key={f.driveId} value={f.driveId}>
+                          {f.fileName}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              ))}
+              <div className="flex items-center gap-3 pt-1">
+                <button
+                  onClick={handleSaveAssignments}
+                  disabled={azanSaving}
+                  className="bg-red-600 hover:bg-red-500 disabled:bg-gray-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                >
+                  {azanSaving ? "…" : t("azan_save_assign")}
+                </button>
+                {azanSavedMsg && <span className="text-green-400 text-sm">✓ {t("azan_assign_saved")}</span>}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── PRAYER TIME SOURCE ── */}
+        <div className="space-y-3 pt-3 border-t border-white/5">
+          <p className="text-gray-300 text-sm font-semibold">{t("azan_source_title")}</p>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="text-gray-400 text-xs">{t("azan_zone")}</label>
+            <select
+              value={JAKIM_ZONES.some((z) => z.code === zone) ? zone : ""}
+              onChange={(e) => setZone(e.target.value)}
+              className="bg-gray-800 border border-white/10 rounded-lg text-sm text-white px-3 py-1.5"
+            >
+              <option value="">— {t("azan_zone")} —</option>
+              {JAKIM_ZONES.map((z) => (
+                <option key={z.code} value={z.code}>
+                  {z.code} — {z.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-gray-600 text-xs">{t("azan_zone_hint")}</p>
+          </div>
+
+          {/* Option B: JAKIM API */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={handleJakimSync}
+              disabled={jakimBusy || !zone}
+              className="bg-red-600 hover:bg-red-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            >
+              {jakimBusy ? t("azan_jakim_syncing") : t("azan_jakim_sync")}
+            </button>
+            {jakimResult && <span className="text-xs text-gray-300">{jakimResult}</span>}
+          </div>
+
+          {/* Option A: PDF import */}
+          <div className="space-y-2">
+            <p className="text-gray-400 text-xs uppercase tracking-wider font-semibold">{t("azan_pdf_title")}</p>
+            <div className="flex items-center gap-3 flex-wrap">
+              <input
+                ref={pdfFileRef}
+                type="file"
+                accept="application/pdf"
+                className="text-xs text-gray-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-white/10 file:text-white file:text-xs file:cursor-pointer"
+              />
+              <button
+                onClick={handlePdfParse}
+                disabled={pdfBusy}
+                className="bg-white/10 hover:bg-white/20 disabled:bg-gray-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+              >
+                {pdfBusy ? t("azan_pdf_parsing") : t("azan_pdf_parse")}
+              </button>
+            </div>
+            {pdfPreview && (
+              <div className="space-y-2">
+                <p className="text-gray-500 text-xs">
+                  {pdfPreview.fileName} · {pdfPreview.rows.length} rows
+                  {pdfPreview.detectedYear ? ` · ${pdfPreview.detectedMonth}/${pdfPreview.detectedYear}` : ""}
+                </p>
+                {pdfPreview.warnings.length > 0 && (
+                  <p className="text-yellow-400 text-xs">⚠ {pdfPreview.warnings.join(" · ")}</p>
+                )}
+                <div className="max-h-56 overflow-y-auto border border-white/5 rounded-lg">
+                  <table className="w-full text-xs">
+                    <thead className="bg-white/5 sticky top-0">
+                      <tr className="text-left text-gray-500 uppercase">
+                        <th className="px-2.5 py-1.5">Day</th>
+                        <th className="px-2.5 py-1.5">Subuh</th>
+                        <th className="px-2.5 py-1.5">Zohor</th>
+                        <th className="px-2.5 py-1.5">Asar</th>
+                        <th className="px-2.5 py-1.5">Maghrib</th>
+                        <th className="px-2.5 py-1.5">Isyak</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pdfPreview.rows.map((r) => (
+                        <tr key={r.day} className={`border-t border-white/5 ${r.confidence === "low" ? "bg-yellow-900/10" : ""}`}>
+                          <td className="px-2.5 py-1 text-gray-300 font-mono">{r.day}</td>
+                          <td className={`px-2.5 py-1 font-mono ${r.subuh ? "text-white" : "text-red-400"}`}>{r.subuh ?? "?"}</td>
+                          <td className={`px-2.5 py-1 font-mono ${r.zohor ? "text-white" : "text-red-400"}`}>{r.zohor ?? "?"}</td>
+                          <td className={`px-2.5 py-1 font-mono ${r.asar ? "text-white" : "text-red-400"}`}>{r.asar ?? "?"}</td>
+                          <td className={`px-2.5 py-1 font-mono ${r.maghrib ? "text-white" : "text-red-400"}`}>{r.maghrib ?? "?"}</td>
+                          <td className={`px-2.5 py-1 font-mono ${r.isyak ? "text-white" : "text-red-400"}`}>{r.isyak ?? "?"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handlePdfConfirm}
+                    disabled={pdfBusyConfirm || !pdfPreview.detectedYear || !pdfPreview.detectedMonth}
+                    className="bg-green-600 hover:bg-green-500 disabled:bg-gray-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                  >
+                    {pdfBusyConfirm ? t("azan_pdf_saving") : t("azan_pdf_confirm")}
+                  </button>
+                  <button
+                    onClick={() => setPdfPreview(null)}
+                    className="text-gray-400 hover:text-white text-sm"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
+            {pdfResult && <p className="text-xs text-gray-300">{pdfResult}</p>}
+          </div>
+
+          {/* Current prayer-time status */}
+          {azanState?.prayerTimes && (
+            <div className="bg-black/30 rounded-lg p-3 text-xs space-y-1">
+              <p>
+                <span className="text-gray-500">Zone:</span> <span className="text-white font-mono">{azanState.prayerTimes.zone}</span>
+                <span className="text-gray-500"> · source:</span>{" "}
+                <span className="text-white">{azanState.prayerTimes.source === "jakim_api" ? t("azan_source_api") : t("azan_source_pdf")}</span>
+                <span className="text-gray-500"> · {t("azan_synced_days")}:</span> <span className="text-white">{azanState.prayerTimes.dayCount}</span>
+                <span className="text-gray-500"> · {t("azan_last_update")}:</span>{" "}
+                <span className="text-white">{new Date(azanState.prayerTimes.updatedAt).toLocaleString()}</span>
+              </p>
+              {azanState.prayerTimes.today && (
+                <p className="font-mono text-gray-300">
+                  {t("azan_times_for")}: Subuh {azanState.prayerTimes.today.subuh} · Zohor {azanState.prayerTimes.today.zohor} · Asar{" "}
+                  {azanState.prayerTimes.today.asar} · Maghrib {azanState.prayerTimes.today.maghrib} · Isyak {azanState.prayerTimes.today.isyak}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── AZAN SCHEDULER status + TEST AZAN ── */}
+        <div className="space-y-3 pt-3 border-t border-white/5">
+          <p className="text-gray-300 text-sm font-semibold">{t("azan_scheduler_title")}</p>
+          {azanState && (azanState.schedule.next || azanState.schedule.active) ? (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {azanState.schedule.active ? (
+                <div className="col-span-2 sm:col-span-4 bg-green-900/20 border border-green-600/30 rounded-lg p-3">
+                  <p className="text-green-300 font-semibold">
+                    🔴 {t("azan_now_live")}: {azanState.schedule.active.prayer.toUpperCase()} — {azanState.schedule.active.fileName}
+                  </p>
+                  <p className="text-green-400/70 text-xs font-mono mt-0.5">
+                    {formatDuration(azanState.schedule.active.offset)} / {formatDuration(azanState.schedule.active.duration)}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <p className="text-gray-500 text-xs">{t("azan_next_prayer")}</p>
+                    <p className="text-white text-sm font-semibold capitalize">{azanState.schedule.next!.prayer}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 text-xs">{t("azan_prayer_time")}</p>
+                    <p className="text-white text-sm font-semibold font-mono">
+                      {new Date(azanState.schedule.next!.startsAt).toLocaleTimeString("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 text-xs">{t("azan_file")}</p>
+                    <p className="text-white text-sm font-semibold truncate">{azanState.schedule.next!.fileName}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 text-xs">{t("azan_countdown")}</p>
+                    <p className="text-white text-sm font-semibold font-mono">{
+                      (() => {
+                        const serverNow = Date.now() + (offsetMs ?? 0);
+                        const s = Math.max(0, Math.floor((azanState.schedule.next!.startsAt - serverNow) / 1000));
+                        const h = String(Math.floor(s / 3600)).padStart(2, "0");
+                        const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+                        const sec = String(s % 60).padStart(2, "0");
+                        return `${h}:${m}:${sec}`;
+                      })()
+                    }</p>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <p className="text-gray-500 text-xs">{t("azan_no_schedule")}</p>
+ )}
+
+          {/* TEST AZAN */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <select
+              value={testPrayer}
+              onChange={(e) => setTestPrayer(e.target.value as AzanPrayer)}
+              className="bg-gray-800 border border-white/10 rounded-lg text-sm text-white px-3 py-1.5"
+            >
+              {AZAN_PRAYERS.map((p) => (
+                <option key={p} value={p} className="capitalize">
+                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleTestAzan}
+              className="bg-white/10 hover:bg-white/20 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            >
+              ▶ {t("azan_test_play")}
+            </button>
+          </div>
+          {testMsg && <p className="text-xs text-gray-300">{testMsg}</p>}
+        </div>
+      </div>
 
       {/* Synchronization diagnostics — admin-only */}
       <div className="bg-gray-900 border border-white/10 rounded-xl overflow-hidden">

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getVirtualRadioState } from "@/lib/virtual-radio-store";
+import { getAzanState } from "@/lib/azan-store";
 import { getValidDriveToken } from "@/lib/google-drive";
 
 export const dynamic = "force-dynamic";
@@ -7,18 +8,32 @@ export const maxDuration = 300; // long-lived audio streams
 
 // GET /api/virtual-radio/stream?id=<driveFileId>
 //
-// Range-capable proxy for playlist tracks. The driveId is validated against
-// the configured playlist — this endpoint can NEVER fetch arbitrary Drive
-// files. Credentials stay server-side; the browser only ever sees this URL.
+// Range-capable proxy for playlist tracks AND azan audio. The driveId is
+// validated against the configured playlist + the azan library — this
+// endpoint can NEVER fetch arbitrary Drive files. Credentials stay
+// server-side; the browser only ever sees this URL.
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     if (!id) return jsonError(400, "Missing id parameter");
 
-    // Validate: the file MUST be in the current playlist.
+    // Validate: the file MUST be in the current playlist OR the azan library.
     const state = await getVirtualRadioState();
-    const track = state.tracks.find((t) => t.driveId === id);
+    let track = state.tracks.find((t) => t.driveId === id);
+    if (!track) {
+      const azan = await getAzanState();
+      const azanFile = azan.files.find((f) => f.driveId === id && !f.unavailable);
+      if (azanFile) {
+        track = {
+          driveId: azanFile.driveId,
+          fileName: azanFile.fileName,
+          duration: azanFile.duration,
+          size: azanFile.size,
+          mimeType: azanFile.mimeType,
+        };
+      }
+    }
     if (!track) {
       return audioError(404, "not-in-playlist");
     }

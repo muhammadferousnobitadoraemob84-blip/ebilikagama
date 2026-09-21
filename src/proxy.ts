@@ -56,6 +56,7 @@ const PUBLIC_PATHS = [
   "/api/quran-audio/public",
   "/api/quran-audio/stream",
   "/api/virtual-radio/time", // clock sync — must work for any radio visitor
+  "/api/virtual-radio/now-playing", // homepage widget — names + math only, no credentials
   "/api/setup",
   "/manifest.json",
   "/icon-192.png",

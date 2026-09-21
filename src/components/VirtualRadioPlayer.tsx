@@ -22,6 +22,7 @@ import {
   type ServerClockSync,
   type VirtualRadioState,
 } from "@/lib/virtual-radio";
+import { emptyAzanSchedule, type AzanSchedule } from "@/lib/azan";
 
 type PlayerStatus =
   | "loading" // fetching radio state / first clock sync
@@ -44,6 +45,12 @@ export default function VirtualRadioPlayer() {
   const wantPlayRef = useRef(false); // user intent; survives track transitions
   const applyingRef = useRef(false); // guard against recursive 'loadedmetadata'
 
+  // Azan overlay state (server-computed schedule; refreshed by polling).
+  const [azan, setAzan] = useState<AzanSchedule>(emptyAzanSchedule());
+  const azanRef = useRef<AzanSchedule>(emptyAzanSchedule());
+  azanRef.current = azan;
+  const azanKeyRef = useRef<string | null>(null); // azan event currently loaded in <audio>
+
   // ── State fetch + refresh on tab focus ─────────────────────────────
   useEffect(() => {
     let cancelled = false;
@@ -52,12 +59,14 @@ export default function VirtualRadioPlayer() {
       try {
         const res = await fetch("/api/virtual-radio/status", { cache: "no-store" });
         if (!res.ok) throw new Error(`status ${res.status}`);
-        const data: VirtualRadioState = await res.json();
+        const data: VirtualRadioState & { azan?: AzanSchedule } = await res.json();
         if (!cancelled) {
           setState(data);
           // Leave "loading" once the timeline is in hand — otherwise the
           // play button stays disabled forever (browser-tested deadlock).
           setStatus((s) => (s === "loading" ? "paused" : s));
+          // Capture the azan schedule so applyLivePosition can overlay it.
+          setAzan(data.azan ?? emptyAzanSchedule());
         }
       } catch {
         if (!cancelled) {
@@ -70,9 +79,13 @@ export default function VirtualRadioPlayer() {
     load();
     const onFocus = () => load();
     window.addEventListener("focus", onFocus);
+    // Poll the (tiny, cached) status every 30s so a mid-session azan start
+    // is picked up within half a minute without any heavyweight refetch.
+    const poll = setInterval(load, 30_000);
     return () => {
       cancelled = true;
       window.removeEventListener("focus", onFocus);
+      clearInterval(poll);
     };
   }, [t]);
 
@@ -118,6 +131,42 @@ export default function VirtualRadioPlayer() {
         if (!syncRef.current || syncRef.current.rttMs > MAX_ACCEPTABLE_RTT_MS) {
           await syncClock();
         }
+
+        // ── AZAN OVERLAY ─────────────────────────────────────────────
+        // While an azan window is active, the stream plays the azan at its
+        // server-computed offset. The RADIO timeline is untouched: when the
+        // azan ends, the next tick rejoins (now mod totalDuration) exactly
+        // where the shared timeline stands — no restart, no drift.
+        const liveAzan = azanRef.current.active;
+        if (liveAzan && liveAzan.driveId) {
+          azanKeyRef.current = `${liveAzan.prayer}:${liveAzan.startedAt}`;
+          if (currentDriveIdRef.current !== liveAzan.driveId) {
+            currentDriveIdRef.current = liveAzan.driveId;
+            audio.src = `/api/virtual-radio/stream?id=${encodeURIComponent(liveAzan.driveId)}`;
+            await new Promise<void>((resolve) => {
+              const onMeta = () => {
+                audio.removeEventListener("loadedmetadata", onMeta);
+                resolve();
+              };
+              audio.addEventListener("loadedmetadata", onMeta);
+              audio.load();
+              setTimeout(resolve, 8000);
+            });
+          }
+          const target = Math.max(0, Math.min(liveAzan.offset, (audio.duration || liveAzan.duration) - 0.25));
+          if (Number.isFinite(audio.duration) && Math.abs(audio.currentTime - target) > 1.0) {
+            audio.currentTime = target;
+          }
+          if (wantPlayRef.current) {
+            await audio.play().catch(() => {
+              /* autoplay block: user presses play again */
+            });
+          }
+          return;
+        }
+        azanKeyRef.current = null;
+
+        // ── NORMAL RADIO TIMELINE ────────────────────────────────────
         const pos = getSyncedPosition(state, syncRef.current);
         if (!pos) return;
 
@@ -164,19 +213,27 @@ export default function VirtualRadioPlayer() {
     applyLivePosition(audio);
     setStatus("playing");
 
-    // Gentle drift correction: every 30s, if local playback is >1s off the
-    // math timeline (buffer stalls etc.), re-seek to the computed position.
+    // Gentle drift correction: every 15s, re-seek onto whatever should be
+    // playing — the radio timeline, or the azan that just started/ended.
     const drift = setInterval(() => {
       if (!wantPlayRef.current) return;
+      const live = azanRef.current.active;
+      if (live) {
+        // Azan active: rejoin if we're still on radio audio or behind it.
+        if (currentDriveIdRef.current !== live.driveId || audio.currentTime < live.offset - 2) {
+          applyLivePosition(audio);
+        }
+        return;
+      }
       const pos = getSyncedPosition(state, syncRef.current);
       if (!pos) return;
       const track = state.tracks[pos.index];
       if (track && currentDriveIdRef.current !== track.driveId) {
-        applyLivePosition(audio); // track boundary crossed while stalled
+        applyLivePosition(audio); // azan ended or boundary crossed → rejoin radio
       } else if (Math.abs(audio.currentTime - pos.offset) > 1.0) {
         applyLivePosition(audio);
       }
-    }, 30000);
+    }, 15000);
 
     return () => clearInterval(drift);
   }, [status, state, applyLivePosition]);
@@ -303,6 +360,19 @@ export default function VirtualRadioPlayer() {
           )}
         </div>
 
+        {/* AZAN OVERLAY — live azan takes over the display */}
+        {azan.active && (
+          <div className="mt-4 w-full max-w-md bg-emerald-600/15 border border-emerald-500/40 rounded-xl px-4 py-3 text-center">
+            <p className="text-emerald-300 text-[11px] font-bold tracking-widest uppercase animate-pulse">
+              {t("azan_now_live")}
+            </p>
+            <p className="text-white text-sm font-semibold mt-1">{azan.active.fileName.replace(/\.[^.]+$/, "")}</p>
+            <p className="text-emerald-200/80 text-xs mt-0.5 font-mono">
+              {formatDuration(azan.active.offset)} / {formatDuration(azan.active.duration)}
+            </p>
+          </div>
+        )}
+
         {/* States */}
         {status === "loading" && (
           <div className="flex flex-col items-center gap-3 mt-8">
@@ -337,6 +407,12 @@ export default function VirtualRadioPlayer() {
               {nextTrack && (
                 <p className="text-gray-500 text-xs mt-1 truncate">
                   {t("vr_up_next")}: {nextTrack.fileName.replace(/\.[^.]+$/, "")}
+                </p>
+              )}
+              {azan.next && (
+                <p className="text-emerald-400/90 text-xs mt-1 truncate">
+                  {t("azan_next")}: {azan.next.prayer.charAt(0).toUpperCase() + azan.next.prayer.slice(1)}{" "}
+                  {new Date(azan.next.startsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}
                 </p>
               )}
             </div>

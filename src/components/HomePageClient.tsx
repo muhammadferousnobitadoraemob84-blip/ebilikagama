@@ -6,6 +6,7 @@ import Hero from "@/components/Hero";
 import ChannelSection from "@/components/ChannelSection";
 import LiveReplaySection from "@/components/LiveReplaySection";
 import QuranAudioSection from "@/components/QuranAudioSection";
+import NowPlayingWidget from "@/components/NowPlayingWidget";
 import SubscribeSection from "@/components/SubscribeSection";
 
 interface Channel {
@@ -207,6 +208,9 @@ export default function HomePageClient({
   return (
     <div>
       <Hero settings={settings} translations={heroTranslations} />
+
+      {/* Virtual Radio — now playing (hidden when radio is off) */}
+      <NowPlayingWidget />
 
       {/* Saluran TV */}
       <ChannelSection
