@@ -327,14 +327,31 @@ export function normalizeJakimTime(v: unknown): string | null {
 }
 
 const MONTHS_SHORT = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  ["Jan"],
+  ["Feb"],
+  ["Mac", "Mar"],
+  ["Apr"],
+  ["Mei", "May"],
+  ["Jun"],
+  ["Jul"],
+  ["Ogos", "Aug"],
+  ["Sep"],
+  ["Okt", "Oct"],
+  ["Nov"],
+  ["Dis", "Dec"],
 ];
 
-/** "20-Sep-2026" → "2026-09-20" (Malaysia-local date key). */
+/**
+ * "20-Sep-2026" or "01-Ogos-2026" → "2026-09-20" / "2026-08-01"
+ * (Malaysia-local date key). The JAKIM API mixes English and Malay month
+ * abbreviations (Mac, Mei, Ogos, Okt, Dis), so both are accepted.
+ */
 export function jakimDateToKey(dateStr: string): string | null {
-  const m = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/.exec(dateStr.trim());
+  const m = /^(\d{1,2})-([A-Za-z]{3,4})-(\d{4})$/.exec(dateStr.trim());
   if (!m) return null;
-  const mo = MONTHS_SHORT.findIndex((n) => n.toLowerCase() === m[2].toLowerCase());
+  const mo = MONTHS_SHORT.findIndex((names) =>
+    names.some((n) => n.toLowerCase() === m[2].toLowerCase())
+  );
   if (mo < 0) return null;
   return `${m[3]}-${String(mo + 1).padStart(2, "0")}-${String(Number(m[1])).padStart(2, "0")}`;
 }
