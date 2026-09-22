@@ -128,6 +128,15 @@ export default function AdminLayout({
       ),
     },
     {
+      href: "/admin/radio-recording",
+      label: t("rec_title"),
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7 7 7 0 017-7m0 0v3m0-3a4 4 0 014 4M5 11a7 7 0 017 7m7-7a7 7 0 00-7-7" />
+        </svg>
+      ),
+    },
+    {
       href: "/admin/virtual-radio",
       label: t("vr_admin_title"),
       icon: (

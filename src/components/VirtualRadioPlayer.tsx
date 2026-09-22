@@ -31,7 +31,15 @@ type PlayerStatus =
   | "paused" // user-visible idle (before first play)
   | "error";
 
-export default function VirtualRadioPlayer() {
+export interface VirtualRadioPlayerProps {
+  /**
+   * Called the moment an azan ACTUALLY starts playing (used by the admin
+   * Radio Recording system to create real markers, not scheduled guesses).
+   */
+  onAzanStart?: (info: { prayer: string; startedAt: number }) => void;
+}
+
+export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerProps = {}) {
   const { t } = useLanguage();
 
   const [state, setState] = useState<VirtualRadioState>(EMPTY_RADIO_STATE);
@@ -139,7 +147,13 @@ export default function VirtualRadioPlayer() {
         // where the shared timeline stands — no restart, no drift.
         const liveAzan = azanRef.current.active;
         if (liveAzan && liveAzan.driveId) {
-          azanKeyRef.current = `${liveAzan.prayer}:${liveAzan.startedAt}`;
+          const azanKey = `${liveAzan.prayer}:${liveAzan.startedAt}`;
+          const isNewAzan = azanKeyRef.current !== azanKey;
+          azanKeyRef.current = azanKey;
+          if (isNewAzan) {
+            // Fire exactly once per azan event — when it truly starts playing.
+            onAzanStart?.({ prayer: liveAzan.prayer, startedAt: liveAzan.startedAt });
+          }
           if (currentDriveIdRef.current !== liveAzan.driveId) {
             currentDriveIdRef.current = liveAzan.driveId;
             audio.src = `/api/virtual-radio/stream?id=${encodeURIComponent(liveAzan.driveId)}`;
@@ -202,7 +216,7 @@ export default function VirtualRadioPlayer() {
         applyingRef.current = false;
       }
     },
-    [state, syncClock]
+    [state, syncClock, onAzanStart]
   );
 
   // Rejoin the live point when the user presses play.
@@ -289,6 +303,7 @@ export default function VirtualRadioPlayer() {
     <div className="bg-gray-900 border border-white/10 rounded-2xl overflow-hidden">
       <audio
         ref={audioRef}
+        data-virtual-radio=""
         preload="auto"
         onError={() => {
           if (wantPlayRef.current) {
