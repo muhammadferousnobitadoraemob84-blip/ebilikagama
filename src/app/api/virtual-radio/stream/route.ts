@@ -6,6 +6,45 @@ import { getValidDriveToken } from "@/lib/google-drive";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // long-lived audio streams
 
+// ── Short-lived access-token cache ─────────────────────────────────
+// getValidDriveToken() validates the token against Google on EVERY call —
+// an extra ~150-400 ms round trip added to every audio request. Drive
+// access tokens live ~1 h, so caching for 60 s is safe and cuts startup
+// latency sharply. Cache is keyed by token string (refresh swaps it out).
+let tokenCache: { token: string; expiresAt: number } | null = null;
+const TOKEN_TTL_MS = 60_000;
+
+async function getValidDriveTokenCached(): Promise<{ accessToken: string } | null> {
+  if (tokenCache && Date.now() < tokenCache.expiresAt) {
+    return { accessToken: tokenCache.token };
+  }
+  const fresh = await getValidDriveToken();
+  if (fresh) {
+    tokenCache = { token: fresh.accessToken, expiresAt: Date.now() + TOKEN_TTL_MS };
+  } else {
+    tokenCache = null; // connection dropped — don't cache negatives for long
+  }
+  return fresh;
+}
+
+// ── Tiny playlist-metadata cache (validation reads only) ───────────
+// The stream route re-reads radio + azan state on every range request just
+// to validate the driveId. The state is admin-set and changes rarely; a
+// 10 s cache keeps validation fresh while removing a DB round trip from
+// the audio hot path (both stores are already internally cached too).
+let validIdsCache: { ids: Set<string>; expiresAt: number } | null = null;
+const VALID_IDS_TTL_MS = 10_000;
+
+async function getValidAudioIds(): Promise<Set<string>> {
+  if (validIdsCache && Date.now() < validIdsCache.expiresAt) return validIdsCache.ids;
+  const [state, azanState] = await Promise.all([getVirtualRadioState(), getAzanState()]);
+  const ids = new Set<string>();
+  for (const tr of state.tracks) ids.add(tr.driveId);
+  for (const f of azanState.files) if (!f.unavailable) ids.add(f.driveId);
+  validIdsCache = { ids, expiresAt: Date.now() + VALID_IDS_TTL_MS };
+  return ids;
+}
+
 // GET /api/virtual-radio/stream?id=<driveFileId>
 //
 // Range-capable proxy for playlist tracks AND azan audio. The driveId is
@@ -19,19 +58,23 @@ export async function GET(request: NextRequest) {
     if (!id) return jsonError(400, "Missing id parameter");
 
     // Validate: the file MUST be in the current playlist OR the azan library.
-    const state = await getVirtualRadioState();
-    let track = state.tracks.find((t) => t.driveId === id);
-    if (!track) {
-      const azan = await getAzanState();
-      const azanFile = azan.files.find((f) => f.driveId === id && !f.unavailable);
-      if (azanFile) {
-        track = {
-          driveId: azanFile.driveId,
-          fileName: azanFile.fileName,
-          duration: azanFile.duration,
-          size: azanFile.size,
-          mimeType: azanFile.mimeType,
-        };
+    const validIds = await getValidAudioIds();
+    let track: { driveId: string; fileName: string; duration: number; size: number | null; mimeType: string } | undefined;
+    if (validIds.has(id)) {
+      const state = await getVirtualRadioState();
+      track = state.tracks.find((t) => t.driveId === id);
+      if (!track) {
+        const azan = await getAzanState();
+        const azanFile = azan.files.find((f) => f.driveId === id && !f.unavailable);
+        if (azanFile) {
+          track = {
+            driveId: azanFile.driveId,
+            fileName: azanFile.fileName,
+            duration: azanFile.duration,
+            size: azanFile.size,
+            mimeType: azanFile.mimeType,
+          };
+        }
       }
     }
     if (!track) {
@@ -41,7 +84,7 @@ export async function GET(request: NextRequest) {
     const rangeHeader = request.headers.get("range");
 
     // ── Attempt 1: authenticated Drive API download ──
-    const token = await getValidDriveToken();
+    const token = await getValidDriveTokenCached();
     if (token) {
       const headers: Record<string, string> = { Authorization: `Bearer ${token.accessToken}` };
       if (rangeHeader) headers.Range = rangeHeader;
@@ -141,6 +184,7 @@ function relayAudio(upstream: Response, fileName: string, via: string): NextResp
   }
 
   if (upstream.body) {
+    responseHeaders["Server-Timing"] = `drive; desc="${via}"`;
     return new NextResponse(upstream.body, {
       status: isPartial ? 206 : 200,
       headers: responseHeaders,

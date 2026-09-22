@@ -15,6 +15,7 @@ import {
   getRadioPosition,
   type VirtualRadioState,
 } from "@/lib/virtual-radio";
+import type { AzanPrayer } from "@/lib/azan";
 
 interface NowPlaying {
   enabled: boolean;
@@ -136,8 +137,10 @@ export default function NowPlayingWidget() {
             </div>
             {azanActive ? (
               <>
+                {/* Prayer name ONLY — azan file names/metadata (e.g. station
+                    branding inside the Drive file's own name) stay internal. */}
                 <p className="text-white text-sm sm:text-base font-medium truncate mt-0.5">
-                  {azanActive.prayer.charAt(0).toUpperCase() + azanActive.prayer.slice(1)} — {prettyTitle(azanActive.fileName)}
+                  {t(`azan_event_${azanActive.prayer as AzanPrayer}`)}
                 </p>
                 <div className="mt-2 flex items-center gap-3">
                   <div className="h-1 flex-1 bg-white/10 rounded-full overflow-hidden">

@@ -68,7 +68,9 @@ export async function GET() {
           active: azan.active
             ? {
                 prayer: azan.active.prayer,
-                fileName: azan.active.fileName,
+                // The azan FILE name is internal (it can carry station
+                // branding like "…Nasional FM RTM"); the public payload
+                // identifies the event by prayer name only.
                 offset: azan.active.offset,
                 duration: azan.active.duration,
                 endsAt: azan.active.endsAt,
