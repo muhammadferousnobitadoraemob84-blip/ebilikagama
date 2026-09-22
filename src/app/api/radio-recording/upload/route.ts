@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
         });
 
         if (result.done && result.file) {
-          const archived = await archiveRecording(id, null);
+          const archived = await archiveRecording(id, null, result.file.id);
           if (!archived) {
             return NextResponse.json({ error: "Upload complete but session missing" }, { status: 409 });
           }
@@ -195,7 +195,13 @@ export async function POST(request: NextRequest) {
 
     if (action === "finalize") {
       if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
-      const archived = await archiveRecording(id, null);
+      // driveFileId from the client (e.g. its own completed resumable session)
+      // wins when provided; otherwise keep the stored value.
+      const archived = await archiveRecording(
+        id,
+        null,
+        typeof body.driveFileId === "string" && body.driveFileId ? body.driveFileId : null
+      );
       if (!archived) return NextResponse.json({ error: "Session missing" }, { status: 409 });
       return NextResponse.json({ success: true, recording: archived });
     }

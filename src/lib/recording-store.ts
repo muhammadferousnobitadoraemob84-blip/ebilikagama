@@ -263,11 +263,15 @@ export async function updateUploadProgress(
  */
 export async function archiveRecording(
   id: string,
-  webViewLink: string | null
+  webViewLink: string | null,
+  driveFileId?: string | null
 ): Promise<RecordingMeta | null> {
   const state = await readState();
   const active = state.active;
   if (!active || active.id !== id) return null;
+  // Drive assigns the real file id when the last chunk lands — overwrite the
+  // folder-id placeholder from beginUpload() so the archive streams the FILE.
+  if (driveFileId) active.driveFileId = driveFileId;
   active.status = "archived";
   active.uploadedBytes = active.totalBytes;
   // webViewLink is derivable from driveFileId; keep meta minimal (no extra column).
