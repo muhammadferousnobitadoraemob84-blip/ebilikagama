@@ -217,6 +217,23 @@ export default function AdminVirtualRadio() {
   const [pdfResult, setPdfResult] = useState<string | null>(null);
   const pdfFileRef = useRef<HTMLInputElement | null>(null);
   const [testPrayer, setTestPrayer] = useState<AzanPrayer>("subuh");
+
+  // Prayer Time Test Mode (admin-only; official JAKIM data never modified)
+  const [tm, setTm] = useState<{
+    enabled: boolean;
+    overrides: Partial<Record<AzanPrayer, string>>;
+    expiresAt: number | null;
+    active: boolean;
+  } | null>(null);
+  const [officialToday, setOfficialToday] = useState<Record<string, string> | null>(null);
+  const [tmBusy, setTmBusy] = useState(false);
+  const [tmMsg, setTmMsg] = useState<string | null>(null);
+  const [tmExpiresIn, setTmExpiresIn] = useState<string | null>(null);
+  const [tmDraft, setTmDraft] = useState<Partial<Record<AzanPrayer, string>>>({});
+  const [tmExpiryDraft, setTmExpiryDraft] = useState<string>("");
+  useEffect(() => {
+    if (tm) setTmDraft(tm.overrides ?? {});
+  }, [tm]);
   const [testMsg, setTestMsg] = useState<string | null>(null);
   const testAudioRef = useRef<HTMLAudioElement | null>(null);
   // 1s tick drives the countdown re-render
@@ -231,6 +248,18 @@ export default function AdminVirtualRadio() {
       setPageError("Config load failed");
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const loadTestMode = useCallback(async () => {
+    try {
+      const res = await fetch("/api/virtual-radio/azan/test-mode", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      setTm(data.testMode);
+      setOfficialToday(data.officialToday);
+    } catch {
+      /* admin-only convenience — silent */
     }
   }, []);
 
@@ -269,7 +298,8 @@ export default function AdminVirtualRadio() {
     loadState();
     loadDiag();
     loadAzan();
-  }, [loadState, loadDiag, loadAzan]);
+    loadTestMode();
+  }, [loadState, loadDiag, loadAzan, loadTestMode]);
 
   // 1s tick for the azan countdown
   useEffect(() => {
@@ -569,6 +599,54 @@ export default function AdminVirtualRadio() {
       setTestMsg(`▶ ${data.fileName}`);
     } catch {
       setTestMsg("✗ Test request failed");
+    }
+  };
+
+  // ── Prayer Time Test Mode handlers (ADMIN-ONLY; official JAKIM data is
+  // never written to — overrides live in their own Setting key) ──
+  const applyTestMode = async (overrides: Partial<Record<AzanPrayer, string>>, expiresAt: number | null) => {
+    setTmBusy(true);
+    setTmMsg(null);
+    try {
+      const res = await fetch("/api/virtual-radio/azan/test-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "apply", overrides, expiresAt }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTmMsg(`✗ ${data.error ?? "Save failed"}`);
+        return;
+      }
+      setTm(data.testMode);
+      setTmMsg("✓ " + t("azan_tm_saved"));
+      await loadAzan();
+    } catch {
+      setTmMsg("✗ Test mode request failed");
+    } finally {
+      setTmBusy(false);
+      setTimeout(() => setTmMsg(null), 4000);
+    }
+  };
+
+  const resetTestMode = async () => {
+    setTmBusy(true);
+    setTmMsg(null);
+    try {
+      const res = await fetch("/api/virtual-radio/azan/test-mode", { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        setTmMsg(`✗ ${data.error ?? "Reset failed"}`);
+        return;
+      }
+      setTm(data.testMode);
+      setTmMsg("✓ " + t("azan_tm_using_official"));
+      await loadAzan();
+    } catch {
+      setTmMsg("✗ Reset request failed");
+    } finally {
+      setTmBusy(false);
+      setTimeout(() => setTmMsg(null), 4000);
     }
   };
 
@@ -1194,6 +1272,96 @@ export default function AdminVirtualRadio() {
             </button>
           </div>
           {testMsg && <p className="text-xs text-gray-300">{testMsg}</p>}
+        </div>
+
+        {/* ── PRAYER TIME TEST MODE (ADMIN-ONLY) ──
+            Temporary scheduler overrides for azan testing. Test values live
+            in their own Setting key — the official JAKIM/PDF prayer-time
+            data is NEVER modified. Auto-expires (safety reset). Separate
+            from "Play Test Azan", which only previews audio. */}
+        <div className="space-y-3 pt-3 border-t border-white/5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-gray-300 text-sm font-semibold">{t("azan_tm_title")}</p>
+            <span
+              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                tm?.active
+                  ? "bg-amber-500/10 border-amber-500/40 text-amber-300"
+                  : "bg-gray-800 border-white/10 text-gray-400"
+              }`}
+            >
+              {tm?.active ? "ON" : "OFF"}
+            </span>
+            <span className="text-xs text-gray-500">
+              {t("azan_tm_scheduler")}:{" "}
+              <span className={tm?.active ? "text-amber-300 font-semibold" : "text-gray-300"}>
+                {tm?.active ? t("azan_tm_using_test") : t("azan_tm_using_official")}
+              </span>
+            </span>
+          </div>
+          <p className="text-gray-600 text-xs">{t("azan_tm_hint")}</p>
+          {officialToday && (
+            <div className="space-y-1.5">
+              {AZAN_PRAYERS.map((p) => (
+                <div key={p} className="flex items-center gap-3 flex-wrap text-xs">
+                  <span className="text-gray-400 w-16 capitalize">{t(`prayer_${p}` as TranslationKey)}</span>
+                  <span className="text-gray-600">{t("azan_tm_official")}:</span>
+                  <span className="text-white font-mono">{officialToday[p] ?? "—"}</span>
+                  <input
+                    type="time"
+                    value={tmDraft[p] ?? ""}
+                    onChange={(e) => setTmDraft((d) => ({ ...d, [p]: e.target.value }))}
+                    className="bg-gray-800 border border-white/10 rounded text-white text-xs px-2 py-1 w-24"
+                    aria-label={`${p} test override`}
+                  />
+                  {tm?.active && tm.overrides?.[p] ? (
+                    <span className="text-amber-300">
+                      {t("azan_tm_testing")}: <span className="font-mono">{tm.overrides[p]}</span>
+                    </span>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="text-xs text-gray-500">{t("azan_tm_expires")}</label>
+            <input
+              type="datetime-local"
+              value={tmExpiryDraft}
+              onChange={(e) => setTmExpiryDraft(e.target.value)}
+              className="bg-gray-800 border border-white/10 rounded text-white text-xs px-2 py-1"
+            />
+            <button
+              disabled={tmBusy}
+              onClick={() => {
+                // Empty expiry → 1 h default safety window (API caps at 6 h).
+                const ms = tmExpiryDraft ? new Date(tmExpiryDraft).getTime() : Date.now() + 3_600_000;
+                applyTestMode(tmDraft, ms);
+              }}
+              className="bg-white/10 hover:bg-white/20 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {t("azan_tm_apply")}
+            </button>
+            <button
+              disabled={tmBusy}
+              onClick={resetTestMode}
+              className="bg-red-600/20 border border-red-500/40 hover:bg-red-600/30 text-red-300 text-sm font-semibold px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {t("azan_tm_reset")}
+            </button>
+            {tm?.active && tm.expiresAt != null && (
+              <span className="text-xs text-amber-300/80 font-mono">
+                {t("azan_tm_expires_in")}{" "}
+                {(() => {
+                  const s = Math.max(0, Math.floor((tm.expiresAt - (Date.now() + (offsetMs ?? 0))) / 1000));
+                  const h = String(Math.floor(s / 3600)).padStart(2, "0");
+                  const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+                  const sec = String(s % 60).padStart(2, "0");
+                  return `${h}:${m}:${sec}`;
+                })()}
+              </span>
+            )}
+          </div>
+          {tmMsg && <p className="text-xs text-gray-300">{tmMsg}</p>}
         </div>
       </div>
 

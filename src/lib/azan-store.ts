@@ -9,8 +9,12 @@
 import { prisma, withRetry } from "@/lib/prisma";
 import {
   EMPTY_AZAN_ASSIGNMENTS,
+  emptyAzanTestMode,
+  isTestModeActive,
+  sanitizeOverrides,
   type AzanAssignments,
   type AzanFile,
+  type AzanTestMode,
   type PrayerTimeSource,
   type PrayerTimesData,
 } from "@/lib/azan";
@@ -20,6 +24,7 @@ const K_AZAN_FILES = "virtual_radio_azan_files"; // JSON: AzanFile[]
 const K_AZAN_ASSIGN = "virtual_radio_azan_assignments"; // JSON: AzanAssignments
 const K_PRAYER_ZONE = "virtual_radio_prayer_zone"; // e.g. "SBH05"
 const K_PRAYER_TIMES = "virtual_radio_prayer_times"; // JSON: PrayerTimesData
+const K_TEST_MODE = "virtual_radio_prayer_test"; // JSON: AzanTestMode (admin-only, expiring)
 
 // Short-TTL cache — the public status/now-playing endpoints consult this
 // on every page load; 5s staleness is invisible for azan scheduling.
@@ -28,6 +33,7 @@ let _cache: {
   assignments: AzanAssignments;
   prayerZone: string | null;
   prayerTimes: PrayerTimesData | null;
+  testMode: AzanTestMode;
   at: number;
 } | null = null;
 const CACHE_TTL_MS = 5000;
@@ -129,6 +135,8 @@ export async function getAzanState(): Promise<{
   assignments: AzanAssignments;
   prayerZone: string | null;
   prayerTimes: PrayerTimesData | null;
+  /** Admin test-mode overrides — check isTestModeActive(testMode, now) before use. */
+  testMode: AzanTestMode;
 }> {
   if (_cache && Date.now() - _cache.at < CACHE_TTL_MS) {
     return {
@@ -136,21 +144,31 @@ export async function getAzanState(): Promise<{
       assignments: _cache.assignments,
       prayerZone: _cache.prayerZone,
       prayerTimes: _cache.prayerTimes,
+      testMode: _cache.testMode,
     };
   }
 
   try {
-    const [filesRaw, assignRaw, zoneRaw, timesRaw] = await Promise.all([
+    const [filesRaw, assignRaw, zoneRaw, timesRaw, testRaw] = await Promise.all([
       readSetting(K_AZAN_FILES),
       readSetting(K_AZAN_ASSIGN),
       readSetting(K_PRAYER_ZONE),
       readSetting(K_PRAYER_TIMES),
+      readSetting(K_TEST_MODE),
     ]);
+    // SAFETY RESET: an expired test mode is auto-cleared so a forgotten test
+    // schedule can never linger (requirement 11).
+    let testMode = parseTestMode(testRaw);
+    if (testMode.enabled && testMode.expiresAt != null && Date.now() >= testMode.expiresAt) {
+      testMode = emptyAzanTestMode();
+      await writeSetting(K_TEST_MODE, JSON.stringify(testMode)).catch(() => {});
+    }
     const result = {
       files: parseFiles(filesRaw),
       assignments: parseAssignments(assignRaw),
       prayerZone: zoneRaw || null,
       prayerTimes: parsePrayerTimes(timesRaw),
+      testMode,
     };
     _cache = { ...result, at: Date.now() };
     return result;
@@ -165,6 +183,7 @@ export async function getAzanState(): Promise<{
       assignments: { ...EMPTY_AZAN_ASSIGNMENTS },
       prayerZone: null,
       prayerTimes: null,
+      testMode: emptyAzanTestMode(),
     };
   }
 }
@@ -230,6 +249,58 @@ export async function saveAzanAssignments(assignments: AzanAssignments): Promise
 export async function savePrayerZone(zone: string): Promise<void> {
   await writeSetting(K_PRAYER_ZONE, zone.trim().toUpperCase());
   invalidateCache();
+}
+
+function parseTestMode(raw: string | null): AzanTestMode {
+  if (!raw) return emptyAzanTestMode();
+  try {
+    const p = JSON.parse(raw);
+    if (typeof p !== "object" || p === null) return emptyAzanTestMode();
+    return {
+      enabled: p.enabled === true,
+      overrides: sanitizeOverrides(p.overrides ?? {}),
+      expiresAt: typeof p.expiresAt === "number" ? p.expiresAt : null,
+      updatedAt: typeof p.updatedAt === "string" ? p.updatedAt : new Date(0).toISOString(),
+    };
+  } catch {
+    return emptyAzanTestMode();
+  }
+}
+
+/** Read the stored test mode WITHOUT expiry side-effects (for the admin UI). */
+export async function getAzanTestMode(): Promise<AzanTestMode> {
+  return parseTestMode(await readSetting(K_TEST_MODE));
+}
+
+/**
+ * Persist Prayer Time Test Mode. Overrides are sanitized (HH:MM) and are
+ * ONLY ever written to their own Setting — the official JAKIM/PDF data in
+ * K_PRAYER_TIMES is never touched (requirement 9).
+ */
+export async function saveAzanTestMode(mode: AzanTestMode): Promise<AzanTestMode> {
+  const clean: AzanTestMode = {
+    enabled: mode.enabled === true,
+    overrides: sanitizeOverrides(mode.overrides ?? {}),
+    expiresAt: typeof mode.expiresAt === "number" ? mode.expiresAt : null,
+    updatedAt: new Date().toISOString(),
+  };
+  await writeSetting(K_TEST_MODE, JSON.stringify(clean));
+  invalidateCache();
+  return clean;
+}
+
+/** RESET TO OFFICIAL JAKIM TIMES — clears every override + disables. */
+export async function resetAzanTestMode(): Promise<void> {
+  await writeSetting(K_TEST_MODE, JSON.stringify(emptyAzanTestMode()));
+  invalidateCache();
+}
+
+/** Effective overrides for schedule math, or null when test mode is off/expired. */
+export async function getActiveOverrides(
+  nowMs: number
+): Promise<AzanTestMode["overrides"] | null> {
+  const { testMode } = await getAzanState();
+  return isTestModeActive(testMode, nowMs) ? testMode.overrides : null;
 }
 
 /**

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getVirtualRadioState } from "@/lib/virtual-radio-store";
 import { getAzanState } from "@/lib/azan-store";
-import { computeAzanSchedule } from "@/lib/azan";
+import { computeAzanSchedule, isTestModeActive } from "@/lib/azan";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -19,11 +19,15 @@ export async function GET() {
   const state = await getVirtualRadioState();
   const azanStore = await getAzanState();
   const serverTime = Date.now();
+  // Admin Prayer Time Test Mode: when active (and unexpired) the SCHEDULER
+  // runs on the override times. Official JAKIM data is never modified.
+  const testActive = isTestModeActive(azanStore.testMode, serverTime);
   const schedule = computeAzanSchedule(
     serverTime,
     azanStore.prayerTimes,
     azanStore.assignments,
-    azanStore.files
+    azanStore.files,
+    testActive ? azanStore.testMode.overrides : null
   );
 
   return NextResponse.json(

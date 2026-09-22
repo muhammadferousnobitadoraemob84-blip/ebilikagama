@@ -54,6 +54,47 @@ export interface PrayerDay {
 
 export type PrayerTimeSource = "pdf" | "jakim_api";
 
+/**
+ * ADMIN-ONLY test overrides: temporary "HH:MM" replacements for a prayer's
+ * official time, used by Prayer Time Test Mode. They NEVER touch the stored
+ * official JAKIM/PDF data — they are applied only inside schedule
+ * computation, and they expire (see AzanTestMode.expiresAt).
+ */
+export type PrayerTimeOverrides = Partial<Record<AzanPrayer, string>>;
+
+/** Stored shape of Prayer Time Test Mode (a separate Setting — never merged into PrayerTimesData). */
+export interface AzanTestMode {
+  enabled: boolean;
+  overrides: PrayerTimeOverrides;
+  /** unix ms — after this the scheduler ignores (and the store clears) the overrides */
+  expiresAt: number | null;
+  updatedAt: string; // ISO
+}
+
+export function emptyAzanTestMode(): AzanTestMode {
+  return { enabled: false, overrides: {}, expiresAt: null, updatedAt: new Date(0).toISOString() };
+}
+
+/** Test overrides are valid only while enabled and unexpired. */
+export function isTestModeActive(mode: AzanTestMode | null, nowMs: number): mode is AzanTestMode {
+  if (!mode || !mode.enabled) return false;
+  if (mode.expiresAt != null && nowMs >= mode.expiresAt) return false;
+  return Object.values(mode.overrides).some((v) => typeof v === "string" && validHHMM(v));
+}
+
+/** Replace invalid entries with null so callers can filter cleanly. */
+export function sanitizeOverrides(overrides: PrayerTimeOverrides): PrayerTimeOverrides {
+  const out: PrayerTimeOverrides = {};
+  for (const prayer of AZAN_PRAYERS) {
+    const v = overrides?.[prayer];
+    if (typeof v === "string") {
+      const clean = validHHMM(v);
+      if (clean) out[prayer] = clean;
+    }
+  }
+  return out;
+}
+
 /** Structured prayer-time data — dates keyed "YYYY-MM-DD" (Malaysia local). */
 export interface PrayerTimesData {
   zone: string;
@@ -156,7 +197,9 @@ function buildEvents(
   nowMs: number,
   times: PrayerTimesData | null,
   assignments: AzanAssignments | null,
-  files: AzanFile[]
+  files: AzanFile[],
+  /** test-mode "HH:MM" replacements — pure input; official data untouched */
+  overrides?: PrayerTimeOverrides | null
 ): ScheduleEvent[] {
   if (!times || !assignments) return [];
   const usable = new Map(files.filter((f) => !f.unavailable && f.duration > 0).map((f) => [f.driveId, f]));
@@ -172,7 +215,7 @@ function buildEvents(
       if (!assignedId) continue;
       const file = usable.get(assignedId);
       if (!file) continue;
-      const hhmm = day[prayer];
+      const hhmm = overrides?.[prayer] ?? day[prayer];
       if (!hhmm) continue;
       const startMs = prayerTimeToMs(dateStr, hhmm);
       if (startMs == null) continue;
@@ -201,9 +244,11 @@ export function computeAzanSchedule(
   nowMs: number,
   times: PrayerTimesData | null,
   assignments: AzanAssignments | null,
-  files: AzanFile[]
+  files: AzanFile[],
+  /** test-mode overrides — pass null for the official schedule */
+  overrides?: PrayerTimeOverrides | null
 ): AzanSchedule {
-  const events = buildEvents(nowMs, times, assignments, files);
+  const events = buildEvents(nowMs, times, assignments, files, overrides ?? null);
   if (events.length === 0) return emptyAzanSchedule();
 
   let active: ActiveAzanEvent | null = null;

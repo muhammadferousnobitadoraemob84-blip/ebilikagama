@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
 import { getAzanState } from "@/lib/azan-store";
-import { computeAzanSchedule, msToMalaysiaDate } from "@/lib/azan";
+import { computeAzanSchedule, isTestModeActive, msToMalaysiaDate } from "@/lib/azan";
 
 export const dynamic = "force-dynamic";
 
@@ -16,11 +16,13 @@ export async function GET() {
   try {
     const azan = await getAzanState();
     const serverTime = Date.now();
+    const testActive = isTestModeActive(azan.testMode, serverTime);
     const schedule = computeAzanSchedule(
       serverTime,
       azan.prayerTimes,
       azan.assignments,
-      azan.files
+      azan.files,
+      testActive ? azan.testMode.overrides : null
     );
 
     return NextResponse.json(
@@ -39,6 +41,7 @@ export async function GET() {
             }
           : null,
         schedule,
+        testMode: { ...azan.testMode, active: testActive },
       },
       { headers: { "Cache-Control": "no-store" } }
     );

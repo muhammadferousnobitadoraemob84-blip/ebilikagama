@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getVirtualRadioState } from "@/lib/virtual-radio-store";
 import { getAzanState } from "@/lib/azan-store";
 import { getRadioPosition } from "@/lib/virtual-radio";
-import { computeAzanSchedule } from "@/lib/azan";
+import { computeAzanSchedule, isTestModeActive } from "@/lib/azan";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -32,7 +32,15 @@ export async function GET() {
     // Azan interruption info (metadata only: prayer + filename + times).
     // During an azan the widget shows the azan instead of the playlist track.
     const azanStore = await getAzanState();
-    const azan = computeAzanSchedule(serverTime, azanStore.prayerTimes, azanStore.assignments, azanStore.files);
+    // Scheduler follows admin test-mode overrides when active (widget shows
+    // the live countdown); official JAKIM data itself is never modified.
+    const azan = computeAzanSchedule(
+      serverTime,
+      azanStore.prayerTimes,
+      azanStore.assignments,
+      azanStore.files,
+      isTestModeActive(azanStore.testMode, serverTime) ? azanStore.testMode.overrides : null
+    );
 
     const pos = getRadioPosition(state, serverTime);
     const current = pos ? state.tracks[pos.index] : null;
