@@ -8,15 +8,18 @@
 // Pause is local (like muting a real radio); Play rejoins the live point.
 //
 // AZAN INTERRUPTION MODEL (per-browser, timeline untouched):
-//   • When an azan window opens, each playing browser FREEZES its current
-//     track + offset locally (server data only defines WHICH azan plays —
-//     playback state stays out of Neon and out of other users' browsers).
-//   • The <audio> element plays the azan at its server-computed offset.
-//   • On the azan's real `ended` event: exactly 3 s of silence, then the
-//     SAME track resumes from the frozen offset. The shared timeline math
-//     is never re-run for the resuming listener during this window.
-//   • A frozen position only stays valid for a short window after the azan
-//     ends — later joins rejoin the live timeline as normal.
+//   1. When an azan window opens, each playing browser FREEZES its current
+//      track + offset locally (server data only defines WHICH azan plays —
+//      playback state stays out of Neon and out of other users' browsers).
+//   2. The <audio> element plays the azan at its server-computed offset.
+//   3. On the azan's real `ended` event: exactly 3 s of silence, then the
+//      listener's LOCAL continuation timeline starts — same track, same
+//      offset, advancing in real time — so the song continues exactly where
+//      it was interrupted. The shared timeline keeps running underneath and
+//      is rejoined automatically once the continuation window expires.
+//   4. Azan events this browser heard to completion are remembered, so the
+//      (still-active-for-seconds) server window can never drag the listener
+//      back into an azan that just ended for them.
 //
 // PLAYBACK STATE: the UI "playing" state is driven ONLY by the element's
 // real `playing`/`pause`/`waiting` events — never set speculatively.
@@ -32,10 +35,10 @@ import {
   computeClockOffset,
   formatDuration,
   getSyncedPosition,
+  positionFromCycle,
   serverNow,
   type ServerClockSync,
   type VirtualRadioState,
-  type VirtualRadioTrack,
 } from "@/lib/virtual-radio";
 import { emptyAzanSchedule, type AzanSchedule } from "@/lib/azan";
 
@@ -49,12 +52,31 @@ type PlayerStatus =
 const AZAN_RESUME_DELAY_MS = 3000;
 /** How long after an azan ends a frozen pre-azan position may be restored. */
 const AZAN_FROZEN_VALIDITY_MS = AZAN_RESUME_DELAY_MS + 12_000;
+/** The local post-azan continuation timeline stays authoritative this long. */
+const RESUME_BASE_TTL_S = (AZAN_FROZEN_VALIDITY_MS - AZAN_RESUME_DELAY_MS) / 1000;
 
+/**
+ * Full pre-azan snapshot (LOCAL to this browser — never sent anywhere).
+ * `cyclePosition` anchors the listener's LOCAL continuation timeline that
+ * runs after the azan (same track, same offset, advancing in real time) —
+ * the shared radio timeline keeps running underneath and is rejoined
+ * once the local continuation window expires.
+ */
 interface FrozenResume {
+  index: number;
   driveId: string;
   offsetSeconds: number;
+  cyclePosition: number;
   /** Server-clock ms until which restoring this snapshot still makes sense. */
   validUntilServerMs: number;
+}
+
+/** Local continuation timeline after an azan: anchor + how long it stays authoritative. */
+interface ResumeBase {
+  /** Server-clock ms when the local continuation timeline starts (azan end + 3 s). */
+  startServerMs: number;
+  /** Timeline position (seconds into the playlist cycle) at startServerMs. */
+  cyclePosition: number;
 }
 
 export interface VirtualRadioPlayerProps {
@@ -81,17 +103,21 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
   const playIdRef = useRef(0); // serializes play() promises; stale ones are ignored
 
   // Azan overlay state (server-computed schedule; refreshed by polling).
+  const lastActiveAzanRef = useRef<AzanSchedule["active"]>(null);
   const [azan, setAzan] = useState<AzanSchedule>(emptyAzanSchedule());
   const azanRef = useRef<AzanSchedule>(emptyAzanSchedule());
   azanRef.current = azan;
+  if (azan.active) lastActiveAzanRef.current = azan.active; // remember the window even after it clears
   const azanKeyRef = useRef<string | null>(null); // azan event currently loaded in <audio>
 
-  // Pre-azan playback snapshot (LOCAL to this browser — never sent anywhere).
+  // Pre-azan playback snapshot + post-azan continuation (LOCAL — never sent anywhere).
   const frozenResumeRef = useRef<FrozenResume | null>(null);
+  const resumeBaseRef = useRef<ResumeBase | null>(null);
   const azanResumeTimerRef = useRef<number | null>(null);
-  // True while the listener is inside the azan→resume grace so the drift
-  // loop cannot yank them onto the (already advanced) shared timeline.
-  const resumeGraceRef = useRef(false);
+  // Azan events this browser already heard to completion — their windows may
+  // still be active server-side for a few seconds (window ≈ file duration),
+  // but a listener must never be dragged back into an azan that just ended.
+  const finishedAzanKeysRef = useRef<Set<string>>(new Set());
 
   const streamUrl = useCallback(
     (driveId: string) => `/api/virtual-radio/stream?id=${encodeURIComponent(driveId)}`,
@@ -206,8 +232,9 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
         // server-computed offset. The RADIO timeline is untouched; where the
         // listener re-enters afterwards is decided by the frozen snapshot.
         const liveAzan = azanRef.current.active;
-        if (liveAzan && liveAzan.driveId) {
-          const azanKey = `${liveAzan.prayer}:${liveAzan.startedAt}`;
+        const azanKey = liveAzan ? `${liveAzan.prayer}:${liveAzan.startedAt}` : null;
+        if (liveAzan && liveAzan.driveId && azanKey && !finishedAzanKeysRef.current.has(azanKey)) {
+          resumeBaseRef.current = null; // a fresh azan supersedes any continuation
           const isNewAzan = azanKeyRef.current !== azanKey;
           azanKeyRef.current = azanKey;
           if (isNewAzan) {
@@ -217,15 +244,16 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
             if (!frozenResumeRef.current) {
               const prePos = getSyncedPosition(state, syncRef.current);
               const preTrack = prePos ? state.tracks[prePos.index] : undefined;
-              if (preTrack) {
+              if (preTrack && prePos) {
                 frozenResumeRef.current = {
+                  index: prePos.index,
                   driveId: preTrack.driveId,
-                  offsetSeconds: prePos!.offset,
+                  offsetSeconds: prePos.offset,
+                  cyclePosition: prePos.cyclePosition,
                   validUntilServerMs: liveAzan.endsAt + AZAN_FROZEN_VALIDITY_MS,
                 };
               }
             }
-            resumeGraceRef.current = true;
             // Fire exactly once per azan event — when it truly starts playing.
             onAzanStart?.({ prayer: liveAzan.prayer, startedAt: liveAzan.startedAt });
             if (!wantPlayRef.current) return; // idle visitors: no audio work
@@ -245,48 +273,66 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
         }
         azanKeyRef.current = null;
 
-        // ── RADIO: frozen pre-azan position wins briefly, then live ──
-        let targetTrack: VirtualRadioTrack | undefined;
-        let targetOffset = 0;
-        let fromFrozen = false;
-
-        const frozen = frozenResumeRef.current;
-        if (frozen) {
-          const nowServerMs = syncRef.current ? serverNow(syncRef.current) : Date.now();
-          const candidate = state.tracks.find((tr) => tr.driveId === frozen.driveId);
-          if (candidate && nowServerMs < frozen.validUntilServerMs) {
-            targetTrack = candidate;
-            targetOffset = frozen.offsetSeconds;
-            fromFrozen = true;
+        // ── POST-AZAN LOCAL CONTINUATION TIMELINE ────────────────────
+        // The listener's own timeline resumes at (azan end + 3 s) from the
+        // frozen pre-azan position and advances in real time — so the SAME
+        // song continues from the SAME offset, exactly like being
+        // interrupted mid-song. Drift correction and the ended handler both
+        // drive off this base, so nothing can yank the listener to the
+        // shared (already advanced) timeline during the continuation window.
+        if (resumeBaseRef.current) {
+          const base = resumeBaseRef.current;
+          const frozen = frozenResumeRef.current;
+          if (!frozen) {
+            resumeBaseRef.current = null; // lost the snapshot — rejoin live
           } else {
-            frozenResumeRef.current = null; // stale — rejoin live like everyone else
+            const nowServerMs = syncRef.current ? serverNow(syncRef.current) : Date.now();
+            const elapsed = (nowServerMs - base.startServerMs) / 1000;
+            if (elapsed < -1) {
+              return; // 3 s grace not over yet (a check raced the timer)
+            }
+            if (elapsed > RESUME_BASE_TTL_S) {
+              // Continuation window expired — rejoin the shared timeline.
+              resumeBaseRef.current = null;
+              frozenResumeRef.current = null;
+            } else {
+              const cyclePos = base.cyclePosition + elapsed;
+              const mapped = positionFromCycle(state, cyclePos);
+              const contTrack = state.tracks[mapped.index];
+              if (!contTrack) return;
+              if (currentDriveIdRef.current !== contTrack.driveId) {
+                await loadTrack(audio, contTrack.driveId);
+                if (playId !== playIdRef.current) return;
+              }
+              const maxSeek = (audio.duration || contTrack.duration) - 0.25;
+              const target = Math.max(0, Math.min(mapped.offset, maxSeek));
+              if (Number.isFinite(audio.duration) && Math.abs(audio.currentTime - target) > 1.0) {
+                audio.currentTime = target;
+              }
+              if (wantPlayRef.current) {
+                await audio.play().catch(() => { /* user presses play again */ });
+              }
+              return;
+            }
           }
         }
-        if (!targetTrack) {
-          const pos = getSyncedPosition(state, syncRef.current);
-          const liveTrack = pos ? state.tracks[pos.index] : undefined;
-          if (!liveTrack || !pos) return;
-          targetTrack = liveTrack;
-          targetOffset = pos.offset;
-        }
 
-        const wasSwitching = currentDriveIdRef.current !== targetTrack.driveId;
-        if (!fromFrozen) resumeGraceRef.current = false;
+        // ── LIVE RADIO TIMELINE (normal path) ────────────────────────
+        const pos = getSyncedPosition(state, syncRef.current);
+        const liveTrack = pos ? state.tracks[pos.index] : undefined;
+        if (!liveTrack || !pos) return;
+
         if (!wantPlayRef.current) return; // idle: nothing to load or play
 
-        if (wasSwitching) {
-          await loadTrack(audio, targetTrack.driveId); // single load, buffered stream
+        if (currentDriveIdRef.current !== liveTrack.driveId) {
+          await loadTrack(audio, liveTrack.driveId); // single load, buffered stream
           if (playId !== playIdRef.current) return;
         }
 
-        const maxSeek = (audio.duration || targetTrack.duration) - 0.25;
-        const target = Math.max(0, Math.min(targetOffset, maxSeek));
+        const maxSeek = (audio.duration || liveTrack.duration) - 0.25;
+        const target = Math.max(0, Math.min(pos.offset, maxSeek));
         if (Number.isFinite(audio.duration) && Math.abs(audio.currentTime - target) > 1.0) {
           audio.currentTime = target;
-        }
-        if (fromFrozen) {
-          // Snapshot consumed: subsequent drift correction re-aligns to live.
-          frozenResumeRef.current = null;
         }
         await audio.play().catch(() => {
           /* autoplay block or load hiccup: user presses play again */
@@ -298,25 +344,30 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
     [state, syncClock, onAzanStart, loadTrack]
   );
 
-  // A playing listener is interrupted the moment the azan window is seen.
+  // A playing listener is interrupted the moment the azan window is seen —
+  // including when the window opened while the tab was hidden/backgrounded
+  // (lastActiveAzanRef keeps the event visible until the next poll clears it).
   useEffect(() => {
     const audio = audioRef.current;
-    const live = azanRef.current.active;
-    if (!audio || !live) return;
-    if (status === "playing" && azanKeyRef.current === null && live.driveId) {
+    if (!audio || status !== "playing" || !wantPlayRef.current) return;
+    const live = azanRef.current.active ?? lastActiveAzanRef.current;
+    if (!live || !live.driveId) return;
+    const key = `${live.prayer}:${live.startedAt}`;
+    if (finishedAzanKeysRef.current.has(key)) return;
+    if (azanKeyRef.current === null || azanKeyRef.current !== key) {
       applyLivePosition(audio);
     }
   }, [azan, status, applyLivePosition]);
 
-  // Gentle drift correction: re-align onto the shared timeline ONLY while
-  // actually playing, never during azan, never during the resume grace, and
-  // never by reloading the source (a re-load would restart buffering from 0).
+  // Gentle drift correction: re-align ONLY while actually playing, never
+  // during azan or the post-azan continuation, and never by reloading the
+  // source (a re-load would restart buffering from zero).
   useEffect(() => {
     const drift = setInterval(() => {
       const audio = audioRef.current;
       if (!audio || !wantPlayRef.current || audio.paused) return;
       if (azanRef.current.active) return; // azan plays on its own schedule
-      if (resumeGraceRef.current) return; // post-azan resume in progress
+      if (resumeBaseRef.current) return; // local continuation is authoritative
       const pos = getSyncedPosition(state, syncRef.current);
       if (!pos) return;
       const track = state.tracks[pos.index];
@@ -366,7 +417,7 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
     // no fake playing state while the browser is still loading/buffering.
     setStatus((s) => (s === "playing" ? s : "syncing"));
     if (!syncRef.current) await syncClock();
-    applyLivePosition(audio); // decides azan vs radio, loads once, then plays
+    applyLivePosition(audio); // decides azan vs continuation vs live, then plays
   };
 
   const handlePause = () => {
@@ -409,18 +460,27 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
   const onAudioEnded = () => {
     const audio = audioRef.current;
     if (!audio) return;
-    if (azanRef.current.active || azanKeyRef.current !== null) {
+    const wasAzan = azanRef.current.active || azanKeyRef.current !== null;
+    if (wasAzan) {
       // AZAN FINISHED → exactly ~3 s of silence, then the SAME track from the
-      // frozen pre-azan offset. Warm the radio source DURING the silence so
-      // resume is instant instead of waiting on a fresh download.
+      // frozen pre-azan offset on the listener's LOCAL continuation timeline.
+      // Warm the radio source DURING the silence so resume is instant.
+      const endedKey = azanKeyRef.current;
+      if (endedKey) finishedAzanKeysRef.current.add(endedKey);
       azanKeyRef.current = null;
       setStatus("syncing");
       const frozen = frozenResumeRef.current;
-      const track = frozen ? state.tracks.find((tr) => tr.driveId === frozen.driveId) : null;
-      if (track && currentDriveIdRef.current !== track.driveId) {
-        currentDriveIdRef.current = track.driveId;
-        audio.src = streamUrl(track.driveId);
-        audio.load();
+      const track = frozen ? state.tracks[frozen.index] : null;
+      if (frozen && track) {
+        if (currentDriveIdRef.current !== track.driveId) {
+          currentDriveIdRef.current = track.driveId;
+          audio.src = streamUrl(track.driveId);
+          audio.load();
+        }
+        resumeBaseRef.current = {
+          startServerMs: (syncRef.current ? serverNow(syncRef.current) : Date.now()) + AZAN_RESUME_DELAY_MS,
+          cyclePosition: frozen.cyclePosition,
+        };
       }
       if (azanResumeTimerRef.current !== null) clearTimeout(azanResumeTimerRef.current);
       azanResumeTimerRef.current = window.setTimeout(() => {
@@ -531,7 +591,7 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
               {t("azan_now_live")}
             </p>
             <p className="text-white text-sm font-semibold mt-1">
-              {t(`azan_event_${azan.active.prayer}` as const)}
+              {t(`azan_event_${azan.active.prayer as "subuh" | "zohor" | "asar" | "maghrib" | "isyak"}`)}
             </p>
             <p className="text-emerald-200/80 text-xs mt-0.5 font-mono">
               {formatDuration(azan.active.offset)} / {formatDuration(azan.active.duration)}
@@ -540,7 +600,7 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
         )}
 
         {/* Post-azan resume hint (3-second grace while the same track reloads) */}
-        {!azan.active && resumeGraceRef.current && status === "syncing" && (
+        {!azan.active && finishedAzanKeysRef.current.size > 0 && status === "syncing" && (
           <div className="mt-4 w-full max-w-md bg-gray-800/60 border border-white/10 rounded-xl px-4 py-2 text-center">
             <p className="text-gray-300 text-xs">{t("azan_joining_soon")}</p>
           </div>
@@ -584,7 +644,7 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
               )}
               {azan.next && (
                 <p className="text-emerald-400/90 text-xs mt-1 truncate">
-                  {t("azan_next")}: {t(`azan_event_${azan.next.prayer}` as const)}{" "}
+                  {t("azan_next")}: {t(`azan_event_${azan.next.prayer as "subuh" | "zohor" | "asar" | "maghrib" | "isyak"}`)}{" "}
                   {new Date(azan.next.startsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}
                 </p>
               )}

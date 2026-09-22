@@ -95,8 +95,17 @@ export function getRadioPosition(state: VirtualRadioState, nowMs: number): Radio
   const cyclePosition = elapsed % state.totalDuration;
   const cycle = Math.floor(elapsed / state.totalDuration);
 
+  return { ...positionFromCycle(state, cyclePosition), cycle };
+}
+
+/**
+ * Which track/offset corresponds to a position inside one playlist cycle.
+ * Pure mapping — shared by the server timeline AND a browser's local
+ * post-azan continuation timeline (see VirtualRadioPlayer).
+ */
+export function positionFromCycle(state: VirtualRadioState, cyclePosition: number): Omit<RadioPosition, "cycle"> {
   let index = 0;
-  let remaining = cyclePosition;
+  let remaining = cyclePosition % state.totalDuration;
   for (let i = 0; i < state.tracks.length; i++) {
     if (remaining < state.tracks[i].duration) {
       index = i;
@@ -105,8 +114,7 @@ export function getRadioPosition(state: VirtualRadioState, nowMs: number): Radio
     remaining -= state.tracks[i].duration;
     index = i; // handles the exact-final-boundary edge (remaining === total)
   }
-
-  return { index, offset: remaining, cyclePosition, cycle };
+  return { index, offset: remaining, cyclePosition: remaining === 0 ? 0 : cyclePosition % state.totalDuration };
 }
 
 /** Upcoming tracks after the current position (for preloading). */
