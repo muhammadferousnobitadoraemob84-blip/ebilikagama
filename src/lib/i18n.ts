@@ -227,6 +227,7 @@ const translations = {
     // Home
     hero_title_fallback: "eBilikAgamaTV",
     hero_desc_fallback: "Islamic media platform developed by the Islamic Affairs Unit of SMJK Chung Hwa Tenom to expand Islamic dakwah among students and parents.",
+    greeting_assalamualaikum: "Assalamualaikum",
     saluran_tv_title: "TV Channels",
     saluran_khas_title: "Special Channels",
     no_channels: "No channels available at the moment.",
@@ -809,6 +810,7 @@ const translations = {
     // Home
     hero_title_fallback: "eBilikAgamaTV",
     hero_desc_fallback: "Media Bilik Agama™ yang dibangunkan oleh Unit Hal Ehwal Islam SMJK Chung Hwa Tenom untuk memperluas dakwah Islam dikalangan murid dan ibu bapa.",
+    greeting_assalamualaikum: "Assalamualaikum",
     saluran_tv_title: "Saluran TV",
     saluran_khas_title: "Saluran Khas",
     no_channels: "Tiada saluran tersedia buat masa ini.",
@@ -1438,6 +1440,7 @@ const translations = {
     // Home
     hero_title_fallback: "eBilikAgamaTV",
     hero_desc_fallback: "由 SMJK Chung Hwa Tenom 伊斯兰事务部开发的伊斯兰媒体平台，旨在扩大学生和家长之间的伊斯兰宣教。",
+    greeting_assalamualaikum: "安色俩目阿来坤",
     saluran_tv_title: "电视频道",
     saluran_khas_title: "特别频道",
     no_channels: "目前暂无可用频道。",
