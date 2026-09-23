@@ -3,10 +3,10 @@ import { getAdminSession } from "@/lib/auth";
 import { savePrayerTimes, savePrayerZone } from "@/lib/azan-store";
 import {
   JAKIM_ESOLAT_API,
-  JAKIM_ZONES,
   jakimRowsToDays,
   type JakimApiRow,
 } from "@/lib/azan";
+import { getJakimZoneDirectory, findJakimZone } from "@/lib/jakim-zones";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -50,7 +50,13 @@ export async function POST(request: NextRequest) {
     const rows = Array.isArray(data.prayerTime) ? data.prayerTime : null;
 
     if (!rows || rows.length === 0 || (data.status && String(data.status).includes("NO_RECORD"))) {
-      const known = JAKIM_ZONES.some((z) => z.code === zone);
+      // Recognized = present in the official e-solat zone directory (live).
+      let known = false;
+      try {
+        known = !!findJakimZone(await getJakimZoneDirectory(), zone);
+      } catch {
+        known = false;
+      }
       return NextResponse.json(
         {
           error: known
@@ -72,10 +78,26 @@ export async function POST(request: NextRequest) {
     const saved = await savePrayerTimes(zone, "jakim_api", days);
     await savePrayerZone(zone);
 
+    // Official name for the diagnostic panel (never invented — directory only).
+    let zoneName: string | null = null;
+    let zoneState: string | null = null;
+    try {
+      const hit = findJakimZone(await getJakimZoneDirectory(), zone);
+      if (hit) {
+        zoneName = hit.zone.name;
+        zoneState = hit.state;
+      }
+    } catch {
+      // diagnostic fields are best-effort
+    }
+
     const keys = Object.keys(saved.days).sort();
     return NextResponse.json({
       success: true,
       zone,
+      zoneName,
+      zoneState,
+      zoneSource: "e-solat.gov.my official zone directory",
       source: "jakim_api",
       dayCount: Object.keys(saved.days).length,
       rowsReceived: rows.length,

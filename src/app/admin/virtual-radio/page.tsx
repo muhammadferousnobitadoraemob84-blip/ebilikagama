@@ -13,12 +13,12 @@ import {
 } from "@/lib/virtual-radio";
 import {
   AZAN_PRAYERS,
-  JAKIM_ZONES,
   type AzanAssignments,
   type AzanFile,
   type AzanPrayer,
   type PdfParseResult,
 } from "@/lib/azan";
+import type { JakimZoneDirectory } from "@/lib/jakim-zones";
 import type { TranslationKey } from "@/lib/i18n";
 
 // Browser-side duration verification for pending tracks (HTML5 metadata).
@@ -211,6 +211,25 @@ export default function AdminVirtualRadio() {
   const [zone, setZone] = useState("");
   const [jakimBusy, setJakimBusy] = useState(false);
   const [jakimResult, setJakimResult] = useState<string | null>(null);
+
+  // Authoritative JAKIM zone directory (live from e-solat.gov.my, grouped by
+  // state). Replaces the former hard-coded SBH01–08 list that drifted out of
+  // date and could never pick up new JAKIM zones.
+  const [zoneDir, setZoneDir] = useState<JakimZoneDirectory | null>(null);
+  const [zoneDirError, setZoneDirError] = useState<string | null>(null);
+  const [zoneDirLoading, setZoneDirLoading] = useState(false);
+  // Diagnostic panel (admin-only): selected state/zone, source, API-provided
+  // name, the exact code the sync sends, and the sync outcome.
+  const [zoneDiag, setZoneDiag] = useState<null | {
+    state: string | null;
+    zone: string;
+    zoneName: string | null;
+    dirSource: string | null;
+    dirStale: boolean;
+    requestZone: string | null;
+    response: "SUCCESS" | "ERROR" | null;
+    detail: string | null;
+  }>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfPreview, setPdfPreview] = useState<(PdfParseResult & { fileName: string }) | null>(null);
   const [pdfBusyConfirm, setPdfBusyConfirm] = useState(false);
@@ -300,6 +319,62 @@ export default function AdminVirtualRadio() {
     loadAzan();
     loadTestMode();
   }, [loadState, loadDiag, loadAzan, loadTestMode]);
+
+  // Load the authoritative JAKIM zone directory for the dropdown.
+  // force=1 bypasses the server TTL so a stale cached list can never be
+  // served — the directory itself is the e-solat.gov.my official selector.
+  const loadZoneDirectory = useCallback(async (force = false) => {
+    setZoneDirLoading(true);
+    setZoneDirError(null);
+    try {
+      const res = await fetch(
+        `/api/virtual-radio/prayer-times/zones${force ? "?force=1" : ""}`,
+        { cache: "no-store" }
+      );
+      const data = await res.json();
+      if (res.ok && data?.groups) {
+        setZoneDir(data as JakimZoneDirectory);
+      } else {
+        setZoneDirError(data?.error || `HTTP ${res.status}`);
+      }
+    } catch {
+      setZoneDirError("Zone directory request failed");
+    } finally {
+      setZoneDirLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    loadZoneDirectory();
+  }, [loadZoneDirectory]);
+
+  // Keep the diagnostic panel's state/name fields in sync with the selection.
+  useEffect(() => {
+    const z = zone.trim().toUpperCase();
+    if (!z || !zoneDir) {
+      setZoneDiag(null);
+      return;
+    }
+    let stateName: string | null = null;
+    let zoneName: string | null = null;
+    for (const g of zoneDir.groups) {
+      const hit = g.zones.find((zz) => zz.code === z);
+      if (hit) {
+        stateName = g.state;
+        zoneName = hit.name;
+        break;
+      }
+    }
+    setZoneDiag({
+      state: stateName,
+      zone: z,
+      zoneName,
+      dirSource: zoneDir.source,
+      dirStale: zoneDir.stale,
+      requestZone: null,
+      response: null,
+      detail: null,
+    });
+  }, [zone, zoneDir]);
 
   // 1s tick for the azan countdown
   useEffect(() => {
@@ -499,6 +574,11 @@ export default function AdminVirtualRadio() {
     }
     setJakimBusy(true);
     setJakimResult(null);
+    setZoneDiag((prev) =>
+      prev
+        ? { ...prev, zone: z, requestZone: z, response: null, detail: null }
+        : prev
+    );
     try {
       const res = await fetch("/api/virtual-radio/prayer-times/jakim-sync", {
         method: "POST",
@@ -510,12 +590,29 @@ export default function AdminVirtualRadio() {
         setJakimResult(
           `✓ ${data.dayCount} days stored (${data.from} → ${data.to}), skipped ${data.rowsSkipped}`
         );
+        setZoneDiag((prev) =>
+          prev
+            ? {
+                ...prev,
+                response: "SUCCESS",
+                zoneName: data.zoneName ?? prev.zoneName,
+                state: data.zoneState ?? prev.state,
+                detail: `${data.dayCount} days stored (${data.from} → ${data.to})`,
+              }
+            : prev
+        );
       } else {
         setJakimResult(`✗ ${data.error || "Sync failed"}`);
+        setZoneDiag((prev) =>
+          prev ? { ...prev, response: "ERROR", detail: data.error || "Sync failed" } : prev
+        );
       }
       await loadAzan();
     } catch {
       setJakimResult("✗ Sync request failed");
+      setZoneDiag((prev) =>
+        prev ? { ...prev, response: "ERROR", detail: "Sync request failed" } : prev
+      );
     } finally {
       setJakimBusy(false);
     }
@@ -1073,24 +1170,95 @@ export default function AdminVirtualRadio() {
               {t("azan_zone")}
             </label>
             {/* Wrapper constrains the native select (which otherwise sizes to
-                its longest option text and overflows the card). */}
+                its longest option text and overflows the card). Options are
+                grouped by state exactly as e-solat.gov.my groups them; the
+                visible label is "CODE — official area description" straight
+                from the directory (never hand-maintained). */}
             <div className="w-full min-w-0 sm:w-auto sm:flex-1 sm:max-w-sm">
               <select
                 id="azan-zone-select"
-                value={JAKIM_ZONES.some((z) => z.code === zone) ? zone : ""}
+                value={
+                  zoneDir?.groups.some((g) => g.zones.some((z) => z.code === zone))
+                    ? zone
+                    : ""
+                }
                 onChange={(e) => setZone(e.target.value)}
                 className="w-full max-w-full box-border bg-gray-800 border border-white/10 rounded-lg text-sm text-white px-3 py-1.5"
               >
-                <option value="">— {t("azan_zone")} —</option>
-                {JAKIM_ZONES.map((z) => (
-                  <option key={z.code} value={z.code}>
-                    {z.code} — {z.name}
-                  </option>
+                <option value="">
+                  {zoneDirLoading
+                    ? "… loading JAKIM zones"
+                    : zoneDirError
+                      ? `— ${t("azan_zone")} (unavailable) —`
+                      : `— ${t("azan_zone")} —`}
+                </option>
+                {zoneDir?.groups.map((g) => (
+                  <optgroup key={g.state} label={g.state}>
+                    {g.zones.map((z) => (
+                      <option key={z.code} value={z.code}>
+                        {z.code} — {z.name}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>
+            <button
+              onClick={() => loadZoneDirectory(true)}
+              disabled={zoneDirLoading}
+              title="Re-fetch the zone list from e-solat.gov.my (bypasses cache)"
+              className="bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white text-xs px-2.5 py-1.5 rounded-lg transition-colors flex-shrink-0"
+            >
+              {zoneDirLoading ? "…" : "↻"}
+            </button>
             <p className="text-gray-600 text-xs basis-full sm:basis-auto">{t("azan_zone_hint")}</p>
           </div>
+          {zoneDirError && (
+            <p className="text-yellow-500/90 text-xs">Zone directory unavailable: {zoneDirError}</p>
+          )}
+          {zoneDir && (
+            <p className="text-gray-600 text-xs">
+              {zoneDir.total} official zones · {zoneDir.source}
+              {zoneDir.stale ? " (cached snapshot — live fetch failed)" : ""}
+            </p>
+          )}
+
+          {/* ── Zone diagnostic (admin-only) ── */}
+          {zoneDiag && (
+            <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 space-y-1 text-xs">
+              <p className="text-gray-400 uppercase tracking-wider font-semibold text-[10px]">
+                Zone diagnostic (admin only)
+              </p>
+              <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+                <span className="text-gray-500">Selected state:</span>
+                <span className="text-gray-300">{zoneDiag.state ?? "—"}</span>
+                <span className="text-gray-500">Selected zone:</span>
+                <span className="text-gray-300">{zoneDiag.zone}</span>
+                <span className="text-gray-500">API/source:</span>
+                <span className="text-gray-300">
+                  {zoneDiag.dirSource ?? "—"}
+                  {zoneDiag.dirStale ? " (stale snapshot)" : ""}
+                </span>
+                <span className="text-gray-500">API-provided location name:</span>
+                <span className="text-gray-300">{zoneDiag.zoneName ?? "—"}</span>
+                <span className="text-gray-500">Prayer-time request:</span>
+                <span className="text-gray-300">{zoneDiag.requestZone ?? "(not synced yet)"}</span>
+                <span className="text-gray-500">Response:</span>
+                <span
+                  className={
+                    zoneDiag.response === "SUCCESS"
+                      ? "text-green-400"
+                      : zoneDiag.response === "ERROR"
+                        ? "text-red-400"
+                        : "text-gray-500"
+                  }
+                >
+                  {zoneDiag.response ?? "—"}
+                  {zoneDiag.detail ? ` — ${zoneDiag.detail}` : ""}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Option B: JAKIM API */}
           <div className="flex items-center gap-3 flex-wrap">

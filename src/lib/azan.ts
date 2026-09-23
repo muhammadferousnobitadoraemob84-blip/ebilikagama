@@ -285,66 +285,11 @@ export function computeAzanSchedule(
 
 // ─── Official JAKIM e-solat zones ────────────────────────────────────
 //
-// Codes are the official e-solat zone identifiers. The sync endpoint
-// validates every chosen zone against the LIVE JAKIM API before saving,
-// so a mistyped/retired code can never corrupt stored prayer times.
-// (Codes confirmed live 2026-09: WLY01, SBH01–SBH08.)
-
-export interface JakimZone {
-  code: string;
-  name: string;
-}
-
-export const JAKIM_ZONES: JakimZone[] = [
-  { code: "JHR01", name: "Johor — Pulau Aur dan Pemanggil" },
-  { code: "JHR02", name: "Johor — Johor Bahru, Kota Tinggi, Mersing, Kulai" },
-  { code: "JHR03", name: "Johor — Batu Pahat, Muar, Segamat, Kluang, Pontian" },
-  { code: "JHR04", name: "Johor — Segamat" },
-  { code: "KDH01", name: "Kedah — Kota Setar, Pendang" },
-  { code: "KDH02", name: "Kedah — Kuala Muda, Yan" },
-  { code: "KDH03", name: "Kedah — Padang Terap, Sik" },
-  { code: "KDH04", name: "Kedah — Baling, Bandar Baharu" },
-  { code: "KDH05", name: "Kedah — Kubang Pasu, Pokok Sena" },
-  { code: "KDH06", name: "Kedah — Langkawi" },
-  { code: "KDH07", name: "Kedah — Puncak Gunung Jerai" },
-  { code: "KTN01", name: "Kelantan — Bachok, Kota Bharu, Machang, Pasir Mas, Pasir Puteh, Tanah Merah, Tumpat" },
-  { code: "KTN02", name: "Kelantan — Kuala Krai, Gua Musang, Jeli" },
-  { code: "KTN03", name: "Kelantan — Selupu Rejab, Chiku" },
-  { code: "MLK01", name: "Melaka — Seluruh Negeri" },
-  { code: "NSN01", name: "Negeri Sembilan — Tampin, Jempol" },
-  { code: "NSN02", name: "Negeri Sembilan — Jelebu, Kuala Pilah, Rembau" },
-  { code: "NSN03", name: "Negeri Sembilan — Port Dickson, Seremban" },
-  { code: "PHG01", name: "Pahang — Pulau Tioman" },
-  { code: "PHG02", name: "Pahang — Kuantan, Pekan, Muadzam Shah" },
-  { code: "PHG03", name: "Pahang — Jerantut, Temerloh, Maran, Bera" },
-  { code: "PHG04", name: "Pahang — Bentong, Lipis, Raub" },
-  { code: "PHG05", name: "Pahang — Genting Sempah, Janda Baik, Bukit Tinggi" },
-  { code: "PHG06", name: "Pahang — Cameron Highlands, Genting Highlands, Bukit Fraser" },
-  { code: "PGD01", name: "Pulau Pinang — Seluruh Negeri" },
-  { code: "PLS01", name: "Perlis — Seluruh Negeri" },
-  { code: "SBH01", name: "Sabah — Bahagian Sandakan (Timur Sabah)" },
-  { code: "SBH02", name: "Sabah — Bahagian Tawau (Timur Sabah)" },
-  { code: "SBH03", name: "Sabah — Bahagian Kudat (Pantai Barat Utara)" },
-  { code: "SBH04", name: "Sabah — Bahagian Pantai Barat" },
-  { code: "SBH05", name: "Sabah — Bahagian Pedalaman (Selatan Sabah)" },
-  { code: "SBH06", name: "Sabah — Bahagian Pantai Timur" },
-  { code: "SBH07", name: "Sabah — Bahagian Pedalaman (Bahagian Atas)" },
-  { code: "SBH08", name: "Sabah — Bahagian Pantai Barat (Bahagian Atas)" },
-  { code: "SWK01", name: "Sarawak — Limbang, Lawas, Sundar, Trusan" },
-  { code: "SWK02", name: "Sarawak — Miri, Niah, Bekenu, Sibuti, Marudi" },
-  { code: "SWK03", name: "Sarawak — Bintulu, Tatau, Sebauh" },
-  { code: "SWK04", name: "Sarawak — Sibu, Mukah, Dalat, Song, Igan, Oya, Balingian, Kanowit, Kapit" },
-  { code: "SWK05", name: "Sarawak — Sarikei, Matu, Julau, Rajang, Daro, Bintangor, Belawai" },
-  { code: "SWK06", name: "Sarawak — Sri Aman, Lubok Antu, Betong, Spaoh, Pusa, Saratok" },
-  { code: "SWK07", name: "Sarawak — Kuching, Bau, Lundu, Sematan" },
-  { code: "SWK08", name: "Sarawak — Samarahan, Simunjan, Serian, Sebuyau, Tebedu" },
-  { code: "SWK09", name: "Sarawak — Serian, Simunjan, Tebedu" },
-  { code: "TRL01", name: "Terengganu — Kuala Terengganu, Marang" },
-  { code: "WLY01", name: "Kuala Lumpur, Putrajaya, Selangor (WSY01) — Kuala Selangor, Hulu Selangor, Sabak Bernam, Gombak, Petaling, Klang, Kuala Langat, Sepang" },
-  { code: "SWK10", name: "Sarawak — Lingga, Sri Aman" },
-  { code: "SWK11", name: "Sarawak — Song, Kapit" },
-  { code: "SWK12", name: "Sarawak — Belaga" },
-];
+// The zone list used to be a hard-coded array here; it drifted out of date
+// (stopped at SBH08, used retired NGS/PGD/TRG codes, wrong descriptions).
+// The authoritative, always-current directory now comes from the official
+// e-solat.gov.my zone selector — see src/lib/jakim-zones.ts and the
+// /api/virtual-radio/prayer-times/zones admin route.
 
 /** Official JAKIM e-solat API endpoint (public, no key required). */
 export const JAKIM_ESOLAT_API = "https://www.e-solat.gov.my/index.php";
