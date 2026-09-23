@@ -109,6 +109,30 @@ interface ScanResult {
   error?: string;
 }
 
+// POST /api/virtual-radio/arrange ("ARRANGE SONGS") result.
+interface ArrangeResult {
+  success?: boolean;
+  songsScanned?: number;
+  newSongs?: number;
+  tracksIndexed?: number;
+  pendingCount?: number;
+  playlistRearranged?: boolean;
+  arrangement?: {
+    attempted?: boolean;
+    nextAzanAt?: number | null;
+    nextAzanPrayer?: string | null;
+    targetSeconds?: number | null;
+    scheduledSeconds?: number | null;
+    deviationSeconds?: number | null;
+    exact?: boolean;
+    strategy?: string | null;
+    tracksAfterCurrent?: number;
+    note?: string;
+  } | null;
+  azan?: { prayer: string; startsAt: number } | null;
+  error?: string;
+}
+
 interface Diagnostic {
   serverTime: number;
   serverTimeIso: string;
@@ -165,6 +189,9 @@ export default function AdminVirtualRadio() {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  // "ARRANGE SONGS" (rescan + duration refresh + azan-boundary rearrange)
+  const [arranging, setArranging] = useState(false);
+  const [arrangeResult, setArrangeResult] = useState<ArrangeResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
 
@@ -176,6 +203,14 @@ export default function AdminVirtualRadio() {
 
   // Diagnostics
   const [diag, setDiag] = useState<Diagnostic | null>(null);
+  // Azan scheduler diagnostics (from the same status payload players use)
+  const [schedDiag, setSchedDiag] = useState<null | {
+    serverTime: number;
+    nextAzan: { prayer: string; startsAt: number } | null;
+    activeAzan: { prayer: string; startedAt: number; endsAt: number } | null;
+    segment: { boundaryAt: number; secondsRemaining: number; withinWindow: boolean } | null;
+    position: { fileName: string | null; offset: number; duration: number } | null;
+  } | null>(null);
   const [clientNow, setClientNow] = useState<number | null>(null);
   const [offsetMs, setOffsetMs] = useState<number | null>(null);
   const [rttMs, setRttMs] = useState<number | null>(null);
@@ -313,12 +348,35 @@ export default function AdminVirtualRadio() {
     }
   }, []);
 
+  // Azan scheduler diagnostics — the exact payload players consume.
+  const loadSchedDiag = useCallback(async () => {
+    try {
+      const res = await fetch("/api/virtual-radio/status", { cache: "no-store" });
+      if (!res.ok) return;
+      const d = await res.json();
+      setSchedDiag({
+        serverTime: d.serverTime,
+        nextAzan: d.azan?.next ? { prayer: d.azan.next.prayer, startsAt: d.azan.next.startsAt } : null,
+        activeAzan: d.azan?.active
+          ? { prayer: d.azan.active.prayer, startedAt: d.azan.active.startedAt, endsAt: d.azan.active.endsAt }
+          : null,
+        segment: d.segment
+          ? { boundaryAt: d.segment.boundaryAt, secondsRemaining: d.segment.secondsRemaining, withinWindow: d.segment.withinWindow }
+          : null,
+        position: d.position ?? null,
+      });
+    } catch {
+      // transient
+    }
+  }, []);
+
   useEffect(() => {
     loadState();
     loadDiag();
+    loadSchedDiag();
     loadAzan();
     loadTestMode();
-  }, [loadState, loadDiag, loadAzan, loadTestMode]);
+  }, [loadState, loadDiag, loadSchedDiag, loadAzan, loadTestMode]);
 
   // Load the authoritative JAKIM zone directory for the dropdown.
   // force=1 bypasses the server TTL so a stale cached list can never be
@@ -446,6 +504,13 @@ export default function AdminVirtualRadio() {
     return () => clearInterval(id);
   }, [autoRefresh, loadDiag]);
 
+  // Scheduler diagnostics refresh (5s — the status payload includes azan + segment)
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const id = setInterval(loadSchedDiag, 5000);
+    return () => clearInterval(id);
+  }, [autoRefresh, loadSchedDiag]);
+
   // Live client-side position re-render
   useEffect(() => {
     const id = setInterval(() => tick((n) => n + 1), 500);
@@ -491,6 +556,24 @@ export default function AdminVirtualRadio() {
       setScanResult({ error: "Scan request failed" });
     } finally {
       setScanning(false);
+    }
+  };
+
+  // ARRANGE SONGS — rescan Drive, index new songs, refresh real durations,
+  // rearrange the playlist to end at the next azan. No uploads, no copies.
+  const handleArrange = async () => {
+    setArranging(true);
+    setArrangeResult(null);
+    setPageError(null);
+    try {
+      const res = await fetch("/api/virtual-radio/arrange", { method: "POST" });
+      const data: ArrangeResult = await res.json();
+      setArrangeResult(data);
+      await loadState();
+    } catch {
+      setArrangeResult({ error: "Arrange request failed" });
+    } finally {
+      setArranging(false);
     }
   };
 
@@ -802,12 +885,50 @@ export default function AdminVirtualRadio() {
             </button>
             <button
               onClick={handleScan}
-              disabled={scanning || !state?.folderId}
+              disabled={scanning || arranging || !state?.folderId}
               className="bg-red-600 hover:bg-red-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
             >
               {scanning ? t("vr_admin_scanning") : t("vr_admin_scan")}
             </button>
+            <button
+              onClick={handleArrange}
+              disabled={arranging || scanning || !state?.folderId}
+              title="Rescan the Drive folder, index new songs, refresh durations, and rearrange the playlist to end exactly at the next azan"
+              className="bg-white/10 hover:bg-white/20 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            >
+              {arranging ? "Arranging…" : "ARRANGE SONGS"}
+            </button>
           </div>
+
+          {/* ARRANGE SONGS result (spec: songs scanned / new / durations / rearranged) */}
+          {arrangeResult && (
+            <div className="text-xs space-y-1 pt-1">
+              {arrangeResult.error ? (
+                <p className="text-red-400">✗ {arrangeResult.error}</p>
+              ) : (
+                <>
+                  <p className="text-gray-400">
+                    Songs scanned: {arrangeResult.songsScanned ?? 0} · New songs: {arrangeResult.newSongs ?? 0} · Durations updated ·{" "}
+                    {arrangeResult.playlistRearranged ? "Playlist rearranged successfully" : "Playlist kept (nothing to fit)"}
+                  </p>
+                  {arrangeResult.arrangement?.attempted && (
+                    <p className={arrangeResult.arrangement.exact ? "text-green-400" : "text-yellow-500/90"}>
+                      {arrangeResult.arrangement.exact ? "✓" : "⚠"} {arrangeResult.arrangement.note}
+                      {arrangeResult.arrangement.nextAzanPrayer &&
+                        ` (target: ${arrangeResult.arrangement.nextAzanPrayer} at ${
+                          arrangeResult.arrangement.nextAzanAt
+                            ? new Date(arrangeResult.arrangement.nextAzanAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
+                            : "—"
+                        }, ${arrangeResult.arrangement.tracksAfterCurrent} track(s) scheduled, strategy: ${arrangeResult.arrangement.strategy})`}
+                    </p>
+                  )}
+                  {(arrangeResult.pendingCount ?? 0) > 0 && (
+                    <p className="text-gray-500">{arrangeResult.pendingCount} file(s) still pending duration verification.</p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Stats row */}
@@ -1611,6 +1732,78 @@ export default function AdminVirtualRadio() {
               mono
             />
           )}
+        </div>
+
+        {/* ── AZAN SCHEDULER DIAGNOSTICS (admin-only, spec fields) ── */}
+        <div className="px-5 pb-5">
+          <p className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold mb-2">
+            Azan scheduler (admin only)
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2.5 text-sm">
+            <DiagRow
+              label="Next Azan"
+              value={
+                schedDiag?.nextAzan
+                  ? `${schedDiag.nextAzan.prayer} — ${new Date(schedDiag.nextAzan.startsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}`
+                  : "—"
+              }
+              mono
+            />
+            <DiagRow
+              label="Current server time"
+              value={schedDiag ? new Date(schedDiag.serverTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) : "…"}
+              mono
+            />
+            <DiagRow
+              label="Remaining"
+              value={
+                schedDiag?.nextAzan && schedDiag.serverTime
+                  ? formatDuration(Math.max(0, (schedDiag.nextAzan.startsAt - schedDiag.serverTime) / 1000))
+                  : "—"
+              }
+              mono
+            />
+            <DiagRow
+              label="Current track"
+              value={schedDiag?.position?.fileName ? schedDiag.position.fileName.replace(/\.[^.]+$/, "") : "—"}
+            />
+            <DiagRow
+              label="Current track position"
+              value={schedDiag?.position ? `${formatDuration(schedDiag.position.offset)} / ${formatDuration(schedDiag.position.duration)}` : "—"}
+              mono
+            />
+            <DiagRow
+              label="Calculated playlist remaining"
+              value={schedDiag?.segment ? formatDuration(schedDiag.segment.secondsRemaining) : "—"}
+              mono
+            />
+            <DiagRow
+              label="Scheduler status"
+              value={schedDiag?.nextAzan ? "ARMED" : schedDiag?.activeAzan ? "AZAN ACTIVE" : "IDLE (no upcoming azan data)"}
+              mono
+              highlight={!!schedDiag?.nextAzan}
+            />
+            <DiagRow
+              label="Azan state"
+              value={
+                schedDiag?.activeAzan
+                  ? `AZAN_INTERRUPTION (${schedDiag.activeAzan.prayer}, ends ${new Date(schedDiag.activeAzan.endsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })})`
+                  : schedDiag?.nextAzan
+                    ? "NORMAL_RADIO → AZAN_PENDING"
+                    : "NORMAL_RADIO"
+              }
+              mono
+            />
+            <DiagRow
+              label="Segment boundary (playlist must end here)"
+              value={
+                schedDiag?.segment
+                  ? `${new Date(schedDiag.segment.boundaryAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}${schedDiag.segment.withinWindow ? " (in azan window)" : ""}`
+                  : "—"
+              }
+              mono
+            />
+          </div>
         </div>
       </div>
 

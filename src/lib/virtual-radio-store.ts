@@ -34,6 +34,11 @@ function invalidateCache() {
   _cache = null;
 }
 
+/** Cache bust for sibling modules (e.g. the arrange route re-anchoring the epoch). */
+export function invalidateVirtualRadioCache() {
+  invalidateCache();
+}
+
 async function readSetting(key: string): Promise<string | null> {
   const row = await withRetry(() =>
     prisma.setting.findUnique({ where: { key }, select: { value: true } })

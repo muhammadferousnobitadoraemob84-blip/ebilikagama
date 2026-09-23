@@ -443,6 +443,78 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
     }
   }, [azan, status, applyLivePosition]);
 
+  // ── AUTHORITATIVE AZAN SCHEDULER (absolute-time watchdog) ───────────
+  // ROOT-CAUSE FIX for "azan only plays after leaving and re-entering the
+  // Radio page": the old flow depended on the 30 s status poll landing while
+  // status === "playing". Background-tab timer throttling or a stalled poll
+  // could miss the window entirely, so the azan never fired until a remount.
+  //
+  // This single scheduler owns the decision "is the azan due?" — nobody else
+  // sets azan timers. It uses ABSOLUTE timestamps (azan.next.startsAt vs the
+  // synced SERVER clock — never a naive countdown), re-checks on every
+  // visibility/focus change and on a short interval, and fires immediately
+  // when `serverNow >= startsAt` even if the timeout was throttled or the
+  // machine slept through it. Duplicate prevention: one executed-event key
+  // per (prayer, timestamp) — exactly-once per event per page load.
+  const armedAzanKeyRef = useRef<string | null>(null);
+  const firedAzanKeysRef = useRef<Set<string>>(new Set()); // executed by THIS scheduler
+  const [schedulerState, setSchedulerState] = useState<"IDLE" | "ARMED" | "FIRED">("IDLE");
+
+  const fireAzanIfDue = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const next = azanRef.current.next;
+    if (!next || !next.driveId) return;
+    const key = `${next.prayer}:${next.startsAt}`; // date+prayer+timestamp dedup key
+    if (firedAzanKeysRef.current.has(key) || finishedAzanKeysRef.current.has(key)) return;
+    if (!syncRef.current) return;
+    const nowSrv = serverNow(syncRef.current);
+    const due = nowSrv >= next.startsAt - 250; // small client/skew guard
+    if (!due) {
+      if (armedAzanKeyRef.current !== key) {
+        armedAzanKeyRef.current = key;
+        setSchedulerState("ARMED");
+      }
+      return;
+    }
+    // DUE (or overdue — throttled tab / woke from sleep): trigger NOW.
+    firedAzanKeysRef.current.add(key);
+    armedAzanKeyRef.current = null;
+    setSchedulerState("FIRED");
+    // A paused visitor stays paused (no unsolicited audio); a playing one is
+    // taken over by the applyLivePosition azan branch via the state update.
+    if (wantPlayRef.current) {
+      applyLivePosition(audio);
+    } else {
+      // Force the azan into the display even while paused: refresh the
+      // schedule so the overlay shows; audio joins if the user presses play.
+      setStatus((s) => s);
+    }
+  }, [applyLivePosition]);
+
+  useEffect(() => {
+    // Immediate check whenever the schedule changes + a bounded interval
+    // (setTimeout alone is NOT the source of truth — throttling-proof).
+    fireAzanIfDue();
+    const interval = setInterval(fireAzanIfDue, 2000);
+    const wake = () => {
+      // Recalculate against absolute server time on tab return / focus /
+      // wake-from-sleep, and refresh the clock sample (system clock may
+      // have jumped) + the schedule (a new day's JAKIM data may apply).
+      syncClock();
+      fireAzanIfDue();
+    };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("focus", wake);
+    window.addEventListener("pageshow", wake);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("focus", wake);
+      window.removeEventListener("pageshow", wake);
+    };
+  }, [fireAzanIfDue, syncClock, azan]);
+
   // Gentle drift correction: re-align ONLY while actually playing, never
   // during azan or the post-azan continuation, and never by reloading the
   // source (a re-load would restart buffering from zero).
