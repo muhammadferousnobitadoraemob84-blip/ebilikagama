@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { Language, DEFAULT_LANGUAGE, t, getLocaleCode, TranslationKey } from "@/lib/i18n";
+import { trackActivity } from "@/lib/track-activity";
 
 const STORAGE_KEY = "ebilikagama-lang";
 
@@ -54,6 +55,8 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // ignore
     }
+    // Visitor Records: language preference change is a meaningful action.
+    trackActivity("other", "language_changed", { metadata: { language: lang } });
   }, []);
 
   const translate = useCallback(

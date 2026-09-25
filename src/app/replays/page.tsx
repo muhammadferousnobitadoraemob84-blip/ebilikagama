@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useLanguage } from "@/components/LanguageProvider";
 import Link from "next/link";
+import { useOpenTracking } from "@/lib/track-activity";
 
 interface Replay {
   id: string;
@@ -36,6 +37,7 @@ function formatDate(dateStr: string, language: string): string {
 
 export default function ReplaysPage() {
   const { t, language } = useLanguage();
+  useOpenTracking("replay");
   const [replays, setReplays] = useState<Replay[]>([]);
   const [loading, setLoading] = useState(true);
 

@@ -47,6 +47,7 @@ import {
   type VirtualRadioState,
 } from "@/lib/virtual-radio";
 import { emptyAzanSchedule, type AzanSchedule } from "@/lib/azan";
+import { trackActivity } from "@/lib/track-activity";
 
 type PlayerStatus =
   | "loading" // fetching radio state / first clock sync
@@ -302,6 +303,8 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
             audio.pause();
             // Fire exactly once per azan event — when it truly starts playing.
             onAzanStart?.({ prayer: liveAzan.prayer, startedAt: liveAzan.startedAt });
+            // Visitor Records: azan playback is a meaningful listener event.
+            trackActivity("radio", "radio_azan_played");
             if (!wantPlayRef.current) return; // idle visitors: no audio work
             await loadTrack(audio, liveAzan.driveId);
             if (playId !== playIdRef.current) return;
@@ -570,6 +573,7 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
     if (!audio) return;
     wantPlayRef.current = true;
     setErrorMsg(null);
+    trackActivity("radio", "radio_play");
     // UI stays on "syncing" until the element's own `playing` event fires —
     // no fake playing state while the browser is still loading/buffering.
     setStatus((s) => (s === "playing" ? s : "syncing"));
@@ -586,6 +590,7 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
     }
     audioRef.current?.pause();
     setStatus("paused");
+    trackActivity("radio", "radio_pause");
   };
 
   const handleRetry = () => {
@@ -654,6 +659,8 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
     } else if (wantPlayRef.current) {
       // A radio track reached its natural end before the drift loop ran.
       applyLivePosition(audio);
+      // Visitor Records: a real track transition happened (ended → next).
+      trackActivity("radio", "radio_track_changed");
     }
   };
 

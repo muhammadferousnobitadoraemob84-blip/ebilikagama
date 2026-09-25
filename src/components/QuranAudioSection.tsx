@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useLanguage } from "@/components/LanguageProvider";
+import { trackActivity, useOpenTracking } from "@/lib/track-activity";
 
 // ── Types ──
 interface Surah {
@@ -39,6 +40,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 // ── Component ──
 export default function QuranAudioSection() {
   const { t } = useLanguage();
+  useOpenTracking("quran");
 
   // Reference data (surah list + Arabic verse text)
   const [surahs, setSurahs] = useState<Surah[]>([]);
@@ -249,7 +251,10 @@ export default function QuranAudioSection() {
     setError("");
     audio
       .play()
-      .then(() => setIsPlaying(true))
+      .then(() => {
+        setIsPlaying(true);
+        trackActivity("quran", "audio_played");
+      })
       .catch((err) => {
         // Autoplay policy blocked — not an error; user presses Play.
         if (err?.name === "NotAllowedError") {
@@ -282,6 +287,7 @@ export default function QuranAudioSection() {
     setIsBuffering(true);
     setMissingAudio(false);
     setError("");
+    trackActivity("quran", "audio_played");
     try {
       await audio.play();
     } catch {
@@ -296,11 +302,13 @@ export default function QuranAudioSection() {
       if (audio.paused) {
         try {
           await audio.play();
+          trackActivity("quran", "audio_played");
         } catch {
           setIsPlaying(false);
         }
       } else {
         audio.pause();
+        trackActivity("quran", "audio_paused");
       }
       return;
     }
@@ -395,6 +403,7 @@ export default function QuranAudioSection() {
     setDuration(0);
     setMissingAudio(false);
     setError("");
+    trackActivity("quran", "surah_selected");
   }, []);
 
   // ── Change qari: stop playback, reload indexed entries ──

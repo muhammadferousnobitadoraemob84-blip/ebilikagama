@@ -31,7 +31,7 @@ function openBreaker(reason: string | null) {
 
 // Bump when runMigrations() changes so cold instances re-apply migrations
 // exactly once, then skip them entirely (17+ DDL round-trips otherwise).
-const SCHEMA_VERSION = "4";
+const SCHEMA_VERSION = "5";
 
 async function getSchemaVersion(): Promise<string | null> {
   try {
@@ -478,6 +478,61 @@ async function runMigrations() {
   } catch {
     // Index might already exist
   }
+
+  // ── Visitor Records (admin-only analytics) ─────────────────────────────
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "VisitorSession" (
+        "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+        "userId" TEXT NOT NULL,
+        "loginAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, 
+        "lastActivityAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "logoutAt" TIMESTAMP(3),
+        "status" TEXT NOT NULL DEFAULT 'active',
+        "userAgent" TEXT,
+        CONSTRAINT "VisitorSession_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
+      );
+    `);
+  } catch {
+    // Table might already exist
+  }
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "VisitorActivity" (
+        "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+        "sessionId" TEXT NOT NULL,
+        "userId" TEXT NOT NULL,
+        "feature" TEXT NOT NULL,
+        "action" TEXT NOT NULL,
+        "page" TEXT,
+        "metadata" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "VisitorActivity_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES "VisitorSession"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "VisitorActivity_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
+      );
+    `);
+  } catch {
+    // Table might not exist yet
+  }
+  // Indexes for fast admin queries at scale (spec §13)
+  const vrIndexes = [
+    `CREATE INDEX IF NOT EXISTS "VisitorSession_userId_loginAt_idx" ON "VisitorSession"("userId", "loginAt");`,
+    `CREATE INDEX IF NOT EXISTS "VisitorSession_lastActivityAt_idx" ON "VisitorSession"("lastActivityAt");`,
+    `CREATE INDEX IF NOT EXISTS "VisitorSession_status_idx" ON "VisitorSession"("status");`,
+    `CREATE INDEX IF NOT EXISTS "VisitorActivity_userId_createdAt_idx" ON "VisitorActivity"("userId", "createdAt");`,
+    `CREATE INDEX IF NOT EXISTS "VisitorActivity_sessionId_createdAt_idx" ON "VisitorActivity"("sessionId", "createdAt");`,
+    `CREATE INDEX IF NOT EXISTS "VisitorActivity_createdAt_idx" ON "VisitorActivity"("createdAt");`,
+    `CREATE INDEX IF NOT EXISTS "VisitorActivity_feature_idx" ON "VisitorActivity"("feature");`,
+    `CREATE INDEX IF NOT EXISTS "VisitorActivity_action_idx" ON "VisitorActivity"("action");`,
+  ];
+  for (const ddl of vrIndexes) {
+    try {
+      await prisma.$executeRawUnsafe(ddl);
+    } catch {
+      // Index might already exist
+    }
+  }
+  console.log("[DB-INIT] Visitor Records tables ready.");
 }
 
 async function seedData() {

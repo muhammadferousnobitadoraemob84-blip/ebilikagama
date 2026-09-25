@@ -22,6 +22,8 @@ model User {
   lastLogin     DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  visitorSessions VisitorSession[]
+  visitorActivities VisitorActivity[]
 }
 
 model Channel {
@@ -122,4 +124,44 @@ model QuranAudio {
   @@unique([surahNumber, ayahNumber, reciterName])
   @@index([surahNumber, ayahNumber])
   @@index([reciterName])
+}
+
+// ── Visitor Records (admin-only analytics) ─────────────────────────────────
+// One row per authenticated login. The client sends NO identity — every
+// visitor attribute is derived server-side from the verified JWT session.
+model VisitorSession {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  loginAt        DateTime  @default(now())
+  lastActivityAt DateTime  @default(now())
+  logoutAt       DateTime? // null = session ended / inactive (never claim logout)
+  status         String    @default("active") // active | ended
+  userAgent      String?   @db.Text
+  activities     VisitorActivity[]
+
+  @@index([userId, loginAt])
+  @@index([lastActivityAt])
+  @@index([status])
+}
+
+// One row per meaningful feature/action. NO sensitive content ever — only
+// the fact that a feature/action happened, plus a small public metadata blob.
+model VisitorActivity {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   VisitorSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feature   String
+  action    String
+  page      String?
+  metadata  String?  @db.Text // small JSON (names/titles only, never secrets)
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([sessionId, createdAt])
+  @@index([createdAt])
+  @@index([feature])
+  @@index([action])
 }

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useLanguage } from "@/components/LanguageProvider";
+import { useOpenTracking } from "@/lib/track-activity";
 
 interface Replay {
   id: string;
@@ -21,6 +22,7 @@ interface Replay {
 export default function ReplayPage() {
   const params = useParams();
   const { t } = useLanguage();
+  useOpenTracking("replay");
   const [replay, setReplay] = useState<Replay | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

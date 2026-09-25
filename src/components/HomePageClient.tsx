@@ -9,6 +9,7 @@ import QuranAudioSection from "@/components/QuranAudioSection";
 import NowPlayingWidget from "@/components/NowPlayingWidget";
 import PrayerTimesCard from "@/components/PrayerTimesCard";
 import SubscribeSection from "@/components/SubscribeSection";
+import { useOpenTracking } from "@/lib/track-activity";
 
 interface Channel {
   id: string;
@@ -39,6 +40,7 @@ export default function HomePageClient({
   initialSettings,
 }: HomePageClientProps) {
   const { t } = useLanguage();
+  useOpenTracking("homepage");
   const [channels, setChannels] = useState<Channel[]>(initialChannels);
   const [settings] = useState<Settings>(initialSettings);
   const [error, setError] = useState(false);

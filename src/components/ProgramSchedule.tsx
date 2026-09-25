@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useLanguage } from "@/components/LanguageProvider";
+import { trackActivity } from "@/lib/track-activity";
 
 /* ── interfaces ── */
 interface Channel {
@@ -370,7 +371,10 @@ export default function ProgramSchedule({ currentChannelId }: ProgramSchedulePro
                     return (
                       <button
                         key={program.id}
-                        onClick={() => setSelectedProgram(program)}
+                        onClick={() => {
+                          setSelectedProgram(program);
+                          trackActivity("schedule", "program_selected");
+                        }}
                         className={`absolute top-2 bottom-2 rounded-lg border transition-all cursor-pointer flex flex-col justify-center px-2.5 sm:px-3 overflow-hidden group ${
                           isCurrent
                             ? "bg-green-600/20 border-green-500/40 shadow-lg shadow-green-900/30 z-10"

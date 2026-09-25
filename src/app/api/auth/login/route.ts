@@ -153,6 +153,7 @@ export async function POST(request: NextRequest) {
     tSession = Date.now() - sStart;
 
     // Record last login (best-effort; never blocks authentication)
+    let visitorSessionId: string | null = null;
     try {
       await prisma.user.update({
         where: { id: user.id },
@@ -162,11 +163,40 @@ export async function POST(request: NextRequest) {
       // non-fatal
     }
 
+    // ── Visitor Records: open a session for this login (best-effort) ─────
+    // One VisitorSession per successful login; the id is returned so the
+    // browser can *hint* it on later activity posts (the server always
+    // re-validates ownership — see lib/visitor-records.ts).
+    try {
+      const vsession = await prisma.visitorSession.create({
+        data: {
+          userId: user.id,
+          userAgent: request.headers.get("user-agent")?.slice(0, 250) ?? null,
+        },
+      });
+      visitorSessionId = vsession.id;
+      await prisma.visitorActivity.create({
+        data: {
+          sessionId: vsession.id,
+          userId: user.id,
+          feature: "auth",
+          action: "login",
+        },
+      });
+    } catch (e) {
+      // Visitor Records must never block authentication.
+      console.warn(
+        "[LOGIN] visitor session warning:",
+        e instanceof Error ? e.message : e
+      );
+    }
+
     const response = NextResponse.json({
       success: true,
       username: user.username,
       fullName: user.fullName,
       role: user.role,
+      vsid: visitorSessionId,
     });
 
     response.cookies.set("admin-token", token, {

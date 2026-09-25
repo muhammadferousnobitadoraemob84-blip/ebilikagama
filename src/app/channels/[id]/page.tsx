@@ -6,6 +6,7 @@ import Link from "next/link";
 import TwitchPlayer from "@/components/TwitchPlayer";
 import ChannelEPG from "@/components/ChannelEPG";
 import { useLanguage } from "@/components/LanguageProvider";
+import { useOpenTracking } from "@/lib/track-activity";
 
 interface Channel {
   id: string;
@@ -20,6 +21,7 @@ interface Channel {
 export default function ChannelPage() {
   const params = useParams();
   const { t } = useLanguage();
+  useOpenTracking("tv");
   const [channel, setChannel] = useState<Channel | null>(null);
   const [liveStatus, setLiveStatus] = useState<"checking" | "live" | "offline">("checking");
   const [loading, setLoading] = useState(true);

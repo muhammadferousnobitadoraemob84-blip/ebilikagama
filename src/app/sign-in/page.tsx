@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useLanguage } from "@/components/LanguageProvider";
+import { setVisitorSessionId } from "@/lib/track-activity";
 
 // Login must fail visibly instead of spinning forever if the backend or
 // network hangs (cold serverless start, DB stall, lost connection).
@@ -81,6 +82,13 @@ export default function SignInPage() {
       }
 
       console.log("[LOGIN] success → redirect", redirect || "/");
+      // Visitor Records: remember the visitor session hint for this login.
+      try {
+        const okData = data as { vsid?: string | null };
+        setVisitorSessionId(okData.vsid ?? null);
+      } catch {
+        // non-fatal
+      }
       // Authentication succeeded: navigate with a FULL document load.
       // router.push() uses the client router cache, which may contain a
       // prefetch of the target made *before* login (while logged out, "/" is

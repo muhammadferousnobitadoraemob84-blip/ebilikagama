@@ -2,9 +2,11 @@
 
 import { useLanguage } from "@/components/LanguageProvider";
 import ProgramSchedule from "@/components/ProgramSchedule";
+import { useOpenTracking } from "@/lib/track-activity";
 
 export default function SchedulePage() {
   const { t } = useLanguage();
+  useOpenTracking("schedule");
 
   return (
     <div className="min-h-screen bg-black">

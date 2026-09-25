@@ -6,9 +6,11 @@ import RadioPlayer, { type RadioStation } from "@/components/RadioPlayer";
 import RadioMiniPlayer from "@/components/RadioMiniPlayer";
 import VirtualRadioPlayer from "@/components/VirtualRadioPlayer";
 import { useNowPlaying } from "@/lib/useNowPlaying";
+import { useOpenTracking } from "@/lib/track-activity";
 
 export default function RadioPage() {
   const { t } = useLanguage();
+  useOpenTracking("radio");
   const [radios, setRadios] = useState<RadioStation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

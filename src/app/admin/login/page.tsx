@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useLanguage } from "@/components/LanguageProvider";
+import { setVisitorSessionId } from "@/lib/track-activity";
 
 // Login must fail visibly instead of spinning forever if the backend or
 // network hangs (cold serverless start, DB stall, lost connection).
@@ -50,6 +51,13 @@ export default function AdminLogin() {
 
       console.log("[LOGIN] admin success → redirect", redirect);
       setLoading(false);
+      // Visitor Records: remember the visitor session hint for this login.
+      try {
+        const okData = data as { vsid?: string | null };
+        setVisitorSessionId(okData.vsid ?? null);
+      } catch {
+        // non-fatal
+      }
       // Full document load: the client router cache may hold a pre-login
       // prefetch of the target that was captured as a 307 redirect to the
       // sign-in page; replaying it would strand the admin after login.

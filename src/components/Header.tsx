@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useLanguage } from "@/components/LanguageProvider";
 import LanguageSelector from "@/components/LanguageSelector";
+import { clearVisitorSessionId, getVisitorSessionId } from "@/lib/track-activity";
 
 interface Settings {
   site_name?: string;
@@ -243,10 +244,15 @@ export default function Header() {
     setConfirmOpen(false);
     setLoggingOut(true);
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vsid: getVisitorSessionId() }),
+      });
     } catch {
       // Network failure must not trap the user: still clear local state.
     } finally {
+      clearVisitorSessionId();
       clearProfileCache();
       // Notify other tabs that the session ended
       try {
