@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useLanguage } from "@/components/LanguageProvider";
+import { isValidWhatsAppUrl } from "@/lib/social-validation";
 
 interface Settings {
   [key: string]: string;
@@ -114,6 +116,7 @@ export default function AdminSettings() {
   const [uploadingField, setUploadingField] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState("");
   const [uploadSuccess, setUploadSuccess] = useState("");
+  const { t } = useLanguage();
 
   useEffect(() => {
     fetch("/api/settings")
@@ -160,6 +163,44 @@ export default function AdminSettings() {
   const handleClearImage = useCallback((field: string) => {
     setSettings((prev) => ({ ...prev, [field]: "" }));
   }, []);
+
+  // Per-entry save for the WhatsApp social links (group/channel): saves that
+  // single setting immediately, without a code deployment.
+  const [waSaving, setWaSaving] = useState<string | null>(null);
+  const [waSaved, setWaSaved] = useState<string | null>(null);
+  const [waError, setWaError] = useState<{ key: string; message: string } | null>(null);
+
+  const handleSaveWhatsApp = async (key: string) => {
+    const value = settings[key] ?? "";
+    if (!isValidWhatsAppUrl(value)) {
+      setWaError({ key, message: t("wa_invalid_url") });
+      setTimeout(() => setWaError(null), 5000);
+      return;
+    }
+    setWaSaving(key);
+    setWaError(null);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: value }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setWaError({ key, message: data?.error || t("wa_save_failed") });
+        setTimeout(() => setWaError(null), 5000);
+      } else {
+        setWaSaved(key);
+        window.dispatchEvent(new Event("settings-changed"));
+        setTimeout(() => setWaSaved(null), 3000);
+      }
+    } catch {
+      setWaError({ key, message: t("wa_save_failed") });
+      setTimeout(() => setWaError(null), 5000);
+    } finally {
+      setWaSaving(null);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -412,6 +453,55 @@ export default function AdminSettings() {
                     </a>
                   </p>
                 )}
+              </div>
+            ))}
+
+            {/* WhatsApp entries: group + channel, each with its own SAVE */}
+            {[
+              { key: "social_whatsapp_group", label: t("wa_group_label"), placeholder: "https://chat.whatsapp.com/..." },
+              { key: "social_whatsapp_channel", label: t("wa_channel_label"), placeholder: "https://whatsapp.com/channel/..." },
+            ].map((social) => (
+              <div key={social.key}>
+                <label className="block text-gray-300 text-sm font-medium mb-2">
+                  {social.label}
+                </label>
+                <input
+                  type="url"
+                  value={settings[social.key] || ""}
+                  onChange={(e) => setSettings({ ...settings, [social.key]: e.target.value })}
+                  className="admin-input"
+                  placeholder={social.placeholder}
+                />
+                {settings[social.key] && settings[social.key] !== "" && (
+                  <p className="text-gray-500 text-xs mt-1.5">
+                    <a href={settings[social.key]} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
+                      Buka pautan
+                    </a>
+                  </p>
+                )}
+                <div className="mt-3 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleSaveWhatsApp(social.key)}
+                    disabled={waSaving === social.key}
+                    className="admin-btn admin-btn-primary flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {waSaving === social.key ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        {t("wa_saving")}
+                      </>
+                    ) : (
+                      t("save")
+                    )}
+                  </button>
+                  {waSaved === social.key && (
+                    <span className="text-green-400 text-sm">✓ {t("wa_saved")}</span>
+                  )}
+                  {waError && waError.key === social.key && waSaving === null && waSaved !== social.key && (
+                    <span className="text-red-400 text-sm">{waError.message}</span>
+                  )}
+                </div>
               </div>
             ))}
           </div>

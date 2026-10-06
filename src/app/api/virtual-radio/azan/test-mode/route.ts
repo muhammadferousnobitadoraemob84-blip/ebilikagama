@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
 import { getAzanState, getAzanTestMode, saveAzanTestMode, resetAzanTestMode } from "@/lib/azan-store";
+import { audit } from "@/lib/audit";
 import { isTestModeActive, msToMalaysiaDate, sanitizeOverrides, type AzanPrayer } from "@/lib/azan";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +50,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  if (!(await getAdminSession())) return forbidden();
+  const session = await getAdminSession();
+  if (!session) return forbidden();
   try {
     const body = (await req.json().catch(() => ({}))) as {
       action?: "enable" | "apply" | "disable";
@@ -77,6 +79,7 @@ export async function POST(req: NextRequest) {
       expiresAt,
       updatedAt: new Date().toISOString(),
     });
+    await audit({ actor: session, action: "azan.test_mode_applied", targetType: "azan_test_mode", metadata: { prayers: Object.keys(saved.overrides), expiresAt: saved.expiresAt } });
     return NextResponse.json({ ok: true, testMode: { ...saved, active: isTestModeActive(saved, Date.now()) } });
   } catch (err) {
     console.error("[TEST-MODE POST]", err instanceof Error ? err.message : err);
@@ -85,9 +88,11 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE() {
-  if (!(await getAdminSession())) return forbidden();
+  const session = await getAdminSession();
+  if (!session) return forbidden();
   try {
     await resetAzanTestMode();
+    await audit({ actor: session, action: "azan.test_mode_reset", targetType: "azan_test_mode" });
     return NextResponse.json({ ok: true, testMode: { enabled: false, overrides: {}, expiresAt: null, active: false }, message: "Using official prayer times" });
   } catch (err) {
     console.error("[TEST-MODE DELETE]", err instanceof Error ? err.message : err);

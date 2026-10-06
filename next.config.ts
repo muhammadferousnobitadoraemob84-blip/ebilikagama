@@ -3,17 +3,24 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Allow Twitch embed domains
   async headers() {
-    return [
-      {
-        // Cache static assets aggressively
-        source: "/_next/static/:path*",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, max-age=31536000, immutable",
-          },
-        ],
-      },
+    const headers = [
+      // Cache static assets aggressively — PRODUCTION ONLY. In dev, Turbopack
+      // serves stable (non-hashed) chunk URLs; marking them `immutable` pins a
+      // stale bundle in the browser and code changes appear to never load.
+      // Production filenames are content-hashed, so immutable is safe there.
+      ...(process.env.NODE_ENV === "production"
+        ? [
+            {
+              source: "/_next/static/:path*",
+              headers: [
+                {
+                  key: "Cache-Control",
+                  value: "public, max-age=31536000, immutable",
+                },
+              ],
+            },
+          ]
+        : []),
       // NOTE: /api/images must NOT be cached via a global header rule.
       // A blanket Cache-Control here was applied to ERROR responses too
       // (503/404), letting the CDN and browsers store broken-image answers
@@ -39,18 +46,18 @@ const nextConfig: NextConfig = {
             value: "public, s-maxage=30, stale-while-revalidate=60",
           },
         ],
-      },
-      {
-        // Cache settings API
-        source: "/api/settings",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, s-maxage=60, stale-while-revalidate=300",
-          },
-        ],
-      },
+      },        {
+          // Cache settings API
+          source: "/api/settings",
+          headers: [
+            {
+              key: "Cache-Control",
+              value: "public, s-maxage=60, stale-while-revalidate=300",
+            },
+          ],
+        },
     ];
+    return headers;
   },
   // Optimize images
   images: {

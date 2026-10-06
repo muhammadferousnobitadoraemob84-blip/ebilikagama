@@ -65,10 +65,10 @@ export default function AdminLayout({
     router.push("/admin/login");
   };
 
-  // Server-side role gate: only admins/owners may view the Admin Panel.
-  // A normal user gets bounced to the homepage (their APIs are 403 anyway).
+  // Server-side role gate: only admin-panel roles may view the Admin Panel
+  // (owner/admin/editor/viewer per spec §21). Normal users bounce home.
   useEffect(() => {
-    if (!loading && user && user.role !== "admin" && user.role !== "owner") {
+    if (!loading && user && !(user.role === "admin" || user.role === "owner" || user.role === "editor" || user.role === "viewer")) {
       router.replace("/");
     }
   }, [loading, user, router]);
@@ -89,7 +89,8 @@ export default function AdminLayout({
   }
 
   // Non-admin session: render nothing while redirecting away.
-  if (user && user.role !== "admin" && user.role !== "owner") {
+  const adminPanelRole = user && (user.role === "admin" || user.role === "owner" || user.role === "editor" || user.role === "viewer");
+  if (user && !adminPanelRole) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -107,6 +108,43 @@ export default function AdminLayout({
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        </svg>
+      ),
+    },
+    // ── Broadcast operations (spec §1–§6) ──
+    {
+      href: "/admin/control-center",
+      label: t("cc_title"),
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M3 9h2m-2 6h2m14-6h2m-2 6h2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9z" />
+        </svg>
+      ),
+    },
+    {
+      href: "/admin/system-health",
+      label: t("sh_title"),
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+        </svg>
+      ),
+    },
+    {
+      href: "/admin/radio-diagnostics",
+      label: t("rd_title"),
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+        </svg>
+      ),
+    },
+    {
+      href: "/admin/radio-history",
+      label: t("rh_title"),
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       ),
     },
@@ -220,6 +258,75 @@ export default function AdminLayout({
         </svg>
       ),
     },
+    // ── Platform management (spec §8–§12, §19–§23) ──
+    {
+      href: "/admin/analytics",
+      label: t("an_title"),
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+      ),
+    },
+    {
+      href: "/admin/audit-logs",
+      label: t("al_title"),
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      ),
+    },
+    {
+      href: "/admin/reports",
+      label: t("rep_title"),
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-6m3 6v-4m3 4v-10M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z" />
+        </svg>
+      ),
+    },
+    {
+      href: "/admin/notifications",
+      label: t("nc_title"),
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1h6z" />
+        </svg>
+      ),
+    },
+    {
+      href: "/admin/emergency",
+      label: t("eb_title"),
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+      ),
+    },
+    {
+      href: "/admin/incidents",
+      label: t("inc_title"),
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+    },
+    // Owner-only: Backup & Restore
+    ...(user?.role === "owner"
+      ? [
+          {
+            href: "/admin/backup",
+            label: t("bp_title"),
+            icon: (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+              </svg>
+            ),
+          },
+        ]
+      : []),
     // Owner-only: Admin Management
     ...(user?.role === "owner"
       ? [

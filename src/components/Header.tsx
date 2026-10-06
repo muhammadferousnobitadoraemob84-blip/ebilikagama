@@ -118,6 +118,13 @@ export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  // Global search (spec §16)
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQ, setSearchQ] = useState("");
+  const [searchResults, setSearchResults] = useState<{ type: string; id: string; title: string; subtitle: string; href: string }[]>([]);
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Unread announcement count (spec §12)
+  const [unread, setUnread] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const logoutInFlight = useRef(false);
   const router = useRouter();
@@ -269,6 +276,52 @@ export default function Header() {
     }
   };
 
+  // ── Global search (debounced, permission-respecting server endpoint) ──
+  const runSearch = (q: string) => {
+    setSearchQ(q);
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    if (q.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    searchDebounce.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        if (res.ok) {
+          const d = await res.json();
+          setSearchResults(d.results ?? []);
+        }
+      } catch {
+        // transient
+      }
+    }, 300);
+  };
+
+  // ── Unread notifications badge (polls gently, only when signed in) ──
+  useEffect(() => {
+    if (!authenticated) {
+      setUnread(0);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/notifications?scope=mine", { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const d = await res.json();
+        setUnread((d.rows ?? []).filter((n: { readAt: string | null }) => !n.readAt).length);
+      } catch {
+        // transient
+      }
+    };
+    load();
+    const id = setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [authenticated, pathname]);
+
   const siteName = settings.site_name || "eBilikAgamaTV";
 
   return (
@@ -333,6 +386,72 @@ export default function Header() {
 
             <div className="w-px h-5 bg-white/10" />
 
+            {/* Global search icon (authenticated only) */}
+            {authenticated && (
+              <div className="relative">
+                <button
+                  onClick={() => setSearchOpen((v) => !v)}
+                  className="text-gray-400 hover:text-white p-1.5"
+                  aria-label={t("gs_title")}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </button>
+                {searchOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-80 max-w-[85vw] bg-gray-900 border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
+                    <div className="p-3 border-b border-white/10">
+                      <input
+                        autoFocus
+                        value={searchQ}
+                        onChange={(e) => runSearch(e.target.value)}
+                        placeholder={t("gs_placeholder")}
+                        className="w-full bg-gray-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-red-500 placeholder-gray-500"
+                      />
+                    </div>
+                    <div className="max-h-80 overflow-y-auto">
+                      {searchResults.length === 0 ? (
+                        <p className="text-gray-500 text-xs text-center py-6">{searchQ.length >= 2 ? t("gs_no_results") : t("gs_hint")}</p>
+                      ) : (
+                        searchResults.map((r) => (
+                          <a
+                            key={`${r.type}-${r.id}`}
+                            href={r.href}
+                            onClick={() => { setSearchOpen(false); setSearchQ(""); setSearchResults([]); }}
+                            className="flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors"
+                          >
+                            <span className="text-[10px] uppercase font-bold text-red-400/80 bg-red-600/10 border border-red-600/20 px-1.5 py-0.5 rounded flex-shrink-0">{t(`gs_type_${r.type}` as never)}</span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-white text-sm truncate">{r.title}</span>
+                              <span className="block text-gray-500 text-xs truncate">{r.subtitle}</span>
+                            </span>
+                          </a>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Notification bell (authenticated only) */}
+            {authenticated && (
+              <button
+                onClick={() => router.push("/notifications")}
+                className="relative text-gray-400 hover:text-white p-1.5"
+                aria-label={t("nc_title")}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1h6z" />
+                </svg>
+                {unread > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 bg-red-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                    {unread > 9 ? "9+" : unread}
+                  </span>
+                )}
+              </button>
+            )}
+
             <LanguageSelector />
 
             {/* Account menu — shown for ANY authenticated user (user, admin,
@@ -382,6 +501,28 @@ export default function Header() {
                       </p>
                     </div>
                     <div className="py-1">
+                      {/* My Profile + My Favorites (all authenticated users) */}
+                      <Link
+                        href="/profile"
+                        onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-200 hover:bg-white/10 hover:text-white transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                        {t("mp_title")}
+                      </Link>
+                      <Link
+                        href="/favorites"
+                        onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-200 hover:bg-white/10 hover:text-white transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                        </svg>
+                        {t("fav_title")}
+                      </Link>
+                      <div className="border-t border-white/10 my-1" />
                       {admin && (
                         <>
                           <Link

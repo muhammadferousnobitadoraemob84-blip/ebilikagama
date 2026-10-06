@@ -61,10 +61,17 @@ model Program {
   status            String   @default("scheduled") // scheduled, live, finished
   youtubeBroadcastId String?  @db.Text // YouTube broadcast/video ID for imported streams
   youtubeUrl        String?  @db.Text // YouTube URL for imported streams
+  // Recurring EPG (§10): the row is a TEMPLATE when recurrence != none.
+  // Concrete dates are expanded server-side at read time (src/lib/epg.ts).
+  recurrence        String?  // none | daily | weekly (null = legacy one-off)
+  recurrenceWeekday Int?     // 0-6 (Sunday=0) for weekly templates
+  recurrenceUntil   String?  // YYYY-MM-DD inclusive end of the recurrence
+  parentId          String?  // template linkage (templates keep null)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
   @@index([channelId, date])
+  @@index([parentId])
   @@unique([youtubeBroadcastId], name: "idx_youtube_broadcast")
 }
 
@@ -164,4 +171,155 @@ model VisitorActivity {
   @@index([createdAt])
   @@index([feature])
   @@index([action])
+}
+
+// ── Radio Proof-of-Play / Broadcast History (§4–§6) ────────────────────────
+// One row per REAL radio track play, written from actual HTMLAudioElement
+// playback events (started/ended/interrupted) — never from scheduler math.
+// A track is only ever "completed" when the element truly finished it.
+// Idempotency: `eventId` is unique — retries cannot duplicate a record.
+model RadioPlayback {
+  id             String    @id @default(cuid())
+  eventId        String    @unique // idempotency key (timeline cycle-position based)
+  trackId        String // Google Drive file ID — never audio bytes
+  trackTitle     String
+  startedAt      DateTime // actual playback start (wall clock)
+  endedAt        DateTime? // actual playback end (ended/pause/azan/error)
+  durationPlayed Float     @default(0) // seconds actually heard
+  expectedDuration Float   @default(0) // playlist-declared duration (seconds)
+  expectedStartAt  DateTime? // scheduler's planned start
+  expectedEndAt    DateTime? // scheduler's planned end
+  status        String    @default("playing") // playing|completed|interrupted|azan_interrupted|error|skipped
+  interruptionReason String? // azan:<prayer> | ended | error:<msg> | page_closed | client:<n>
+  azanInterrupted Boolean  @default(false)
+  azanPrayer    String? // subuh|zohor|asar|maghrib|isyak when interrupted by azan
+  sessionId     String? // browser broadcast instance id (diagnostics)
+  clientId      String? // anonymous per-browser id (no personal data)
+  createdAt     DateTime  @default(now())
+
+  @@index([trackId, startedAt])
+  @@index([startedAt])
+  @@index([endedAt])
+  @@index([status])
+}
+
+// ── Broadcast Timeline / Black Box (§6) — immutable expected-vs-actual log ─
+model TimelineEvent {
+  id          String   @id @default(cuid())
+  eventId     String   @unique // idempotency: same event retried never duplicates
+  kind        String // track_start|track_end|azan_start|azan_end|radio_resume
+  label       String // track title or "Azan Maghrib"
+  expectedAt  DateTime? // scheduler expectation (null = unscheduled/client event)
+  actualAt    DateTime // what actually happened (wall clock)
+  diffSeconds Float? // actual − expected, signed
+  detail      String?  @db.Text // small JSON (trackId, prayer, status…)
+  createdAt   DateTime @default(now())
+
+  @@index([actualAt])
+  @@index([kind, actualAt])
+}
+
+// ── Admin Audit Log (§9) — separate from Visitor Records, append-only ──────
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String? // null = system
+  actorName   String? // display snapshot (username), role kept in metadata
+  action      String // user.created | channel.updated | azan.test_mode_applied …
+  targetType  String? // user | channel | program | setting | radio | backup …
+  targetId    String?
+  result      String   @default("success") // success | failure
+  metadata    String?  @db.Text // SAFE metadata only (names, counts — never secrets)
+  createdAt   DateTime @default(now())
+
+  @@index([actorUserId, createdAt])
+  @@index([createdAt])
+  @@index([action])
+  @@index([targetType, targetId])
+}
+
+// ── System Incidents (§19) — meaningful failures, deduped by signature ─────
+model Incident {
+  id           String   @id @default(cuid())
+  signature    String   @unique // service+kind dedupe key
+  service      String // radio|azan|drive|jakim|youtube|twitch|database|auth|audio|scheduler
+  severity     String   @default("warning") // info|warning|error|critical
+  message      String   @db.Text // safe, human-readable (no stack traces)
+  status       String   @default("open") // open|investigating|resolved
+  firstDetectedAt DateTime @default(now())
+  lastDetectedAt  DateTime @default(now())
+  resolvedAt   DateTime?
+  occurrences  Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([status, lastDetectedAt])
+  @@index([service])
+}
+
+// ── Notification Center (§12) ──────────────────────────────────────────────
+model Notification {
+  id        String    @id @default(cuid())
+  title     String
+  message   String    @db.Text
+  targetAll Boolean   @default(true)
+  targetRole String? // null=all-roles when targetAll, else user|admin
+  userIds   String?   @db.Text // JSON array of User ids when targeted
+  feature   String?   // optional feature/channel context tag
+  createdBy String? // admin userId
+  createdByName String?
+  createdAt DateTime  @default(now())
+  expiresAt DateTime? // null = no expiry
+  active    Boolean   @default(true)
+  reads     NotificationRead[]
+
+  @@index([createdAt])
+  @@index([active, expiresAt])
+}
+
+model NotificationRead {
+  id             String @id @default(cuid())
+  notificationId String
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  userId         String
+  readAt         DateTime @default(now())
+
+  @@unique([notificationId, userId])
+  @@index([userId])
+}
+
+// ── Emergency Broadcast (§11) — highest-priority override, audit-logged ────
+model EmergencyBroadcast {
+  id          String    @id @default(cuid())
+  title       String
+  description String?   @db.Text
+  channelId   String? // target channel (null = radio/all)
+  channelName String?
+  mediaType   String    @default("program") // program|youtube|replay|text
+  mediaRef    String? // youtube url / replay id / text content
+  startsAt    DateTime
+  endsAt      DateTime
+  status      String    @default("scheduled") // scheduled|active|stopped|expired
+  activatedAt DateTime?
+  stoppedAt   DateTime?
+  stoppedReason String?
+  createdBy   String?
+  createdByName String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, startsAt])
+  @@index([startsAt, endsAt])
+}
+
+// ── User Favorites (§15) — channels / radio / replay / quran ───────────────
+model UserFavorite {
+  id        String   @id @default(cuid())
+  userId    String
+  itemType  String // channel | radio | replay | quran
+  itemId    String
+  title     String? // display snapshot
+  createdAt DateTime @default(now())
+
+  @@unique([userId, itemType, itemId])
+  @@index([userId, itemType])
 }

@@ -49,6 +49,39 @@ import {
 import { emptyAzanSchedule, type AzanSchedule } from "@/lib/azan";
 import { trackActivity } from "@/lib/track-activity";
 
+// ── Proof-of-Play / Broadcast Timeline reporting (§4–§6) ────────────────
+// Fire-and-forget POSTs of REAL playback facts. The server clamps clock
+// skew, dedupes by eventId, and never receives credentials or audio data.
+interface PopState {
+  eventId: string | null;
+  startedAt: number; // client ms at start
+  driveId: string | null;
+  title: string | null;
+  expectedDuration: number;
+}
+
+function popPost(body: Record<string, unknown>): void {
+  try {
+    void fetch("/api/radio-playback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* tracking must never break playback */
+  }
+}
+
+function popTimeline(eventId: string, kind: string, label: string, expectedAt: number | null, actualAt: number, detail: Record<string, unknown>): void {
+  popPost({ eventId, kind, label, expectedAt, actualAt, detail });
+}
+
+function makeEventId(prefix: string, driveId: string, atMs: number, sessionId: string): string {
+  // Stable per (track, absolute start second, session): retries dedupe.
+  return `${prefix}:${driveId}:${Math.floor(atMs / 1000)}:${sessionId}`;
+}
+
 type PlayerStatus =
   | "loading" // fetching radio state / first clock sync
   | "syncing" // audio element is genuinely loading/buffering
@@ -157,6 +190,62 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
   // still be active server-side for a few seconds (window ≈ file duration),
   // but a listener must never be dragged back into an azan that just ended.
   const finishedAzanKeysRef = useRef<Set<string>>(new Set());
+
+  // Proof-of-Play: the track currently being reported (open record).
+  const popRef = useRef<PopState>({ eventId: null, startedAt: 0, driveId: null, title: null, expectedDuration: 0 });
+
+  /** Open a proof-of-play record when a track genuinely starts playing. */
+  const popStart = useCallback(
+    (track: { driveId: string; fileName: string; duration: number }, element: HTMLAudioElement) => {
+      const prev = popRef.current;
+      // Finalize any still-open record first (track swap without `ended`).
+      if (prev.eventId && prev.driveId) {
+        const played = Math.max(0, element.currentTime);
+        popPost({
+          eventId: prev.eventId,
+          endedAt: Date.now(),
+          durationPlayed: played,
+          status: "interrupted",
+          interruptionReason: "track_change",
+        });
+      }
+      const now = Date.now();
+      const eventId = makeEventId("pop", track.driveId, now, sessionRef.current);
+      popRef.current = { eventId, startedAt: now, driveId: track.driveId, title: track.fileName, expectedDuration: track.duration };
+      popPost({
+        eventId,
+        trackId: track.driveId,
+        trackTitle: track.fileName,
+        startedAt: now,
+        expectedDuration: track.duration,
+        sessionId: sessionRef.current,
+      });
+    },
+    []
+  );
+
+  /** Finalize the open proof-of-play record with an explicit outcome. */
+  const popEnd = useCallback(
+    (
+      element: HTMLAudioElement,
+      status: "completed" | "interrupted" | "azan_interrupted" | "error",
+      reason: string | null,
+      azanPrayer: string | null
+    ) => {
+      const prev = popRef.current;
+      if (!prev.eventId || !prev.driveId) return;
+      popPost({
+        eventId: prev.eventId,
+        endedAt: Date.now(),
+        durationPlayed: Math.max(0, element.currentTime),
+        status,
+        interruptionReason: reason,
+        azanPrayer,
+      });
+      popRef.current = { eventId: null, startedAt: 0, driveId: null, title: null, expectedDuration: 0 };
+    },
+    []
+  );
 
   const streamUrl = useCallback(
     (driveId: string) => `/api/virtual-radio/stream?id=${encodeURIComponent(driveId)}`,
@@ -280,6 +369,18 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
           if (isNewAzan) {
             radioModeRef.current = "AZAN_INTERRUPTION";
             restoredRef.current = false;
+            // Proof-of-Play: the track is being interrupted by the azan.
+            if (audioRef.current && popRef.current.eventId) {
+              popEnd(audio, "azan_interrupted", `azan:${liveAzan.prayer}`, liveAzan.prayer);
+              popTimeline(
+                `tl:azan:${liveAzan.prayer}:${liveAzan.startedAt}`,
+                "azan_start",
+                `Azan ${liveAzan.prayer}`,
+                liveAzan.startedAt,
+                Date.now(),
+                { prayer: liveAzan.prayer }
+              );
+            }
             // Snapshot from the ACTUAL element — audio.currentTime is the
             // authoritative pre-azan position (never Date.now(), never the
             // timeline estimate, never the progress bar).
@@ -605,7 +706,26 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
     // trust them when we're not mid-apply (applyLivePosition sets states).
     if (!applyingRef.current) setStatus((s) => (s === "syncing" || s === "paused" ? "playing" : s));
   };
-  const onAudioPlaying = () => setStatus((s) => (s !== "error" ? "playing" : s));
+  const onAudioPlaying = () => {
+    setStatus((s) => (s !== "error" ? "playing" : s));
+    // Proof-of-Play: the element is genuinely producing audio. Open a record
+    // when this is a NEW track (driveId changed / no open record).
+    const audio = audioRef.current;
+    if (audio && popRef.current.driveId !== currentDriveIdRef.current) {
+      const track = state.tracks.find((tr) => tr.driveId === currentDriveIdRef.current);
+      if (track && radioModeRef.current !== "AZAN_INTERRUPTION") {
+        popStart(track, audio);
+        popTimeline(
+          `tl:start:${track.driveId}:${Math.floor(Date.now() / 1000)}:${sessionRef.current}`,
+          "track_start",
+          track.fileName.replace(/\.[^.]+$/, ""),
+          null,
+          Date.now(),
+          { trackId: track.driveId }
+        );
+      }
+    }
+  };
   const onAudioPause = () => {
     if (applyingRef.current) return; // internal seek shuffle, not a user pause
     if (!wantPlayRef.current) setStatus("paused");
@@ -614,6 +734,10 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
     if (wantPlayRef.current) setStatus((s) => (s === "playing" ? "syncing" : s));
   };
   const onAudioError = () => {
+    // Proof-of-Play: the element itself failed — record the error outcome.
+    if (popRef.current.eventId && audioRef.current) {
+      popEnd(audioRef.current, "error", "audio_element_error", null);
+    }
     if (wantPlayRef.current) {
       setStatus("error");
       setErrorMsg(t("vr_play_error"));
@@ -632,6 +756,15 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
       azanKeyRef.current = null;
       radioModeRef.current = "RESTORE_PENDING";
       setStatus("syncing");
+      // Broadcast Timeline: the azan's real `ended` moment (§6).
+      popTimeline(
+        `tl:azanend:${azanKeyRef.current ?? "?"}`,
+        "azan_end",
+        `Azan ended`,
+        null,
+        Date.now(),
+        { key: endedKey ?? "" }
+      );
       const snap = interruptedRef.current;
       // Verify the saved track still exists (requirement 5).
       const track = snap ? state.tracks.find((tr) => tr.driveId === snap.driveId) : null;
@@ -654,10 +787,35 @@ export default function VirtualRadioPlayer({ onAzanStart }: VirtualRadioPlayerPr
       if (azanResumeTimerRef.current !== null) clearTimeout(azanResumeTimerRef.current);
       azanResumeTimerRef.current = window.setTimeout(() => {
         azanResumeTimerRef.current = null;
-        if (wantPlayRef.current && audioRef.current) applyLivePosition(audioRef.current);
+        if (wantPlayRef.current && audioRef.current) {
+          // Broadcast Timeline: actual resume after the 3 s grace.
+          popTimeline(
+            `tl:resume:${Math.floor(Date.now() / 1000)}:${sessionRef.current}`,
+            "radio_resume",
+            "Radio resumed",
+            resumeBaseRef.current ? resumeBaseRef.current.startServerMs : null,
+            Date.now(),
+            {}
+          );
+          applyLivePosition(audioRef.current);
+        }
       }, AZAN_RESUME_DELAY_MS);
     } else if (wantPlayRef.current) {
       // A radio track reached its natural end before the drift loop ran.
+      // Proof-of-Play: only a real `ended` event may mark COMPLETED (§4).
+      if (popRef.current.eventId) {
+        popEnd(audio, "completed", "ended", null);
+        const doneId = popRef.current.driveId ?? currentDriveIdRef.current;
+        const doneTrack = doneId ? state.tracks.find((tr) => tr.driveId === doneId) : undefined;
+        popTimeline(
+          `tl:end:${currentDriveIdRef.current ?? "?"}:${Math.floor(Date.now() / 1000)}:${sessionRef.current}`,
+          "track_end",
+          (doneTrack?.fileName ?? currentDriveIdRef.current ?? "track").replace(/\.[^.]+$/, ""),
+          null,
+          Date.now(),
+          { trackId: currentDriveIdRef.current ?? "" }
+        );
+      }
       applyLivePosition(audio);
       // Visitor Records: a real track transition happened (ended → next).
       trackActivity("radio", "radio_track_changed");

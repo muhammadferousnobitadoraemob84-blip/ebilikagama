@@ -19,5 +19,6 @@
       "type": "image/png"
     }
   ],
-  "categories": ["entertainment", "education"]
+  "categories": ["entertainment", "education"],
+  "gcm_sender_id": "103953800507"
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
 import { getVirtualRadioState, saveRadioFolder, setRadioEnabled } from "@/lib/virtual-radio-store";
+import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest) {
 
     if (typeof body.enabled === "boolean") {
       await setRadioEnabled(body.enabled);
+      await audit({ actor: session, action: "radio.config_changed", targetType: "radio", metadata: { enabled: body.enabled } });
       return NextResponse.json({ success: true, enabled: body.enabled });
     }
 
@@ -58,6 +60,7 @@ export async function POST(request: NextRequest) {
       }
 
       await saveRadioFolder(meta.id, meta.name || null);
+      await audit({ actor: session, action: "drive.folder_changed", targetType: "radio_folder", targetId: meta.id, metadata: { folderName: meta.name || "" } });
       return NextResponse.json({ success: true, folderId: meta.id, folderName: meta.name || null });
     }
 

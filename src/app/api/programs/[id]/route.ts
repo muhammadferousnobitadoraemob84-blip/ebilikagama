@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAdminSession } from "@/lib/auth";
 import { notifyProgramChange } from "@/lib/program-events";
+import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -95,6 +96,7 @@ export async function PUT(
     });
 
     notifyProgramChange();
+    await audit({ actor: session, action: "program.updated", targetType: "program", targetId: id, metadata: { title: program.title, date: program.date, startTime: program.startTime } });
     return NextResponse.json(program);
   } catch {
     return NextResponse.json(
@@ -124,6 +126,7 @@ export async function DELETE(
 
     await prisma.program.delete({ where: { id } });
     notifyProgramChange();
+    await audit({ actor: session, action: "program.deleted", targetType: "program", targetId: id, metadata: { title: existing.title } });
     return NextResponse.json({ success: true, deletedId: id });
   } catch {
     return NextResponse.json(

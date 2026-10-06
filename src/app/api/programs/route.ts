@@ -6,6 +6,8 @@ import { notifyProgramChange } from "@/lib/program-events";
 import { isDatabaseDown } from "@/lib/db-init";
 import { getThumbnailMeta, dataThumbUrl } from "@/lib/thumb-meta";
 import { isDbUnavailableError, serviceUnavailable } from "@/lib/api-errors";
+import { audit } from "@/lib/audit";
+import { expandRecurring, nextDate } from "@/lib/epg";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +44,28 @@ export async function GET(request: NextRequest) {
           channel: { select: { id: true, name: true } },
         },
       });
+      // Expand recurring templates that cover this date (read-only view).
+      const expanded = await expandRecurring(channelId, date);
+      for (const e of expanded) {
+        if (!programs.some((p) => p.id === e.id)) {
+          programs.push({
+            id: e.id,
+            channelId: e.channelId,
+            title: e.title,
+            date: e.date,
+            startTime: e.startTime,
+            endTime: e.endTime,
+            description: e.description,
+            status: e.status,
+            youtubeBroadcastId: null,
+            youtubeUrl: null,
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+            channel: { id: e.channelId, name: programs[0]?.channel.name ?? "" },
+          });
+        }
+      }
+      programs.sort((a, b) => (a.startTime < b.startTime ? -1 : 1));
       const meta = await getThumbnailMeta(
         "Program",
         Prisma.sql`"channelId" = ${channelId} AND "date" = ${date}`
@@ -89,6 +113,33 @@ export async function GET(request: NextRequest) {
         include: { channel: { select: { id: true, name: true, category: true } } },
         orderBy: [{ date: "asc" }, { startTime: "asc" }],
       });
+      // Also expand recurring templates into the requested view (admin table
+      // stays truthful — virtual instances flagged via the `@` id suffix).
+      if (!where.date) {
+        const templates = programs.filter((p) => p.recurrence && p.recurrence !== "none");
+        const seen = new Set(templates.map((t) => `${t.channelId}|${t.date}|${t.startTime}`));
+        for (const tpl of templates.slice(0, 50)) {
+          // Expand the NEXT 7 days after the template date (bounded).
+          for (let d = 1; d <= 7; d++) {
+            const target = nextDate(tpl.date, d);
+            const instances = await expandRecurring(tpl.channelId, target, tpl.id);
+            for (const inst of instances) {
+              if (inst.id !== `${tpl.id}@${target}`) continue;
+              const key = `${inst.channelId}|${inst.date}|${inst.startTime}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              programs.push({
+                ...tpl,
+                id: inst.id,
+                date: inst.date,
+                status: inst.status,
+                description: inst.description,
+              });
+            }
+          }
+        }
+        programs.sort((a, b) => (a.date === b.date ? (a.startTime < b.startTime ? -1 : 1) : a.date < b.date ? -1 : 1));
+      }
       return NextResponse.json(programs);
     } catch {
       return NextResponse.json([], { status: 500 });
@@ -107,7 +158,12 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { channelId, title, date, startTime, endTime, description, thumbnail, status } = body;
+    const {
+      channelId, title, date, startTime, endTime, description, thumbnail, status,
+      recurrence, recurrenceWeekday, recurrenceUntil,
+    } = body;
+
+    const rec = ["none", "daily", "weekly"].includes(recurrence) ? recurrence : "none";
 
     if (!channelId || !title || !date || !startTime || !endTime) {
       return NextResponse.json(
@@ -155,7 +211,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const program = await prisma.program.create({
+    // Recurring schedule (spec §10): the saved row is the TEMPLATE (parentId
+    // = self) with recurrence metadata; concrete instances are expanded
+    // server-side in GET so existing single-program behavior is unchanged.
+    const template = await prisma.program.create({
       data: {
         channelId,
         title,
@@ -165,12 +224,17 @@ export async function POST(request: NextRequest) {
         description: description || null,
         thumbnail: thumbnail || null,
         status: status || "scheduled",
+        recurrence: rec,
+        recurrenceWeekday: rec === "weekly" && Number.isInteger(recurrenceWeekday) ? recurrenceWeekday : null,
+        recurrenceUntil: rec !== "none" && typeof recurrenceUntil === "string" ? recurrenceUntil : null,
+        parentId: null, // template
       },
       include: { channel: { select: { id: true, name: true } } },
     });
 
     notifyProgramChange();
-    return NextResponse.json(program, { status: 201 });
+    await audit({ actor: session, action: "program.created", targetType: "program", targetId: template.id, metadata: { title: template.title, channelId, date, recurrence: rec } });
+    return NextResponse.json({ ...template, generated: 0 }, { status: 201 });
   } catch {
     return NextResponse.json(
       { error: "Gagal mencipta program" },

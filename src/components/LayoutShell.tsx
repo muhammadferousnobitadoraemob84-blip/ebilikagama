@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import PageLoader from "@/components/PageLoader";
+import ConnectionBanner from "@/components/ConnectionBanner";
 
 export default function LayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -16,7 +17,12 @@ export default function LayoutShell({ children }: { children: React.ReactNode })
 
   // Other admin pages get no public header/footer (admin has its own layout)
   if (isAdmin) {
-    return <>{children}</>;
+    return (
+      <>
+        <ConnectionBanner />
+        {children}
+      </>
+    );
   }
 
   // Public pages get full chrome + loading overlay
@@ -26,6 +32,7 @@ export default function LayoutShell({ children }: { children: React.ReactNode })
       <Header />
       <main className="flex-1">{children}</main>
       <Footer />
+      <ConnectionBanner />
     </>
   );
 }

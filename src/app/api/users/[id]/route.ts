@@ -9,6 +9,7 @@ import {
   validatePassword,
   serializeUser,
 } from "@/lib/user-management";
+import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -118,7 +119,8 @@ export async function PUT(
         );
       }
       const newRole = String(body.role).toLowerCase();
-      if (!["user", "admin", "owner"].includes(newRole)) {
+      // Roles per spec §21: owner > admin > editor > viewer > user.
+      if (!["user", "admin", "owner", "editor", "viewer"].includes(newRole)) {
         return NextResponse.json({ error: "Invalid role" }, { status: 400 });
       }
       data.role = newRole;
@@ -133,6 +135,21 @@ export async function PUT(
     const updated = await withRetry(() =>
       prisma.user.update({ where: { id }, data })
     );
+
+    // Audit Log (§9): what changed — never the password itself.
+    const changes: string[] = [];
+    if (data.fullName !== undefined) changes.push("fullName");
+    if (data.username !== undefined) changes.push("username");
+    if (data.passwordHash !== undefined) changes.push("password_reset");
+    if (data.active !== undefined) changes.push(data.active ? "enabled" : "disabled");
+    if (data.role !== undefined) changes.push(`role→${String(data.role)}`);
+    await audit({
+      actor: session,
+      action: data.active === false ? "user.disabled" : data.active === true ? "user.enabled" : data.role !== undefined ? "role.changed" : data.passwordHash !== undefined ? "user.password_reset" : "user.updated",
+      targetType: "user",
+      targetId: id,
+      metadata: { username: updated.username, changes },
+    });
 
     return NextResponse.json({
       success: true,
@@ -202,6 +219,8 @@ export async function DELETE(
     }
 
     await withRetry(() => prisma.user.delete({ where: { id } }));
+
+    await audit({ actor: session, action: "user.deleted", targetType: "user", targetId: id, metadata: { username: existing.username } });
 
     return NextResponse.json({ success: true });
   } catch (error) {

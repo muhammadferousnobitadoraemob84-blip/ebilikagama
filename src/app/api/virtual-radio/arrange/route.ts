@@ -12,6 +12,7 @@ import { getValidDriveToken } from "@/lib/google-drive";
 import { listFolderFiles, checkFileAccessible } from "@/lib/drive-helpers";
 import { probeAudioDuration } from "@/lib/audio-duration";
 import { arrangeFiller, EXACT_TOLERANCE_S } from "@/lib/radio-arrangement";
+import { audit } from "@/lib/audit";
 import type { VirtualRadioPendingTrack, VirtualRadioTrack } from "@/lib/virtual-radio";
 
 export const dynamic = "force-dynamic";
@@ -77,6 +78,8 @@ export async function POST() {
     const knownIds = new Set([...prevById.keys(), ...prevPendingById.keys()]);
 
     let newSongs = 0;
+    let removedSongs = 0;
+    let durationsUpdated = 0;
     const tracks: VirtualRadioTrack[] = [];
     const pending: VirtualRadioPendingTrack[] = [];
 
@@ -104,6 +107,8 @@ export async function POST() {
               // Duration unchanged — keep as-is (cheap, stable).
               results[idx] = { ok: true, track: old };
             } else {
+              if (old) durationsUpdated++; // existing track whose duration changed
+              else durationsUpdated++; // newly measured duration
               results[idx] = {
                 ok: true,
                 track: {
@@ -171,6 +176,10 @@ export async function POST() {
         pending.push(r.pending);
       }
     }
+    // Removed = previously indexed tracks no longer present in the folder.
+    const scannedIds = new Set(audioFiles.map((f) => f.id));
+    removedSongs = before.tracks.filter((t) => !scannedIds.has(t.driveId)).length +
+      before.pending.filter((p) => !scannedIds.has(p.driveId)).length;
     tracks.sort((a, b) => naturalCompare(a.fileName, b.fileName));
 
     // ── 3. REARRANGE against the next azan ───────────────────────────
@@ -260,12 +269,27 @@ export async function POST() {
     }
 
     const after = await getVirtualRadioState();
+    await audit({
+      actor: session,
+      action: "radio.playlist_arranged",
+      targetType: "radio_playlist",
+      metadata: {
+        songsScanned: audioFiles.length,
+        newSongs,
+        removedSongs,
+        durationsUpdated,
+        rearranged: arrangeInfo.attempted,
+        deviationSeconds: arrangeInfo.deviationSeconds,
+        strategy: arrangeInfo.strategy,
+      },
+    });
     return NextResponse.json({
       success: true,
       songsScanned: audioFiles.length,
       newSongs,
+      removedSongs,
       tracksIndexed: after.tracks.length,
-      durationsUpdated: true,
+      durationsUpdated,
       pendingCount: after.pending.length,
       playlistRearranged: arrangeInfo.attempted,
       arrangement: arrangeInfo.exact

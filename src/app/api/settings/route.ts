@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAdminSession } from "@/lib/auth";
 import { ensureDatabase } from "@/lib/db-init";
+import { isValidWhatsAppUrl } from "@/lib/social-validation";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,11 @@ const ALL_SETTINGS_KEYS = [
   "saluran_tv_title", "saluran_khas_title",
   "footer_text", "contact_email",
   "social_facebook", "social_twitter", "social_youtube", "social_instagram", "social_tiktok",
+  "social_whatsapp_group", "social_whatsapp_channel",
 ];
+
+// Setting keys that must be valid HTTPS WhatsApp URLs (validated on PUT)
+const WHATSAPP_SETTING_KEYS = ["social_whatsapp_group", "social_whatsapp_channel"];
 
 let _backfilled = false;
 
@@ -83,6 +88,17 @@ export async function PUT(request: NextRequest) {
 
     const body = await request.json();
     const updates = Object.entries(body);
+
+    // Validate WhatsApp social links before persisting (admin UI + API both
+    // enforce the same rule from src/lib/social-validation.ts).
+    for (const key of WHATSAPP_SETTING_KEYS) {
+      if (key in body && !isValidWhatsAppUrl(String(body[key] ?? ""))) {
+        return NextResponse.json(
+          { error: "Pautan WhatsApp tidak sah. Gunakan pautan HTTPS WhatsApp yang sah." },
+          { status: 400 }
+        );
+      }
+    }
 
     for (const [key, value] of updates) {
       await prisma.setting.upsert({

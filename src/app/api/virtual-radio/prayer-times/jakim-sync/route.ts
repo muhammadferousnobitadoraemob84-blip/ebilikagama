@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
 import { savePrayerTimes, savePrayerZone } from "@/lib/azan-store";
+import { audit } from "@/lib/audit";
 import {
   JAKIM_ESOLAT_API,
   jakimRowsToDays,
@@ -77,6 +78,7 @@ export async function POST(request: NextRequest) {
 
     const saved = await savePrayerTimes(zone, "jakim_api", days);
     await savePrayerZone(zone);
+    await audit({ actor: session, action: "azan.prayer_zone_changed", targetType: "prayer_zone", targetId: zone, metadata: { dayCount: Object.keys(saved.days).length, source: "jakim_api" } });
 
     // Official name for the diagnostic panel (never invented — directory only).
     let zoneName: string | null = null;

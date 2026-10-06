@@ -11,6 +11,7 @@ import {
   validatePassword,
   serializeUser,
 } from "@/lib/user-management";
+import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -139,16 +140,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: passwordError }, { status: 400 });
     }
 
-    // Role assignment: only the owner can mint admin/owner accounts.
+    // Role assignment: admins can mint user/editor/viewer accounts; only the
+    // owner can mint admin/owner accounts (spec §21).
     let role = "user";
-    if (requestedRole === "admin" || requestedRole === "owner") {
-      if (session.role !== "owner") {
+    if (["admin", "owner", "editor", "viewer"].includes(requestedRole)) {
+      if (requestedRole === "editor" || requestedRole === "viewer") {
+        role = requestedRole; // admin/owner may create these
+      } else if (session.role !== "owner") {
         return NextResponse.json(
           { error: "Only the owner can create administrator accounts" },
           { status: 403 }
         );
+      } else {
+        role = requestedRole === "owner" ? "owner" : "admin";
       }
-      role = requestedRole === "owner" ? "owner" : "admin";
     }
 
     // Duplicate protection (case-insensitive)
@@ -175,6 +180,8 @@ export async function POST(request: NextRequest) {
         },
       })
     );
+
+    await audit({ actor: session, action: "user.created", targetType: "user", targetId: user.id, metadata: { username, role } });
 
     return NextResponse.json(
       {

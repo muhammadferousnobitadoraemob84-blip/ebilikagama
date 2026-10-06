@@ -125,9 +125,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Admin sign-in gate: the admin form requires an admin/owner role.
-    // This is server-side — the flag alone grants nothing.
-    if (isAdmin && user.role !== "admin" && user.role !== "owner") {
+    // Admin sign-in gate: the admin form requires an admin-panel role
+    // (owner/admin/editor/viewer per spec §21). Server-side — the flag alone
+    // grants nothing.
+    if (isAdmin && !["admin", "owner", "editor", "viewer"].includes(user.role)) {
       return NextResponse.json(
         { error: "Akaun ini bukan akaun pentadbir." },
         { status: 403 }

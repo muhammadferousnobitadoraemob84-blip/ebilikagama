@@ -93,6 +93,8 @@ async function main() {
     { key: "social_youtube", value: "" },
     { key: "social_instagram", value: "" },
     { key: "social_tiktok", value: "" },
+    { key: "social_whatsapp_group", value: "" },
+    { key: "social_whatsapp_channel", value: "" },
   ];
 
   for (const setting of defaultSettings) {

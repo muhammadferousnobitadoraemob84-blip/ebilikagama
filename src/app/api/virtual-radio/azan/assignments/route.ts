@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
 import { getAzanState, saveAzanAssignments } from "@/lib/azan-store";
+import { audit } from "@/lib/audit";
 import { AZAN_PRAYERS, EMPTY_AZAN_ASSIGNMENTS, type AzanAssignments } from "@/lib/azan";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,7 @@ export async function POST(request: NextRequest) {
     }
 
     await saveAzanAssignments(next);
+    await audit({ actor: session, action: "azan.assignments_changed", targetType: "azan", metadata: { prayers: AZAN_PRAYERS.filter((p) => next[p]) } });
     return NextResponse.json({ success: true, assignments: next });
   } catch (err) {
     console.error("[AZAN-ASSIGN] error:", err instanceof Error ? err.message : err);

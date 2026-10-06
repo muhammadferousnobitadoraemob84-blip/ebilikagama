@@ -31,7 +31,7 @@ function openBreaker(reason: string | null) {
 
 // Bump when runMigrations() changes so cold instances re-apply migrations
 // exactly once, then skip them entirely (17+ DDL round-trips otherwise).
-const SCHEMA_VERSION = "5";
+const SCHEMA_VERSION = "6";
 
 async function getSchemaVersion(): Promise<string | null> {
   try {
@@ -533,6 +533,8 @@ async function runMigrations() {
     }
   }
   console.log("[DB-INIT] Visitor Records tables ready.");
+
+  await runBroadcastPlatformMigrations();
 }
 
 async function seedData() {
@@ -593,6 +595,8 @@ async function seedData() {
     { key: "social_youtube", value: "" },
     { key: "social_instagram", value: "" },
     { key: "social_tiktok", value: "" },
+    { key: "social_whatsapp_group", value: "" },
+    { key: "social_whatsapp_channel", value: "" },
   ];
 
   for (const s of settings) {
@@ -622,4 +626,160 @@ async function seedData() {
   }
 
   console.log("[DB-INIT] Seed complete.");
+}
+
+// ── Broadcast platform tables (schema v6) ───────────────────────────────────
+// Proof-of-Play / Timeline / Audit / Incidents / Notifications / Emergency /
+// Favorites. All idempotent IF NOT EXISTS; no existing table is touched.
+// Metadata only — audio/video binaries never go in Neon (they stay on Drive).
+async function runBroadcastPlatformMigrations() {
+  const ddls: string[] = [
+    // RadioPlayback (proof-of-play; eventId unique = idempotent retries)
+    `CREATE TABLE IF NOT EXISTS "RadioPlayback" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+      "eventId" TEXT NOT NULL,
+      "trackId" TEXT NOT NULL,
+      "trackTitle" TEXT NOT NULL,
+      "startedAt" TIMESTAMP(3) NOT NULL,
+      "endedAt" TIMESTAMP(3),
+      "durationPlayed" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "expectedDuration" DOUBLE PRECISION NOT NULL DEFAULT 0,
+      "expectedStartAt" TIMESTAMP(3),
+      "expectedEndAt" TIMESTAMP(3),
+      "status" TEXT NOT NULL DEFAULT 'playing',
+      "interruptionReason" TEXT,
+      "azanInterrupted" BOOLEAN NOT NULL DEFAULT false,
+      "azanPrayer" TEXT,
+      "sessionId" TEXT,
+      "clientId" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "RadioPlayback_eventId_key" UNIQUE ("eventId")
+    );`,
+    `CREATE INDEX IF NOT EXISTS "RadioPlayback_trackId_startedAt_idx" ON "RadioPlayback"("trackId", "startedAt");`,
+    `CREATE INDEX IF NOT EXISTS "RadioPlayback_startedAt_idx" ON "RadioPlayback"("startedAt");`,
+    `CREATE INDEX IF NOT EXISTS "RadioPlayback_endedAt_idx" ON "RadioPlayback"("endedAt");`,
+    `CREATE INDEX IF NOT EXISTS "RadioPlayback_status_idx" ON "RadioPlayback"("status");`,
+    // TimelineEvent (black box: expected vs actual)
+    `CREATE TABLE IF NOT EXISTS "TimelineEvent" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+      "eventId" TEXT NOT NULL,
+      "kind" TEXT NOT NULL,
+      "label" TEXT NOT NULL,
+      "expectedAt" TIMESTAMP(3),
+      "actualAt" TIMESTAMP(3) NOT NULL,
+      "diffSeconds" DOUBLE PRECISION,
+      "detail" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "TimelineEvent_eventId_key" UNIQUE ("eventId")
+    );`,
+    `CREATE INDEX IF NOT EXISTS "TimelineEvent_actualAt_idx" ON "TimelineEvent"("actualAt");`,
+    `CREATE INDEX IF NOT EXISTS "TimelineEvent_kind_actualAt_idx" ON "TimelineEvent"("kind", "actualAt");`,
+    // AuditLog (append-only admin audit)
+    `CREATE TABLE IF NOT EXISTS "AuditLog" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+      "actorUserId" TEXT,
+      "actorName" TEXT,
+      "action" TEXT NOT NULL,
+      "targetType" TEXT,
+      "targetId" TEXT,
+      "result" TEXT NOT NULL DEFAULT 'success',
+      "metadata" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE INDEX IF NOT EXISTS "AuditLog_actorUserId_createdAt_idx" ON "AuditLog"("actorUserId", "createdAt");`,
+    `CREATE INDEX IF NOT EXISTS "AuditLog_createdAt_idx" ON "AuditLog"("createdAt");`,
+    `CREATE INDEX IF NOT EXISTS "AuditLog_action_idx" ON "AuditLog"("action");`,
+    `CREATE INDEX IF NOT EXISTS "AuditLog_targetType_targetId_idx" ON "AuditLog"("targetType", "targetId");`,
+    // Incident (deduped failures)
+    `CREATE TABLE IF NOT EXISTS "Incident" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+      "signature" TEXT NOT NULL,
+      "service" TEXT NOT NULL,
+      "severity" TEXT NOT NULL DEFAULT 'warning',
+      "message" TEXT NOT NULL,
+      "status" TEXT NOT NULL DEFAULT 'open',
+      "firstDetectedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "lastDetectedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "resolvedAt" TIMESTAMP(3),
+      "occurrences" INTEGER NOT NULL DEFAULT 1,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL,
+      CONSTRAINT "Incident_signature_key" UNIQUE ("signature")
+    );`,
+    `CREATE INDEX IF NOT EXISTS "Incident_status_lastDetectedAt_idx" ON "Incident"("status", "lastDetectedAt");`,
+    `CREATE INDEX IF NOT EXISTS "Incident_service_idx" ON "Incident"("service");`,
+    // Notification + read receipts
+    `CREATE TABLE IF NOT EXISTS "Notification" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+      "title" TEXT NOT NULL,
+      "message" TEXT NOT NULL,
+      "targetAll" BOOLEAN NOT NULL DEFAULT true,
+      "targetRole" TEXT,
+      "userIds" TEXT,
+      "feature" TEXT,
+      "createdBy" TEXT,
+      "createdByName" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "expiresAt" TIMESTAMP(3),
+      "active" BOOLEAN NOT NULL DEFAULT true
+    );`,
+    `CREATE INDEX IF NOT EXISTS "Notification_createdAt_idx" ON "Notification"("createdAt");`,
+    `CREATE INDEX IF NOT EXISTS "Notification_active_expiresAt_idx" ON "Notification"("active", "expiresAt");`,
+    `CREATE TABLE IF NOT EXISTS "NotificationRead" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+      "notificationId" TEXT NOT NULL,
+      "userId" TEXT NOT NULL,
+      "readAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "NotificationRead_notificationId_userId_key" UNIQUE ("notificationId", "userId"),
+      CONSTRAINT "NotificationRead_notificationId_fkey" FOREIGN KEY ("notificationId") REFERENCES "Notification"("id") ON DELETE CASCADE ON UPDATE CASCADE
+    );`,
+    `CREATE INDEX IF NOT EXISTS "NotificationRead_userId_idx" ON "NotificationRead"("userId");`,
+    // EmergencyBroadcast
+    `CREATE TABLE IF NOT EXISTS "EmergencyBroadcast" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+      "title" TEXT NOT NULL,
+      "description" TEXT,
+      "channelId" TEXT,
+      "channelName" TEXT,
+      "mediaType" TEXT NOT NULL DEFAULT 'program',
+      "mediaRef" TEXT,
+      "startsAt" TIMESTAMP(3) NOT NULL,
+      "endsAt" TIMESTAMP(3) NOT NULL,
+      "status" TEXT NOT NULL DEFAULT 'scheduled',
+      "activatedAt" TIMESTAMP(3),
+      "stoppedAt" TIMESTAMP(3),
+      "stoppedReason" TEXT,
+      "createdBy" TEXT,
+      "createdByName" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL
+    );`,
+    `CREATE INDEX IF NOT EXISTS "EmergencyBroadcast_status_startsAt_idx" ON "EmergencyBroadcast"("status", "startsAt");`,
+    `CREATE INDEX IF NOT EXISTS "EmergencyBroadcast_startsAt_endsAt_idx" ON "EmergencyBroadcast"("startsAt", "endsAt");`,
+    // UserFavorite
+    `CREATE TABLE IF NOT EXISTS "UserFavorite" (
+      "id" TEXT NOT NULL PRIMARY KEY DEFAULT '',
+      "userId" TEXT NOT NULL,
+      "itemType" TEXT NOT NULL,
+      "itemId" TEXT NOT NULL,
+      "title" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "UserFavorite_userId_itemType_itemId_key" UNIQUE ("userId", "itemType", "itemId")
+    );`,
+    `CREATE INDEX IF NOT EXISTS "UserFavorite_userId_itemType_idx" ON "UserFavorite"("userId", "itemType");`,
+    // Program recurrence (EPG §10) — nullable columns, existing rows untouched
+    `ALTER TABLE "Program" ADD COLUMN IF NOT EXISTS "recurrence" TEXT;`, // none|daily|weekly
+    `ALTER TABLE "Program" ADD COLUMN IF NOT EXISTS "recurrenceWeekday" INTEGER;`, // 0-6 when weekly
+    `ALTER TABLE "Program" ADD COLUMN IF NOT EXISTS "recurrenceUntil" TEXT;`, // YYYY-MM-DD
+    `ALTER TABLE "Program" ADD COLUMN IF NOT EXISTS "parentId" TEXT;`, // template id for expanded instances
+    `CREATE INDEX IF NOT EXISTS "Program_parentId_idx" ON "Program"("parentId");`,
+  ];
+  for (const ddl of ddls) {
+    try {
+      await prisma.$executeRawUnsafe(ddl);
+    } catch {
+      // Already exists — idempotent by design.
+    }
+  }
+  console.log("[DB-INIT] Broadcast platform tables ready (v6).");
 }

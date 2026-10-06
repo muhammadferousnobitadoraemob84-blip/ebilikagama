@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAdminSession } from "@/lib/auth";
 import { notifyChannelChange } from "@/lib/channel-events";
 import { isSelfImageUrl } from "@/lib/thumb-meta";
+import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -80,6 +81,7 @@ export async function PUT(
     });
 
     notifyChannelChange();
+    await audit({ actor: session, action: "channel.updated", targetType: "channel", targetId: id, metadata: { name: channel.name } });
     return NextResponse.json(channel);
   } catch {
     return NextResponse.json(
@@ -134,6 +136,7 @@ export async function DELETE(
     await prisma.channel.delete({ where: { id } });
 
     notifyChannelChange();
+    await audit({ actor: session, action: "channel.deleted", targetType: "channel", targetId: id, metadata: { name: existing.name, programsDeleted: programCount } });
     return NextResponse.json({ success: true, deletedId: id, programsDeleted: programCount });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
