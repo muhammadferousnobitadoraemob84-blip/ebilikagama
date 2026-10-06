@@ -31,6 +31,30 @@ export async function GET() {
       : "DATABASE_URL environment variable is not set in Vercel",
   };
 
+  // Stale-database incident probe: which DATABASE_HOST does THIS runtime
+  // actually hold, and which DB-related env vars exist. Hostname only —
+  // never credentials.
+  try {
+    const dbRelated = Object.keys(process.env)
+      .filter((k) => /DATABASE|POSTGRES|NEON|PG/i.test(k))
+      .sort();
+    let envHost = "unset";
+    if (process.env.DATABASE_URL) {
+      try {
+        envHost = new URL(process.env.DATABASE_URL).hostname;
+      } catch {
+        envHost = "unparseable";
+      }
+    }
+    checks.env_probe = {
+      status: "ok",
+      detail: `host=${envHost} vars=${dbRelated.join("|") || "none"}`,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    checks.env_probe = { status: "FAILED", detail: msg };
+  }
+
   checks.jwt_secret = {
     status: process.env.JWT_SECRET ? "configured" : "using_default",
   };
