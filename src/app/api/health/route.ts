@@ -105,6 +105,29 @@ export async function GET() {
       const msg = error instanceof Error ? error.message : String(error);
       checks.channels_table = { status: "FAILED", detail: msg };
     }
+
+    // Database identity: which Postgres database/user/version is this runtime
+    // actually connected to, and how much content does it hold. Nothing here
+    // is sensitive (no host, no credentials) — it exists to diagnose
+    // "production shows the wrong database" incidents like the 2026-10-06
+    // stale-database one.
+    try {
+      const ident = (await withRetry(() =>
+        prisma.$queryRaw`
+          SELECT current_database() AS db, current_user AS usr,
+                 split_part(version(), ' ', 2) AS pgver
+        `
+      )) as { db: string; usr: string; pgver: string }[];
+      const settingCount = await withRetry(() => prisma.setting.count());
+      const replayCount = await withRetry(() => prisma.replay.count());
+      checks.db_identity = {
+        status: "ok",
+        detail: `db=${ident[0]?.db} user=${ident[0]?.usr} pg=${ident[0]?.pgver} settings=${settingCount} replays=${replayCount}`,
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      checks.db_identity = { status: "FAILED", detail: msg };
+    }
   }
 
   const allHealthy = Object.values(checks).every(
