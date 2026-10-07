@@ -23,10 +23,14 @@ const WHATSAPP_SETTING_KEYS = ["social_whatsapp_group", "social_whatsapp_channel
 
 let _backfilled = false;
 
-// GET all settings (public)
+// GET all settings — anonymous callers receive ONLY the branding/social
+// keys (ALL_SETTINGS_KEYS). Integration credentials stored as settings
+// (Google Drive / YouTube OAuth tokens, Drive folder IDs, radio internals)
+// are returned exclusively to authenticated admin sessions.
 export async function GET() {
   try {
     await ensureDatabase();
+    const adminSession = await getAdminSession();
     const settings = await prisma.setting.findMany({
       select: { key: true, value: true, updatedAt: true },
     });
@@ -69,7 +73,16 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json(settingsMap);
+    if (adminSession) {
+      return NextResponse.json(settingsMap);
+    }
+    return NextResponse.json(
+      Object.fromEntries(
+        Object.entries(settingsMap).filter(([key]) =>
+          ALL_SETTINGS_KEYS.includes(key)
+        )
+      )
+    );
   } catch {
     return NextResponse.json(
       { error: "Gagal memuatkan tetapan" },
