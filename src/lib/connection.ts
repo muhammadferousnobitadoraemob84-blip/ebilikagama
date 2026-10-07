@@ -32,6 +32,14 @@ export function useConnectionStatus(): ConnectionStatus {
     };
     window.addEventListener("online", goOnline);
     window.addEventListener("offline", goOffline);
+    // Reconcile with the real state once listeners are attached: the
+    // `online` event can fire between first render (which captured a
+    // transient offline state) and effect attach, leaving the banner
+    // stuck on "offline" forever. Heal by consulting navigator.onLine.
+    if (navigator.onLine) {
+      setStatus((s) => (s === "online" ? s : "reconnecting"));
+      timer = window.setTimeout(() => setStatus("online"), 1500);
+    }
     return () => {
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
