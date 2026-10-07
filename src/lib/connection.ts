@@ -40,9 +40,20 @@ export function useConnectionStatus(): ConnectionStatus {
       setStatus((s) => (s === "online" ? s : "reconnecting"));
       timer = window.setTimeout(() => setStatus("online"), 1500);
     }
+    // Backstop: some embedded webviews change navigator.onLine WITHOUT
+    // firing online/offline events. Re-check periodically so the banner
+    // can never get stuck; in normal browsers this is a no-op pass.
+    const reconcile = () => {
+      if (!navigator.onLine) return;
+      setStatus((s) => (s === "online" ? s : "reconnecting"));
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(() => setStatus("online"), 1500);
+    };
+    const poll = window.setInterval(reconcile, 8000);
     return () => {
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
+      window.clearInterval(poll);
       if (timer) window.clearTimeout(timer);
     };
   }, []);
